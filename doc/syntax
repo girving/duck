@@ -1,0 +1,59 @@
+Syntax notes:
+
+Scoping is indentation based, and can be explicitly specified via { ; }
+
+Variables are declared via "x = a", which is also an expression with value "a".
+
+Expressions are evaluated left to right.
+
+Variables declared inside nested expressions are live outside the expression for the rest of the enclosing function body.  I.e., the following is valid
+
+    y = 5; y
+    if b then x = 4 else x = 5
+    print x
+
+Shadowing is allowed: "x = 5; x = 6" results in x = 6.  When control flow merges, the set of variables live after the merge is the intersection of the variables before.  I.e.,
+
+    x = y = 0
+    for i in 1,2 do
+        y = y + i
+        if i == 1 then
+            x = x + i
+    assert (x == 1)
+    assert (y == 3)
+    # i is not in scope, since for loops can traverse zero elements
+
+Function are declared via "f x = a" and the like.  Overloaded functions must be prefixed with a type restriction.
+
+    f : A -> B -> _
+    f a b = a + b
+
+----------------------------------
+
+ISSUES:
+
+1. I'm not happy with the overload declaration type restriction syntax, since I'm not sure how to conceptually unify it with normal type assertions.  In particular, (x : T) probably means that x has type T _now_, but (f : T) means that f is _about_ to have type T, which is confusing.
+
+2. The function declaration syntax may be too terse.  It also might rule out a more general notion of assignment if that arises.  On the other hand, it might be good to make general notions of imperative assignment syntactically clear.
+
+3. In "if x == 1 then b" it's very easy to write "if x = 1 then b", which is the same as "x = 1; b".  BAD!
+
+----------------------------------
+
+Here are syntax examples:
+
+f x =
+    y = 4
+    y
+
+power x n =
+    sqr x = x * x
+    r = 1
+    while n do
+        if n&1 then
+            r *= x
+        n /= 2
+        x = sqr x
+    r
+
+Note that power is purely functional unless /= and *= are implemented in place.  Everything that looks like assignment is variable shadowing.

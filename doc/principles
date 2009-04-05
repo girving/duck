@@ -1,0 +1,15 @@
+Design principles:
+
+1. Support arbitrary overloading.
+
+2. Support straightforward runtime compilation to nearly optimal code.
+
+3. If you have to add a statement, case, etc. to get something to compile, it's bad.
+
+4. Types should not depend on data, but they should be as flexible as possible given this restriction.
+
+5. Containers are homogeneous.
+
+IMPORTANT:
+
+The type of an expression should depend only on the types of its inputs.
