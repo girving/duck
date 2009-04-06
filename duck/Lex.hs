@@ -32,6 +32,7 @@ lexer ('/':cs) = TokDiv : lexer cs
 lexer ('(':cs) = TokLP : lexer cs
 lexer (')':cs) = TokRP : lexer cs
 lexer (';':cs) = TokSep : lexer cs
+lexer _ = error "Lexer error"
 
 lexInt cs = TokInt (read num) : lexer rest
   where (num,rest) = span isDigit cs

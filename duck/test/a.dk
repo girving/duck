@@ -1,0 +1,5 @@
+f x = (
+  g y = y * y;
+  x + g y);
+
+f x y z
