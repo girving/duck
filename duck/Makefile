@@ -1,5 +1,5 @@
 GHC = ghc
-GHCFLAGS = -O -Werror -fwarn-tabs
+GHCFLAGS = -O -Wall -Werror -fwarn-tabs
 HAPPY = happy
 HAPPYFLAGS = -agc
 

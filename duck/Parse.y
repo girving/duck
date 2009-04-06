@@ -1,7 +1,7 @@
 -- Duck parser
 
 {
-{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-overlapping-patterns #-}
+{-# OPTIONS_GHC -w #-}
 
 module Parse (lex, parse) where
 
