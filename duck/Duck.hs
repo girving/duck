@@ -5,6 +5,7 @@ module Main where
 import Lex
 import Parse
 import System.Environment
+import Ast
 
 header = "Duck interactive mode"
 
@@ -16,4 +17,6 @@ main = do
       getContents
     [file] -> readFile file
     _ -> error "expected zero or one arguments"
-  print $ parse $ lexer code
+  let ast = parse $ lexer code
+  print $ ast
+  print $ pretty ast

@@ -16,6 +16,9 @@ data Token
   | TokLP
   | TokRP
   | TokSep
+  | TokColon
+  | TokComma
+  | TokDef
 
 lexer :: String -> [Token]
 
@@ -31,19 +34,25 @@ lexer ('*':cs) = TokTimes : lexer cs
 lexer ('/':cs) = TokDiv : lexer cs
 lexer ('(':cs) = TokLP : lexer cs
 lexer (')':cs) = TokRP : lexer cs
+lexer (':':cs) = TokColon : lexer cs
 lexer (';':cs) = TokSep : lexer cs
+lexer (',':cs) = TokComma : lexer cs
 lexer _ = error "Lexer error"
 
 lexInt cs = TokInt (read num) : lexer rest
   where (num,rest) = span isDigit cs
 
-lexVar cs = TokVar var : lexer rest
-  where (var,rest) = span isAlpha cs
+lexVar cs = token : lexer rest where
+  (var,rest) = span isAlpha cs
+  token = case var of
+    "def" -> TokDef
+    _ -> TokVar var
 
 instance Show Token where
   show t = case t of
     TokVar v -> v
     TokInt i -> show i
+    TokDef -> "def"
     TokEq -> "="
     TokPlus -> "+"
     TokMinus -> "-"
@@ -52,3 +61,5 @@ instance Show Token where
     TokLP -> "("
     TokRP -> ")"
     TokSep -> ";"
+    TokColon -> ":"
+    TokComma -> ","

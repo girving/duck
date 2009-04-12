@@ -17,12 +17,15 @@ import Ast
 %token
   var { TokVar $$ }
   int { TokInt $$ }
+  def { TokDef }
   ';' { TokSep }
   '=' { TokEq }
   '+' { TokPlus }
   '-' { TokMinus }
   '*' { TokTimes }
   '/' { TokDiv }
+  ':' { TokColon }
+  ',' { TokComma }
   '(' { TokLP }
   ')' { TokRP }
 
@@ -41,29 +44,40 @@ exps :: { [Exp] }
   | exps ';' exp { $3 : $1 }
 
 exp :: { Exp }
-  : exp '=' exp { assign $1 $3 }
-  -- var '=' exp { Let $1 $3 }
-  -- var vars '=' exp { Def $1 $2 $4 }
+  : exp '=' exp { Set (topattern $1) $3 }
+  | def var patterns '=' exp { Def $2 (reverse $3) $5 }
   | exp '+' exp { binop $1 $2 $3 }
   | exp '-' exp { binop $1 $2 $3 }
   | exp '*' exp { binop $1 $2 $3 }
   | exp '/' exp { binop $1 $2 $3 }
-  | apply { $1 }
-
-apply :: { Exp }
-  : apply arg { Apply $1 $2 }
+  | apply { let f : a = reverse $1 in Apply f a }
   | arg { $1 }
+
+apply :: { [Exp] }
+  : apply arg { $2 : $1 }
+  | arg arg { [$2,$1] }
 
 arg :: { Exp }
   : int { Int $1 }
   | var { Var $1 }
   | '(' exps ')' { exps $2 }
 
-{-
-vars :: { [Var] }
-  : var { [$1 :: Var] }
-  | vars var { $2 : $1 }
--}
+patterns :: { [Pattern] }
+  : pattern { [$1] }
+  | patterns pattern { $2 : $1 }
+
+pattern :: { Pattern }
+  : var { PatVar $1 }
+  | '(' patterns ')' { wrap PatTuple $2 }
+  | pattern ':' ty { PatType $1 $3 }
+
+tytuple :: { [Type] }
+  : ty { [$1] }
+  | tytuple ',' ty { $3 : $1 }
+
+ty :: { Type }
+  : var { TyVar $1 }
+  | '(' tytuple ')' { wrap TyTuple $2 }
 
 {
 
@@ -73,20 +87,21 @@ parseError :: [Token] -> a
 parseError _ = error "Parse error"
 
 exps :: [Exp] -> Exp
-exps = foldl1 (flip Seq)
+exps = Seq . reverse
 
 binop :: Exp -> Token -> Exp -> Exp
-binop e1 op e2 = Apply (Apply (Var $ show op) e1) e2
+binop e1 op e2 = Apply (Var $ show op) [e1, e2]
 
--- Parses "x = e" and "f x = e" into Let, Def, etc.
--- This has to happen outside the grammar to get LALR(1)
-assign :: Exp -> Exp -> Exp
-assign e1 e2 = e where
-  extract (Var v) = [v]
-  extract (Apply e (Var v)) = v : extract e
-  extract _ = error "Invalid pattern"
-  e = case reverse $ extract e1 of
-    [v] -> Let v e2
-    f : args -> Def f args e2
+wrap :: ([a] -> a) -> [a] -> a
+wrap f [x] = x
+wrap f xl = f $ reverse xl
+
+-- Turn an expression into pattern.  This is used to
+-- turn exp = exp into pat = exp, since doing this within
+-- the grammar would violate LALR(1)
+topattern :: Exp -> Pattern
+topattern p = case p of
+  Var v -> PatVar v
+  _ -> error "Invalid pattern"
 
 }

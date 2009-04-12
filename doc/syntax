@@ -2,9 +2,11 @@ Syntax notes:
 
 Scoping is indentation based, and can be explicitly specified via { ; }
 
-Variables are declared via "x = a", which is also an expression with value "a".
+Variables are declared via "x = a", which is also an expression with value ().
 
 Expressions are evaluated left to right.
+
+EVERYTHING BEYOND THIS POINT IS OUT OF DATE
 
 Variables declared inside nested expressions are live outside the expression for the rest of the enclosing function body.  I.e., the following is valid
 
@@ -23,31 +25,22 @@ Shadowing is allowed: "x = 5; x = 6" results in x = 6.  When control flow merges
     assert (y == 3)
     # i is not in scope, since for loops can traverse zero elements
 
-Function are declared via "f x = a" and the like.  Overloaded functions must be prefixed with a type restriction.
+Function are declared via "def f x = a" and the like.  Overload restrictions are specified as (x : T).  Here are some examples:
 
-    f : A -> B -> _
-    f a b = a + b
-
-----------------------------------
-
-ISSUES:
-
-1. I'm not happy with the overload declaration type restriction syntax, since I'm not sure how to conceptually unify it with normal type assertions.  In particular, (x : T) probably means that x has type T _now_, but (f : T) means that f is _about_ to have type T, which is confusing.
-
-2. The function declaration syntax may be too terse.  It also might rule out a more general notion of assignment if that arises.  On the other hand, it might be good to make general notions of imperative assignment syntactically clear.
-
-3. In "if x == 1 then b" it's very easy to write "if x = 1 then b", which is the same as "x = 1; b".  BAD!
+    def f a b = ...
+    def f (a : A) b = ...
+    def f (a : A) (b : B) = ...
 
 ----------------------------------
 
 Here are syntax examples:
 
-f x =
+def f x =
     y = 4
     y
 
-power x n =
-    sqr x = x * x
+def power x n =
+    def sqr x = x * x
     r = 1
     while n do
         if n&1 then

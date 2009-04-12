@@ -1,0 +1,70 @@
+map :: (a -> b) -> [a] -> [b]
+
+map :: (a -> b, [a]) -> [b]
+
+zip :: [a] -> [b] -> [(a,b)]
+zip :: [a] -> [b] -> [(a,b)]
+
+zip :: ([a],[b]) -> [(a,b])
+zip :: ([a],[b],[c]) -> [(a,b,c)]
+
+mqx :: (Int, Int) -> Int
+max :: (Int, Int, Int) -> Int
+
+let f a b =
+
+def map (f, a : List _) =
+def map (f, a : List, b : List) 
+
+map :: _, List, List
+
+
+let map f (a : List) (b : List) =
+
+def map(f, a : List, b : List)
+  blah
+
+if(b) c else d
+
+def map(f 
+
+
+
+def +(a,b) = a + b
+
+def +(a,b) a + b
+
+
+if(c) a else b
+if(c)
+  a
+else
+  b
+
+if(c1)
+  a
+else if(c2)
+  b
+
+while(b) blah
+
+for(i in c) blah
+
+for i in c do blah
+
+iter c \i -> blah
+map c \i -> blah
+fold c \i -> blah
+
+iter _ 
+
+iter ..n \i -> iter ..n \j 
+
+iter 0..n 0..n 0..n \i j k ->
+for (n, n, n) \i j k ->
+
+
+
+map
+
+fold
