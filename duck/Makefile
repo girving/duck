@@ -2,13 +2,15 @@ GHC = ghc
 GHCFLAGS = -O -Wall -Werror -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -XPatternGuards
 HAPPY = happy
 HAPPYFLAGS = -agc
+ALEX = alex
+ALEXFLAGS = -g
 
 all: duck
 
 info: Parse.info
 
 .PHONY: duck
-duck: Duck.hs Parse.hs
+duck: Duck.hs Parse.hs Lex.hs
 	$(GHC) $(GHCFLAGS) --make $< -o $@
 
 %.hs: %.y
@@ -16,6 +18,9 @@ duck: Duck.hs Parse.hs
 
 %.info: %.y
 	$(HAPPY) $(HAPPYFLAGS) $< -i$@
+
+%.hs: %.x
+	$(ALEX) $(ALEXFLAGS) $< -o $@
 
 .PHONY: clean
 clean:
