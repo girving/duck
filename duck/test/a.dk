@@ -3,3 +3,5 @@ let f x =
   x + g y
 
 let _ = f x y z
+
+let f = \x -> x

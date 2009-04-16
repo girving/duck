@@ -22,6 +22,7 @@ tokens :-
   let     { c TokLet }
   in      { c TokIn }
   =       { c TokEq }
+  \->     { c TokArrow }
   \+      { c TokPlus }
   \-      { c TokMinus }
   \*      { c TokTimes }
@@ -32,6 +33,7 @@ tokens :-
   \;      { c TokSep }
   \,      { c TokComma }
   _       { c TokAny }
+  \\      { c TokLambda }
   $digit+ { TokInt . read }
   $alpha $alphanum* { TokVar }
 
@@ -58,6 +60,8 @@ data Token
   | TokLet
   | TokIn
   | TokAny
+  | TokLambda
+  | TokArrow
 
 instance Show Token where
   show t = case t of
@@ -77,6 +81,8 @@ instance Show Token where
     TokColon -> ":"
     TokComma -> ","
     TokAny -> "_"
+    TokLambda -> "\\"
+    TokArrow -> "->"
 
 lexer = alexScanTokens
 }

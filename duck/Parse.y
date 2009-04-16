@@ -31,6 +31,8 @@ import Ast
   '(' { TokLP }
   ')' { TokRP }
   '_' { TokAny }
+  '\\' { TokLambda }
+  '->' { TokArrow }
 
 %left ';'
 %right '='
@@ -57,6 +59,7 @@ exps :: { [Exp] }
 exp :: { Exp }
   : let var patterns '=' exp in exp { Def $2 (reverse $3) $5 $7 }
   | let pattern '=' exp in exp { Let $2 $4 $6 }
+  | '\\' patterns '->' exp { Lambda (reverse $2) $4 }
   | exp1 { $1 }
 
 exp1 :: { Exp }

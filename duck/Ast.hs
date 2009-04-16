@@ -19,6 +19,7 @@ data Exp
   = Set Pattern Exp
   | Def Var [Pattern] Exp Exp
   | Let Pattern Exp Exp
+  | Lambda [Pattern] Exp
   | Apply Exp [Exp]
   | Seq [Exp]
   | Var Var
@@ -74,8 +75,10 @@ instance Pretty Exp where
     text "let" <+> pretty p <+> equals <+> guard 0 e <+> text "in"
       $$ (guard 0 body))
   pretty' (Def f args e body) = (0,
-    text "let" <+> text f <+> (hsep $ map (guard 2) args) <+> equals
+    text "let" <+> text f <+> hsep (map (guard 2) args) <+> equals
       $$ nest 2 (guard 0 e) <+> text "in" $$ (guard 0 body))
+  pretty' (Lambda args e) = (5,
+    text "\\" <> hsep (map (guard 2) args) <+> text "->" <+> guard 5 e)
   pretty' (Seq el) = (0, vcat $ map (guard 0) el)
   pretty' (Set p e) = (2, guard 0 p <+> equals <+> guard 2 e)
   pretty' (Apply (Var v) [e1, e2]) | Just prec <- precedence v =

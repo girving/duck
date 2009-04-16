@@ -19,4 +19,5 @@ main = do
     _ -> error "expected zero or one arguments"
   let ast = parse $ lexer code
   print $ ast
+  putStrLn ""
   print $ pretty ast
