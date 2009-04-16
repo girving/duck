@@ -1,5 +1,5 @@
-def f x = (
-  def g y = y * y;
-  x + g y);
+let f x =
+  let g y = y * y in
+  x + g y
 
-f x y z
+let _ = f x y z

@@ -1,12 +1,14 @@
 Syntax notes:
 
+For now, the syntax is ocaml-like.
+
+EVERYTHING BEYOND THIS POINT IS WRONG
+
 Scoping is indentation based, and can be explicitly specified via { ; }
 
 Variables are declared via "x = a", which is also an expression with value ().
 
 Expressions are evaluated left to right.
-
-EVERYTHING BEYOND THIS POINT IS OUT OF DATE
 
 Variables declared inside nested expressions are live outside the expression for the rest of the enclosing function body.  I.e., the following is valid
 

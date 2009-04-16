@@ -18,7 +18,6 @@ def map (f, a : List, b : List)
 
 map :: _, List, List
 
-
 let map f (a : List) (b : List) =
 
 def map(f, a : List, b : List)
@@ -63,8 +62,28 @@ iter ..n \i -> iter ..n \j
 iter 0..n 0..n 0..n \i j k ->
 for (n, n, n) \i j k ->
 
-
-
 map
 
 fold
+
+let x = if b then c else d
+
+let sum c = fold
+
+let map f (m : Maybe a) =
+  match m with
+    None -> None
+    Some x -> Some (f x)
+
+let sum (m : Maybe a) =
+  match m with
+    None -> 
+
+None : None
+Some x : Maybe (type x)
+unify (None) (Maybe x) =
+
+
+if c then a else b  =>
+
+join 

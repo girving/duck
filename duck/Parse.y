@@ -17,7 +17,9 @@ import Ast
 %token
   var { TokVar $$ }
   int { TokInt $$ }
-  def { TokDef }
+  -- def { TokDef }
+  let { TokLet }
+  in  { TokIn }
   ';' { TokSep }
   '=' { TokEq }
   '+' { TokPlus }
@@ -28,6 +30,7 @@ import Ast
   ',' { TokComma }
   '(' { TokLP }
   ')' { TokRP }
+  '_' { TokAny }
 
 %left ';'
 %right '='
@@ -36,20 +39,31 @@ import Ast
 
 %%
 
-top :: { Exp }
-  : exps { exps $1 }
+prog :: { Prog }
+  : decls { reverse $1 }
+
+decls :: { [Decl] }
+  : {--} { [] }
+  | decls decl { $2 : $1 }
+
+decl :: { Decl }
+  : let var patterns '=' exp { DefD $2 (reverse $3) $5 }
+  | let pattern '=' exp { LetD $2 $4 }
 
 exps :: { [Exp] }
   : exp { [$1] }
   | exps ';' exp { $3 : $1 }
 
 exp :: { Exp }
-  : exp '=' exp { Set (topattern $1) $3 }
-  | def var patterns '=' exp { Def $2 (reverse $3) $5 }
-  | exp '+' exp { binop $1 $2 $3 }
-  | exp '-' exp { binop $1 $2 $3 }
-  | exp '*' exp { binop $1 $2 $3 }
-  | exp '/' exp { binop $1 $2 $3 }
+  : let var patterns '=' exp in exp { Def $2 (reverse $3) $5 $7 }
+  | let pattern '=' exp in exp { Let $2 $4 $6 }
+  | exp1 { $1 }
+
+exp1 :: { Exp }
+  : exp1 '+' exp1 { binop $1 $2 $3 }
+  | exp1 '-' exp1 { binop $1 $2 $3 }
+  | exp1 '*' exp1 { binop $1 $2 $3 }
+  | exp1 '/' exp1 { binop $1 $2 $3 }
   | apply { let f : a = reverse $1 in Apply f a }
   | arg { $1 }
 
@@ -68,6 +82,7 @@ patterns :: { [Pattern] }
 
 pattern :: { Pattern }
   : var { PatVar $1 }
+  | '_' { PatAny }
   | '(' patterns ')' { wrap PatTuple $2 }
   | pattern ':' ty { PatType $1 $3 }
 
@@ -81,7 +96,7 @@ ty :: { Type }
 
 {
 
-parse :: [Token] -> Exp
+parse :: [Token] -> Prog
 
 parseError :: [Token] -> a
 parseError _ = error "Parse error"
@@ -96,6 +111,7 @@ wrap :: ([a] -> a) -> [a] -> a
 wrap f [x] = x
 wrap f xl = f $ reverse xl
 
+{-
 -- Turn an expression into pattern.  This is used to
 -- turn exp = exp into pat = exp, since doing this within
 -- the grammar would violate LALR(1)
@@ -103,5 +119,6 @@ topattern :: Exp -> Pattern
 topattern p = case p of
   Var v -> PatVar v
   _ -> error "Invalid pattern"
+-}
 
 }

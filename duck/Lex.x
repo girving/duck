@@ -17,8 +17,10 @@ $alphanum = [a-zA-Z0-9_']
 tokens :-
 
   $white+ ;
-  "--".*  ;
+  \#.*    ;
   def     { c TokDef }
+  let     { c TokLet }
+  in      { c TokIn }
   =       { c TokEq }
   \+      { c TokPlus }
   \-      { c TokMinus }
@@ -29,6 +31,7 @@ tokens :-
   :       { c TokColon }
   \;      { c TokSep }
   \,      { c TokComma }
+  _       { c TokAny }
   $digit+ { TokInt . read }
   $alpha $alphanum* { TokVar }
 
@@ -52,12 +55,17 @@ data Token
   | TokColon
   | TokComma
   | TokDef
+  | TokLet
+  | TokIn
+  | TokAny
 
 instance Show Token where
   show t = case t of
     TokVar v -> v
     TokInt i -> show i
     TokDef -> "def"
+    TokLet -> "let"
+    TokIn -> "in"
     TokEq -> "="
     TokPlus -> "+"
     TokMinus -> "-"
@@ -68,6 +76,7 @@ instance Show Token where
     TokSep -> ";"
     TokColon -> ":"
     TokComma -> ","
+    TokAny -> "_"
 
 lexer = alexScanTokens
 }
