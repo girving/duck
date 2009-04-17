@@ -7,6 +7,7 @@ import Parse
 import Pretty
 import System.Environment
 import qualified Ir
+import qualified Interp
 
 header = "Duck interactive mode"
 
@@ -20,10 +21,15 @@ main = do
       getContents
     [file] -> readFile file
     _ -> error "expected zero or one arguments"
+
+  putStr "\n-- AST --\n"
   let ast = parse $ lexer code
-  print ast
-  newline
-  print $ pretty ast
-  newline
+  pprint ast
+
+  putStr "\n-- IR --\n"
   let ir = Ir.prog ast
-  print $ pretty ir
+  pprint ir
+
+  putStr "\n-- Result --\n"
+  let env = Interp.prog ir
+  pprint env

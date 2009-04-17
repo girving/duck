@@ -3,6 +3,7 @@
 module Pretty where
 
 import Text.PrettyPrint
+import qualified Data.Map as Map
 
 class Pretty t where
   pretty :: t -> Doc
@@ -10,6 +11,9 @@ class Pretty t where
 
   pretty = snd . pretty'
   pretty' t = (0, pretty t)
+
+pprint :: Pretty t => t -> IO ()
+pprint = print . pretty
 
 guard :: Pretty t => Int -> t -> Doc
 guard prec x
@@ -25,3 +29,10 @@ instance Pretty Int where
 
 instance Pretty Char where
   pretty' c = (100, char c)
+
+instance Pretty [Char] where
+  pretty' s = (100, text s)
+
+instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
+  pretty = Map.foldWithKey (\k v s ->
+    s $$ pretty k <+> equals <+> pretty v) empty
