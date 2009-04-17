@@ -5,7 +5,7 @@
 
 module Lex where
 
-import Ast
+import Var
 }
 
 %wrapper "basic"
@@ -35,7 +35,7 @@ tokens :-
   _       { c TokAny }
   \\      { c TokLambda }
   $digit+ { TokInt . read }
-  $alpha $alphanum* { TokVar }
+  $alpha $alphanum* { TokVar . V }
 
 {
 
@@ -65,7 +65,7 @@ data Token
 
 instance Show Token where
   show t = case t of
-    TokVar v -> v
+    TokVar v -> show v
     TokInt i -> show i
     TokDef -> "def"
     TokLet -> "let"

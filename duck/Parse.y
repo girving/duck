@@ -5,6 +5,7 @@
 
 module Parse (lex, parse) where
 
+import Var
 import Lex
 import Ast
 
@@ -108,7 +109,7 @@ exps :: [Exp] -> Exp
 exps = Seq . reverse
 
 binop :: Exp -> Token -> Exp -> Exp
-binop e1 op e2 = Apply (Var $ show op) [e1, e2]
+binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
 
 wrap :: ([a] -> a) -> [a] -> a
 wrap f [x] = x
