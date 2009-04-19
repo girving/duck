@@ -87,3 +87,8 @@ unify (None) (Maybe x) =
 if c then a else b  =>
 
 join 
+
+let f = \x y -> x + y
+
+over A -> A -> A
+let f x y = x * y

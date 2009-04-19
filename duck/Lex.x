@@ -19,6 +19,7 @@ tokens :-
   $white+ ;
   \#.*    ;
   def     { c TokDef }
+  over    { c TokOver }
   let     { c TokLet }
   in      { c TokIn }
   =       { c TokEq }
@@ -58,6 +59,7 @@ data Token
   | TokComma
   | TokDef
   | TokLet
+  | TokOver
   | TokIn
   | TokAny
   | TokLambda
@@ -69,6 +71,7 @@ instance Show Token where
     TokInt i -> show i
     TokDef -> "def"
     TokLet -> "let"
+    TokOver -> "over"
     TokIn -> "in"
     TokEq -> "="
     TokPlus -> "+"

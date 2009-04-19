@@ -41,7 +41,7 @@ prog :: [Ast.Decl] -> [Decl]
 prog = concatMap decl
 
 decl :: Ast.Decl -> [Decl]
-decl (Ast.DefD f args body) = [LetD f (expr (Ast.Lambda args body))]
+decl (Ast.DefD f _ args body) = [LetD f (expr (Ast.Lambda args body))]
 decl (Ast.LetD Ast.PatAny e) = [LetD (V "_") (expr e)] -- avoid dead code elimination
 decl (Ast.LetD (Ast.PatVar v) e) = [LetD v (expr e)]
 decl (Ast.LetD p e) = reverse $ match (\v d -> LetD v (expr e) : d) [] p

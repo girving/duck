@@ -19,24 +19,25 @@ import Ast
   var { TokVar $$ }
   int { TokInt $$ }
   -- def { TokDef }
-  let { TokLet }
-  in  { TokIn }
-  ';' { TokSep }
-  '=' { TokEq }
-  '+' { TokPlus }
-  '-' { TokMinus }
-  '*' { TokTimes }
-  '/' { TokDiv }
-  ':' { TokColon }
-  ',' { TokComma }
-  '(' { TokLP }
-  ')' { TokRP }
-  '_' { TokAny }
+  over { TokOver }
+  let  { TokLet }
+  in   { TokIn }
+  ';'  { TokSep }
+  '='  { TokEq }
+  '+'  { TokPlus }
+  '-'  { TokMinus }
+  '*'  { TokTimes }
+  '/'  { TokDiv }
+  ':'  { TokColon }
+  ','  { TokComma }
+  '('  { TokLP }
+  ')'  { TokRP }
+  '_'  { TokAny }
   '\\' { TokLambda }
   '->' { TokArrow }
 
 %left ';'
-%right '='
+%right '=' '->'
 %left '+' '-'
 %left '*' '/'
 
@@ -50,7 +51,8 @@ decls :: { [Decl] }
   | decls decl { $2 : $1 }
 
 decl :: { Decl }
-  : let var patterns '=' exp { DefD $2 (reverse $3) $5 }
+  : let var patterns '=' exp { DefD $2 Nothing (reverse $3) $5 }
+  | over ty let var patterns '=' exp { DefD $4 (Just $2) (reverse $5) $7 }
   | let pattern '=' exp { LetD $2 $4 }
 
 exps :: { [Exp] }
@@ -90,13 +92,14 @@ pattern :: { Pattern }
   | '(' patterns ')' { wrap PatTuple $2 }
   | pattern ':' ty { PatType $1 $3 }
 
+ty :: { Type }
+  : var { TyVar $1 }
+  | ty '->' ty { TyFun $1 $3 }
+  | '(' tytuple ')' { wrap TyTuple $2 }
+
 tytuple :: { [Type] }
   : ty { [$1] }
   | tytuple ',' ty { $3 : $1 }
-
-ty :: { Type }
-  : var { TyVar $1 }
-  | '(' tytuple ')' { wrap TyTuple $2 }
 
 {
 

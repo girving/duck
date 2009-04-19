@@ -1,6 +1,10 @@
+over Int -> Int -> Int
 let f x y =
   let g y = y * y in
   x + g y
+
+over (Int -> Int) -> Int
+let h x = 3
 
 let x = 3
 let _ = 4

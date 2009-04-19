@@ -10,7 +10,7 @@ import Data.List
 type Prog = [Decl]
 
 data Decl
-  = DefD Var [Pattern] Exp
+  = DefD Var (Maybe Type) [Pattern] Exp
   | LetD Pattern Exp
   deriving Show
 
@@ -36,6 +36,7 @@ data Type
   = TyVar Var
   | TyTuple [Type]
   | TyApply Type [Type]
+  | TyFun Type Type
   deriving Show
 
 -- Pretty printing
@@ -43,7 +44,8 @@ data Type
 instance Pretty Decl where
   pretty (LetD p e) =
     text "let" <+> pretty p <+> equals <+> pretty e
-  pretty (DefD f args e) =
+  pretty (DefD f mt args e) =
+    maybe empty (\t -> text "over" <+> pretty t) mt $$
     text "let" <+> pretty f <+> hsep (map (guard 2) args) <+> equals
       $$ nest 2 (guard 0 e)
 
@@ -75,3 +77,4 @@ instance Pretty Type where
   pretty' (TyVar v) = pretty' v
   pretty' (TyTuple tl) = (2, sep $ intersperse (text ", ") $ map (guard 3) tl)
   pretty' (TyApply t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
+  pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
