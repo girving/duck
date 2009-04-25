@@ -2,8 +2,8 @@
 
 module Main where
 
-import Lex
 import Parse
+import ParseMonad
 import Pretty
 import System.Environment
 import qualified Ir
@@ -23,7 +23,7 @@ main = do
     _ -> error "expected zero or one arguments"
 
   putStr "\n-- AST --\n"
-  let ast = parse $ lexer code
+  ast <- runP parse code
   pprint ast
 
   putStr "\n-- IR --\n"

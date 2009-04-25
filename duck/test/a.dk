@@ -11,3 +11,14 @@ let _ = 4
 let a = f x x
 
 let g = \x -> x
+
+
+-- lists
+
+data List a = Nil | Cons a (List a)
+
+let sum l = case l of
+    Nil -> 0
+  | Cons x l -> x + sum l
+
+let ten = sum (Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil))))

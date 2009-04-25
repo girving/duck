@@ -36,3 +36,7 @@ instance Pretty [Char] where
 instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
   pretty = Map.foldWithKey (\k v s ->
     s $$ pretty k <+> equals <+> pretty v) empty
+
+vjoin :: Char -> [Doc] -> Doc
+vjoin _ [] = empty
+vjoin sep (x:rest) = vcat ((space <+> x) : map (char sep <+>) rest)
