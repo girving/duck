@@ -97,7 +97,9 @@ prelude = decTuples (Map.fromList binops) where
 instance Pretty Value where
   pretty' (ValInt i) = pretty' i
   pretty' (ValCons c []) = pretty' c
-  pretty' (ValCons c fields) = (1, pretty c <+> sep (map (guard 2) fields))
+  pretty' (ValCons c fields) | istuple c = (1,
+    hcat $ intersperse (text ", ") $ map (guard 2) fields)
+  pretty' (ValCons c fields) = (2, pretty c <+> sep (map (guard 2) fields))
   pretty' (ValFun _ v e) = -- conveniently ignore env
     (0, text "\\" <> pretty v <> text " -> " <> pretty e)
   pretty' (ValBuiltin v _ _ _) = pretty' v

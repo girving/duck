@@ -35,7 +35,6 @@ data Pattern
 
 data Type
   = TyVar Var
-  | TyTuple [Type]
   | TyApply CVar [Type]
   | TyFun Type Type
   deriving Show
@@ -87,6 +86,6 @@ instance Pretty Pattern where
 
 instance Pretty Type where
   pretty' (TyVar v) = pretty' v
-  pretty' (TyTuple tl) = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
+  pretty' (TyApply t tl) | istuple t = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
   pretty' (TyApply t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
   pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)

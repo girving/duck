@@ -179,6 +179,8 @@ instance Pretty Exp where
   pretty' (Let v e body) = (0,
     text "let" <+> pretty v <+> equals <+> guard 0 e <+> text "in"
       $$ guard 0 body)
+  pretty' (Cons c args) | istuple c = (1,
+    hcat $ intersperse (text ", ") $ map (guard 2) args)
   pretty' (Cons c args) = (50, pretty c <+> sep (map (guard 51) args))
   pretty' (Case e pl d) = (0,
     text "case" <+> pretty e <+> text "of" $$

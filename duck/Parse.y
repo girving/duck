@@ -164,7 +164,7 @@ pattuple :: { [Pattern] }
 
 ty :: { Type }
   : ty1 { $1 }
-  | tytuple { TyTuple (reverse $1) }
+  | tytuple { TyApply (tuple $1) (reverse $1) }
 
 ty1 :: { Type }
   : ty2 { $1 }
