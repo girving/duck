@@ -34,6 +34,7 @@ tokens :-
   \/      { c TokDiv }
   \(      { c TokLP }
   \)      { c TokRP }
+  ::      { c TokDColon }
   :       { c TokColon }
   \;      { c TokSep }
   \,      { c TokComma }
@@ -69,6 +70,7 @@ data Token
   | TokRP SrcLoc
   | TokSep SrcLoc
   | TokColon SrcLoc
+  | TokDColon SrcLoc
   | TokComma SrcLoc
   | TokDef SrcLoc
   | TokLet SrcLoc
@@ -104,6 +106,7 @@ instance Show Token where
     TokRP _ -> ")"
     TokSep _ -> ";"
     TokColon _ -> ":"
+    TokDColon _ -> ":"
     TokComma _ -> ","
     TokAny _ -> "_"
     TokLambda _ -> "\\"

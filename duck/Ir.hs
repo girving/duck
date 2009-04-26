@@ -19,6 +19,7 @@ type Type = Ast.Type
 
 data Decl
   = LetD Var Exp
+  | LetMD [Var] Exp
   | OverD Var Type Exp
   | Data CVar [Var] [(CVar, [Type])]
   deriving Show
@@ -50,16 +51,20 @@ pattern_vars s (Ast.PatCons _ pl) = foldl pattern_vars s pl
 pattern_vars s (Ast.PatType _ _) = s
 
 prog :: [Ast.Decl] -> [Decl]
-prog decls = concatMap (decl (prog_vars decls)) decls
+prog decls = map (decl (prog_vars decls)) decls
 
-decl :: InScopeSet -> Ast.Decl -> [Decl]
-decl s (Ast.DefD f Nothing args body) = [LetD f (expr s (Ast.Lambda args body))]
-decl s (Ast.DefD f (Just t) args body) = [OverD f t (expr s (Ast.Lambda args body))]
-decl s (Ast.LetD p e) = LetD v (expr s e) : decls where
-  decls = if vars == [v] then [] else [LetD v (m (Var v)) | v <- vars]
-  vars = Set.toList (pattern_vars Set.empty p) 
-  (v,_,m) = match s p
-decl _ (Ast.Data t args cons) = [Data t args cons]
+decl :: InScopeSet -> Ast.Decl -> Decl
+decl s (Ast.DefD f Nothing args body) = LetD f (expr s (Ast.Lambda args body))
+decl s (Ast.DefD f (Just t) args body) = OverD f t (expr s (Ast.Lambda args body))
+decl s (Ast.LetD Ast.PatAny e) = LetD ignored (expr s e)
+decl s (Ast.LetD (Ast.PatVar v) e) = LetD v (expr s e)
+decl s (Ast.LetD p e) = d where
+  d = case vars of
+    [v] -> LetD v (m (expr s e) (Var v))
+    vl -> LetMD vl (m (expr s e) (Cons (tuple vars) (map Var vars)))
+  vars = Set.toList (pattern_vars Set.empty p)
+  (_,_,m) = match s p
+decl _ (Ast.Data t args cons) = Data t args cons
 
 expr :: InScopeSet -> Ast.Exp -> Exp
 expr _ (Ast.Int i) = Int i
@@ -67,28 +72,35 @@ expr _ (Ast.Var v) = Var v
 expr s (Ast.Lambda args e) = foldr Lambda (m $ expr s' e) vl where
   (vl, s', m) = matches s args
 expr s (Ast.Apply f args) = foldl Apply (expr s f) (map (expr s) args)
-expr s (Ast.Let p e c) = Let v (expr s e) (m $ expr s' c) where
-  (v,s',m) = match s p
+expr s (Ast.Let p e c) = m (expr s e) (expr s' c) where
+  (_,s',m) = match s p
 expr s (Ast.Def f args body c) = Let f lambda (expr sc c) where
   (vl, s', m) = matches s args
   lambda = foldr Lambda (m $ expr s' body) vl
   sc = Set.insert f s
 expr s (Ast.Case e cl) = cases s (expr s e) cl
+expr s (Ast.TypeCheck e _) = expr s e
 
--- gives input variable, new in-scope set, matching transformer
-match :: InScopeSet -> Ast.Pattern -> (Var, InScopeSet, Exp -> Exp)
-match s Ast.PatAny = (ignored, s, id)
-match s (Ast.PatVar v) = (v, Set.insert v s, id)
+-- match processes a single pattern into an input variable, a new in-scope set,
+-- and a transformer that converts an input expression and a result expression
+-- into new expression representing the match
+match :: InScopeSet -> Ast.Pattern -> (Var, InScopeSet, Exp -> Exp -> Exp)
+match s Ast.PatAny = (ignored, s, match_helper ignored)
+match s (Ast.PatVar v) = (v, Set.insert v s, match_helper v)
 match s (Ast.PatType p _) = match s p
 match s (Ast.PatCons c args) = (x, s', m) where
   x = fresh s
   (vl, s', ms) = matches s args
-  m e = Case (Var x) [(c, vl, ms e)] Nothing
+  m em er = Case em [(c, vl, ms er)] Nothing
+
+match_helper v em er = case em of
+  Var v' | v == v' -> er
+  _ -> Let v em er
 
 -- in spirit, matches = fold match
 matches :: InScopeSet -> [Ast.Pattern] -> ([Var], InScopeSet, Exp -> Exp)
 matches s pl = foldr f ([],s,id) pl where
-  f p (vl,s,m) = (v:vl, s', m' . m) where
+  f p (vl,s,m) = (v:vl, s', m' (Var v) . m) where
     (v,s',m') = match s p
 
 -- cases turns a multilevel pattern match into iterated single level pattern match by
@@ -142,6 +154,8 @@ cases s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where
 instance Pretty Decl where
   pretty (LetD v e) =
     text "let" <+> pretty v <+> equals <+> nest 2 (pretty e)
+  pretty (LetMD vl e) =
+    text "let" <+> hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
   pretty (OverD v t e) =
     text "over" <+> pretty t $$
     text "let" <+> pretty v <+> equals <+> nest 2 (pretty e)
@@ -153,10 +167,15 @@ instance Pretty Exp where
   pretty' (Var v) = pretty' v
   pretty' (Lambda v e) = (5,
     text "\\" <> pretty v <+> text "->" <+> nest 2 (guard 5 e))
-  pretty' (Apply (Apply (Var v) e1) e2) | Just prec <- precedence v =
-    let V s = v in
-    (prec, (guard prec e1) <+> text s <+> (guard (prec+1) e2) )
-  pretty' (Apply e1 e2) = (50, guard 50 e1 <+> guard 51 e2)
+  pretty' (Apply e1 e2) = case (apply e1 [e2]) of
+    (Var v, [e1,e2]) | Just prec <- precedence v -> (prec,
+      let V s = v in
+      (guard prec e1) <+> text s <+> (guard (prec+1) e2))
+    (Var c, el) | Just n <- tuplelen c, n == length el -> (1,
+      hcat $ intersperse (text ", ") $ map (guard 2) el)
+    (e, el) -> (50, guard 50 e <+> hsep (map (guard 51) el))
+    where apply (Apply e a) al = apply e (a:al) 
+          apply e al = (e,al)
   pretty' (Let v e body) = (0,
     text "let" <+> pretty v <+> equals <+> guard 0 e <+> text "in"
       $$ guard 0 body)
@@ -164,6 +183,10 @@ instance Pretty Exp where
   pretty' (Case e pl d) = (0,
     text "case" <+> pretty e <+> text "of" $$
     vjoin '|' (map arm pl ++ def d)) where
-    arm (c, vl, e) = pretty c <+> sep (map pretty vl) <+> text "->" <+> pretty e
+    arm (c, vl, e) 
+      | istuple c = hcat (intersperse (text ", ") pvl) <+> end
+      | otherwise = pretty c <+> sep pvl <+> end
+      where pvl = map pretty vl
+            end = text "->" <+> pretty e
     def Nothing = []
     def (Just (v, e)) = [pretty v <+> text "->" <+> pretty e]

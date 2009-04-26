@@ -9,6 +9,7 @@ import Data.List hiding (lookup)
 import Var
 import Pretty
 import Text.PrettyPrint
+import qualified Ast
 import qualified Ir
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -21,60 +22,61 @@ data Value
   | ValFun Env Var Ir.Exp
   | ValBuiltin Var Int [Value] ([Value] -> Value)
 
--- Process a list of definitions into an environment.
--- This function is currently globally lazy, since it passes the
--- global environment to decl before it has been build.  Since
--- duck is _not_ implicitly lazy, this will need to be replaced
--- with an appropriate topological sort to find a cycle free
--- definition order.
+-- Process a list of definitions into the global environment.
+-- The global environment is threaded through function calls, so that
+-- functions are allowed to refer to variables defined later on as long
+-- as the variables are defined before the function is executed.
 prog :: [Ir.Decl] -> Env
-prog decls = env where
-  env = foldl (decl env) prelude decls
+prog = foldl decl prelude
 
 -- The first environment contains all global definitions,
 -- and isn't defined until after decl completes
-decl :: Env -> Env -> Ir.Decl -> Env
-decl globals env (Ir.LetD v e) = Map.insert v (expr globals e) env
-decl globals env (Ir.OverD v _ e) = Map.insert v (expr globals e) env
-decl _ env (Ir.Data _ _ cases) = foldl f env cases where
+decl :: Env -> Ir.Decl -> Env
+decl global (Ir.LetD v e) = Map.insert v (expr global Map.empty e) global
+decl global (Ir.LetMD vl e) = foldl (\s (v,d) -> Map.insert v d s) global (zip vl dl) where
+  dl = case expr global Map.empty e of
+    ValCons c dl | istuple c, length vl == length dl -> dl
+    d -> error ("expected "++show (length vl)++"-tuple, got "++show (pretty d))
+decl global (Ir.OverD v _ e) = Map.insert v (expr global Map.empty e) global
+decl global (Ir.Data _ _ cases) = foldl f global cases where
   f :: Env -> (CVar, [a]) -> Env
-  f env (c,args) = Map.insert c (expr Map.empty ir) env where
+  f global (c,args) = Map.insert c (expr global Map.empty ir) global where
     ir = foldr Ir.Lambda (Ir.Cons c (map Ir.Var vl)) vl
-    vl = vars 0 args
-    vars _ [] = []
-    vars i (_:rest) = V ("x" ++ show i) : vars (i+1) rest
+    vl = take (length args) standardVars
 
-lookup :: Env -> Var -> Value
-lookup env v | Just r <- Map.lookup v env = r
-             | otherwise = error ("unbound variable " ++ show v)
+lookup :: Env -> Env -> Var -> Value
+lookup global env v
+  | Just r <- Map.lookup v env = r -- check for local definitions first
+  | Just r <- Map.lookup v global = r -- fall back to global definitions
+  | otherwise = error ("unbound variable " ++ show v)
 
-expr :: Env -> Ir.Exp -> Value
-expr env = e where
-  e (Ir.Int i) = ValInt i
-  e (Ir.Var v) = lookup env v
-  e (Ir.Lambda v e) = ValFun env v e
-  e (Ir.Apply e1 e2) = case v1 of
-      ValBuiltin v arity args f ->
-        let args' = v2 : args in
-        if length args' == arity then f (reverse args')
-        else ValBuiltin v arity args' f
-      ValFun env' v e -> expr (Map.insert v v2 env') e
-      _ -> error ("expected a -> b, got " ++ show (pretty v1))
-      where v1 = expr env e1
-            v2 = expr env e2
-  e (Ir.Let v e body) = expr (Map.insert v (expr env e) env) body
-  e (Ir.Case e pl def) = case d of
-      ValCons c dl -> case find (\ (c',_,_) -> c == c') pl of
-        Just (_,vl,e') -> expr (foldl (\s (v,d) -> Map.insert v d s) env (zip vl dl)) e'
-        Nothing -> case def of
-          Nothing -> error ("pattern match failed")
-          Just (v,e') -> expr (Map.insert v d env) e' 
-      _ -> error ("expected block, got " ++ show (pretty d))
-      where d = expr env e
-  e (Ir.Cons c el) = ValCons c (map (expr env) el)
+expr :: Env -> Env -> Ir.Exp -> Value
+expr global env = exp where
+  exp (Ir.Int i) = ValInt i
+  exp (Ir.Var v) = lookup global env v
+  exp (Ir.Lambda v e) = ValFun env v e
+  exp (Ir.Apply e1 e2) = case v1 of
+    ValBuiltin v arity args f ->
+      let args' = v2 : args in
+      if length args' == arity then f (reverse args')
+      else ValBuiltin v arity args' f
+    ValFun env' v e -> expr global (Map.insert v v2 env') e
+    _ -> error ("expected a -> b, got " ++ show (pretty v1))
+    where v1 = exp e1
+          v2 = exp e2
+  exp (Ir.Let v e body) = expr global (Map.insert v (exp e) env) body
+  exp (Ir.Case e pl def) = case d of
+    ValCons c dl -> case find (\ (c',_,_) -> c == c') pl of
+      Just (_,vl,e') -> expr global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl dl)) e'
+      Nothing -> case def of
+        Nothing -> error ("pattern match failed: exp = " ++ show (pretty d) ++ ", cases = " ++ show pl)
+        Just (v,e') -> expr global (Map.insert v d env) e' 
+    _ -> error ("expected block, got " ++ show (pretty d))
+    where d = exp e
+  exp (Ir.Cons c el) = ValCons c (map exp el)
 
 prelude :: Env
-prelude = Map.fromList binops where
+prelude = decTuples (Map.fromList binops) where
   binops = map binop
     [ ("+", (+))
     , ("-", (-))
@@ -85,11 +87,16 @@ prelude = Map.fromList binops where
     v = V s
     f' (ValInt a) (ValInt b) = ValInt (f a b)
     f' a b = error ("expected (int, int), got (" ++ show (pretty a) ++ ", " ++ show (pretty b) ++ ")")
+  decTuples global = foldl decTuple global (0 : [2..5])
+  decTuple global i = decl global (Ir.Data c vars [(c, map Ast.TyVar vars)]) where
+    c = tuple vars
+    vars = take i standardVars
 
 -- Pretty printing
 
 instance Pretty Value where
   pretty' (ValInt i) = pretty' i
+  pretty' (ValCons c []) = pretty' c
   pretty' (ValCons c fields) = (1, pretty c <+> sep (map (guard 2) fields))
   pretty' (ValFun _ v e) = -- conveniently ignore env
     (0, text "\\" <> pretty v <> text " -> " <> pretty e)

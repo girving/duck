@@ -46,6 +46,11 @@ freshVars s n = (s', v : vl) where
   v = fresh s
   (s', vl) = freshVars (Set.insert v s) (n-1)
 
+standardVars :: [Var]
+standardVars = letters ++ others where
+  letters = [V [x] | x <- "abcdefghijklmnopqrstuvwxyz"]
+  others = [V ("t" ++ show i) | i <- [1..]]
+
 ignored = V "_"
 
 precedence :: Var -> Maybe Int
@@ -55,3 +60,15 @@ precedence (V op) = case head op of
   '*' -> Just 30
   '/' -> Just 30 
   _ -> Nothing
+
+
+tuple :: [a] -> Var
+tuple [] = V "()"
+tuple x = V (replicate (length x - 1) ',')
+
+istuple :: Var -> Bool
+istuple (V s) = all (',' ==) s
+
+tuplelen :: Var -> Maybe Int
+tuplelen (V s) | istuple (V s) = Just (1 + length s)
+tuplelen _ = Nothing

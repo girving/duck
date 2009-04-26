@@ -44,7 +44,7 @@ instance Monad P where
 
   fail msg = P $ \s -> ParseFail (ps_loc s, msg ++ case ps_rest s of
     [] -> " at end of file"
-    c:_ -> " at " ++ show c)
+    c:_ -> " before " ++ show c)
 
 runP :: P a -> String -> IO a
 runP parser input =

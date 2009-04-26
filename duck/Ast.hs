@@ -22,6 +22,7 @@ data Exp
   | Apply Exp [Exp]
   | Var Var
   | Int Int
+  | TypeCheck Exp Type
   | Case Exp [(Pattern,Exp)]
   deriving Show
 
@@ -67,22 +68,25 @@ instance Pretty Exp where
   pretty' (Apply (Var v) [e1, e2]) | Just prec <- precedence v =
     let V s = v in
     (prec, (guard prec e1) <+> text s <+> (guard (prec+1) e2) )
+  pretty' (Apply (Var c) el) | Just n <- tuplelen c, n == length el = (1,
+    hcat $ intersperse (text ", ") $ map (guard 2) el)
   pretty' (Apply e el) = (50, guard 51 e <+> hsep (map (guard 51) el))
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
   pretty' (Case e cases) = (0,
     text "case" <+> pretty e <+> text "of" $$ nest 2 (
       vjoin '|' (map (\ (p,e) -> pretty p <+> text "->" <+> pretty e) cases)))
+  pretty' (TypeCheck e t) = (2, guard 2 e <+> text "::" <+> guard 60 t)
 
 instance Pretty Pattern where
   pretty' (PatAny) = pretty' '_'
   pretty' (PatVar v) = pretty' v
-  pretty' (PatCons c pl) = (1, pretty c <+> sep (map (guard 2) pl))
-  -- pretty' (PatTuple pl) = (1, sep $ intersperse (text ", ") $ map (guard 2) pl)
+  pretty' (PatCons c pl) | istuple c = (1, hcat $ intersperse (text ", ") $ map (guard 2) pl)
+  pretty' (PatCons c pl) = (3, pretty c <+> sep (map (guard 4) pl))
   pretty' (PatType p t) = (2, guard 2 p <+> colon <+> guard 0 t)
 
 instance Pretty Type where
   pretty' (TyVar v) = pretty' v
-  pretty' (TyTuple tl) = (2, sep $ intersperse (text ", ") $ map (guard 3) tl)
+  pretty' (TyTuple tl) = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
   pretty' (TyApply t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
   pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)

@@ -1,5 +1,14 @@
 -- Duck parser
 
+-- shift/reduce conflicts: exactly 1
+--
+-- This conflict is due to nested case expressions:
+--   case x of _ -> case y of _ -> a | _ -> b
+-- Since we want the alternative to bind to the inner case, resolving
+-- the conflict via shift is good.  Removing this would be annoying
+-- since we'd need two kinds of case productions, and it will also
+-- vanish when we add whitespace dependent syntax.
+
 {
 {-# OPTIONS_GHC -w #-}
 
@@ -29,13 +38,14 @@ import ParseMonad
   in   { TokIn _ }
   case { TokCase _ }
   of   { TokOf _ }
-  ';'  { TokSep _ }
+  -- ';'  { TokSep _ }
   '='  { TokEq _ }
   '+'  { TokPlus _ }
   '-'  { TokMinus _ }
   '*'  { TokTimes _ }
   '/'  { TokDiv _ }
-  ':'  { TokColon _ }
+  -- ':'  { TokColon _ }
+  '::' { TokDColon _ }
   ','  { TokComma _ }
   '('  { TokLP _ }
   ')'  { TokRP _ }
@@ -50,6 +60,8 @@ import ParseMonad
 %left '*' '/'
 
 %%
+
+--- Toplevel stuff ---
 
 prog :: { Prog }
   : decls { reverse $1 }
@@ -77,14 +89,25 @@ constructors :: { [(CVar,[Type])] }
   | constructors '|'  constructor { $3 : $1 }
 
 constructor :: { (CVar,[Type]) }
-  : cvar ty2s { ($1,reverse $2) }
+  : cvar ty3s { ($1,reverse $2) }
+
+--- Expressions ---
 
 exp :: { Exp }
   : let var patterns '=' exp in exp { Def $2 (reverse $3) $5 $7 }
   | let pattern '=' exp in exp { Let $2 $4 $6 }
   | '\\' patterns '->' exp { Lambda (reverse $2) $4 }
   | case exp of cases { Case $2 (reverse $4) }
-  | exp1 { $1 }
+  | exptuple { Apply (Var (tuple $1)) (reverse $1) }
+  | exp0 { $1 }
+
+exptuple :: { [Exp] }
+  : exp0 ',' exp0 { [$3,$1] }
+  | exptuple ',' exp0 { $3 : $1 }
+
+exp0 :: { Exp }
+  : exp1 { $1 }
+  | exp1 '::' ty3 { TypeCheck $1 $3 }
 
 exp1 :: { Exp }
   : exp1 '+' exp1 { binop $1 $2 $3 }
@@ -108,54 +131,60 @@ cases :: { [(Pattern,Exp)] }
   : pattern '->' exp { [($1,$3)] }
   | cases '|' pattern '->' exp { ($3,$5) : $1 }
 
+--- Patterns ---
+
 patterns :: { [Pattern] }
-  : pattern1 { [$1] }
-  | patterns pattern1 { $2 : $1 }
+  : pattern2 { [$1] }
+  | patterns pattern2 { $2 : $1 }
 
 -- allow empty
 patterns_ :: { [Pattern] }
   : {--} { [] }
-  | patterns_ pattern1 { $2 : $1 }
+  | patterns_ pattern2 { $2 : $1 }
 
 pattern :: { Pattern }
   : pattern1 { $1 }
-  | cvar patterns_ { PatCons $1 (reverse $2) }
-  | pattern1 ':' ty2 { PatType $1 $3 }
+  | pattuple { PatCons (tuple $1) (reverse $1) }
 
 pattern1 :: { Pattern }
+  : pattern2 { $1 }
+  | cvar patterns_ { PatCons $1 (reverse $2) }
+  | pattern2 '::' ty3 { PatType $1 $3 }
+
+pattern2 :: { Pattern }
   : var { PatVar $1 }
   | '_' { PatAny }
-  | '(' pattuple ')' { wrap (\x -> PatCons (tuple x) x) $2 }
+  | '(' pattern ')' { $2 }
 
 pattuple :: { [Pattern] }
-  : pattern { [$1] }
-  | pattuple ',' pattern { $3 : $1 }
+  : pattern1 ',' pattern1 { [$3,$1] }
+  | pattuple ',' pattern1 { $3 : $1 }
+
+--- Tuples ---
 
 ty :: { Type }
   : ty1 { $1 }
-  | ty1 '->' ty { TyFun $1 $3 }
+  | tytuple { TyTuple (reverse $1) }
 
 ty1 :: { Type }
   : ty2 { $1 }
-  | cvar ty2s { TyApply $1 (reverse $2) }
+  | ty2 '->' ty1 { TyFun $1 $3 }
 
 ty2 :: { Type }
+  : ty3 { $1 }
+  | cvar ty3s { TyApply $1 (reverse $2) }
+
+ty3 :: { Type }
   : var { TyVar $1 }
-  | '(' tytuple ')' { wrap TyTuple $2 }
+  | '(' ty ')' { $2 }
 
 tytuple :: { [Type] }
-  : ty { [$1] }
-  | tytuple ',' ty { $3 : $1 }
+  : ty1 ',' ty1 { [$3,$1] }
+  | tytuple ',' ty1 { $3 : $1 }
 
-{-
-tys :: { [Type] }
+ty3s :: { [Type] }
   : {--} { [] }
-  | tys ty1 { $2 :: $1 }
--}
-
-ty2s :: { [Type] }
-  : {--} { [] }
-  | ty2s ty2 { $2 : $1 }
+  | ty3s ty3 { $2 : $1 }
 
 {
 
@@ -166,12 +195,5 @@ parseError t = fail ("syntax error at '" ++ show t ++ "'")
 
 binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
-
-wrap :: ([a] -> a) -> [a] -> a
-wrap f [x] = x
-wrap f xl = f $ reverse xl
-
-tuple :: [a] -> Var
-tuple x = V (replicate (length x - 1) ',')
 
 }

@@ -10,8 +10,10 @@ all: duck
 info: Parse.info
 
 .PHONY: duck
-duck: Duck.hs Parse.hs Lex.hs
+duck: Duck.hs others
 	$(GHC) $(GHCFLAGS) --make $< -o $@
+
+others: Parse.hs Lex.hs
 
 %.hs: %.y
 	$(HAPPY) $(HAPPYFLAGS) $< -o $@
@@ -24,4 +26,4 @@ duck: Duck.hs Parse.hs Lex.hs
 
 .PHONY: clean
 clean:
-	rm *.o *.hi *.info duck Parse.hs 
+	rm -f *.o *.hi *.info duck Parse.hs 

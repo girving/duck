@@ -33,3 +33,7 @@ main = do
   putStr "\n-- Result --\n"
   let env = Interp.prog ir
   pprint env
+
+-- for ghci use
+run :: String -> IO ()
+run file = withArgs [file] main
