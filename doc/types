@@ -1,0 +1,66 @@
+Notes on the duck type system:
+
+    let sum l = case l of
+        Nil -> 0
+      | Cons x l -> x + sum l
+
+Here's some type reasoning with conventional unify:
+
+    sum :: (sum :: List a -> b, (+) :: a -> b -> c) => List a -> unify Int c     -- convert to a type program
+    sum :: (sum :: List Int -> b, (+) :: Int -> b -> Int) => List Int -> Int     -- apply unify
+    sum :: (sum :: List Int -> Int, (+) :: Int -> Int -> Int) => List Int -> Int -- simplify by noticing the recursion?
+    sum :: ((+) :: Int -> Int -> Int) => List Int -> Int                         -- drop satisfied constraint?
+
+Now assume unify can do arbitrary stuff:
+
+    sum :: (sum :: List a -> b, (+) :: a -> b -> c) => List a -> unify a c -- same starting point
+
+Here's what sum looks like as a type program:
+
+    sum' (List a) = unify Zero (a +' (sum (List a)))
+    b = unify Zero (a +' b)
+'
+    b0 = 0
+    bn = unify 0 (a + b_{n-1})
+
+    b0 = 0
+    b1 = unify 0 (a + 0) = unify 0 a = a 
+    b2 = unify a (a + a) = unify a a = a
+
+    b = unify 0 (a + b)
+
+    b0 = Void
+    b1 = unify 0 (a + Void) = 0
+    b2 = unify 0 (a + 0) = a
+    b3 = unify 0 (a + a) = a
+
+In other words, functions produce a bunch of mutually recursive equations.  To solve these, we initially
+assume that all functions return void, which is equivalent to assuming they do not return.  Intuitively,
+this represents the last iteration in the recursive call tree where no calls are made, and the types of
+functions do not matter.  These equations are then iterated until a fixed point is reached, or until a
+set number of iterations passes and we decide the iteration isn't going to converge.
+
+Presumably, this means that our types are the least fixed points of the iteration.
+
+NOTE FOR THE FUTURE: Obviously, this scheme will fail to converge in many interesting situations
+(e.g., GADTs).  However, it might be possible that adding appropriate type annotations to these
+cases will make them converge for potentially quite general kinds of types.  This seems worth
+exploring.
+
+Amusing note: trivially nonterminating programs have Void return type, which proves that they
+do not terminate normally.  This is analogous to empty data structures like [], which has type [Void].
+
+    let f x = f x
+    f' a = f' a
+    b = Void
+
+What about higher order programs?  Here's fold:
+
+    let fold f x l = case l of
+        Nil -> x
+      | Cons y l -> fold f (f x y) l
+
+    let sum = fold (+) 0
+    let product = fold (*) 1
+
+    IMPORTANT: CONTINUE HERE

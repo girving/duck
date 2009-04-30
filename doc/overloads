@@ -1,0 +1,112 @@
+Notes on duck overload resolution:
+
+For any given function call in duck, we will often have a slew of possible
+overloaded versions to choose between.  Therefore, we need a coherent policy
+with which to choose between them.  There are two main (competing) design
+features that one would like in such a policy:
+
+1. In does what one wants without a lot of unnecessary work.
+2. It is unsurprising, in the sense that adding or removing an overload does
+   not change the behavior of the program in unexpected ways.
+
+Types in duck look like
+
+  data Type
+    = TyVar Var
+    | TyApply CVar [Type]
+    | TyFun Type Type
+
+I.e., they are either type variables (indicated with a lower case letter such
+as "a", "b", etc.), type constructors applied to some types (such as Int,
+List Int, etc.), or function types (a -> b).  Here are a few principles we
+need in the overloading policy:
+
+1. It is impossible to overload on a contravariant part of an argument type,
+   which in our case means no overloading on the input arguments to input
+   functions.  This is a direct consequence of the "no overloading on return
+   types" rule (the two are equivalent by CPS transform).
+
+2. Overload resolution can depend in a coupled fashion on more than one input
+   argument, but it must be unambiguous whether or not to wait for more
+   arguments or start executing some code.  For example, the following
+   overloads are not allowed:
+
+     over Int -> (Int -> Int)
+     let f i = let j = 2*i in \x -> x + j
+
+     over Int -> Float -> Float
+     let f i x = x + 2*i
+
+   This is because the expression "f 1" either builds a closure or does some
+   immediate computation.  In general the uncertain computation could take
+   an arbitrarily long time, so we don't want to wait until the next argument
+   is added to retroactively decide whether to do it or not.
+
+   Note that the parentheses in "Int -> (Int -> Int)" have no effect.  The
+   number of valid overloaded arguments is determined from the structure of
+   the expression defining the function, which produces arity 1 in the first
+   case and arity 2 in the second.
+
+3. Specialization is allowed: it is useful and valid to declare a very general
+   overload and add faster versions for specific argument types.
+
+With these notes in mind, here is a rough sketch of the overload resolution
+algorithm:
+
+1. We begin with a set of overloads {f_i} to choose between, and zero passed
+   arguments.  Each overload has a type of the form
+
+     type f_i = t_i1 -> ... -> t_{i,n_i} -> ...
+
+   where n_i is the overloadable arity of f_i and t_ij are it's argument type
+   specifications.  The set of {t_ij} for fixed i will in general share type
+   variables, as in "contains :: List a -> a -> Bool".  For now, we will
+   disallow direct overloading based on the result types of functions as well,
+   so all function types in t_ij collapse into a single type (. -> .).
+
+2. As each argument is passed to the function, it is unified against the set
+   of available overloads, which will eliminate some overloads and result in
+   concrete type variable bindings for others.
+
+3. If the arity of any surviving overload is exhausted, it is an error if any
+   overload of larger arity remains.  Otherwise, all remaining overloads have
+   the same arity.  As a trivial special case: all overloads must have positive
+   arity; it is invalid to overload a function with a non-function.
+
+4. The remaining overload types are partially ordered by the "specialization"
+   relation.  If a most specific overload exists, it is chosen, otherwise it
+   is an error.
+
+That's a rather long winded explanation for a relatively simple idea, but that's
+fine since this is a page of notes.
+
+ISSUES AND NOTES:
+
+1. I've ignored the issue of user-defined unification.  User-defined unification
+   seems very useful for overload resolution, but it introduces a bunch of
+   complexity and will have to wait for later.
+
+2. Requiring a unique maximally specialized overload is a design decision, and
+   different multimethod capable languages do this different ways.  I expect
+   that the surprise factor resulting from some arbitrary choice of which
+   overload to choose would be great, and hope that the extra work required
+   to dodge the overloads (namely by adding an overload with the intersection
+   type) will be fairly small.  Only actual experience in using the language
+   will tell.
+
+3. I should probably search for discussion of (2) related to Common Lisp or Dylan.
+
+4. The above discussion ignores the issue of which overloads are in scope.
+   At this point (before any type inference has been implemented), I can
+   punt on this question and just use the set of overloads currently in the
+   global table.  There are a variety of approaches to this, and the best
+   solution is probably some mix of several of them:
+
+    a. Require all overloads to be known before any overload resolution in that
+       family takes place.
+    b. Allow new overloads to change the behavior of code, so that a function
+       executed/compiled/specialized before and after a new overload appears
+       can have different results.
+    c. Record the set of concrete overload resolution performed in the past, and
+       make it an error if would change the behavior of a function call (or type
+       elaboration, once we have type inference).
