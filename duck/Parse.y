@@ -17,6 +17,7 @@ module Parse (lex, parse) where
 import Var
 import Lex
 import Ast
+import Type
 import ParseMonad
 
 }
@@ -172,7 +173,7 @@ ty1 :: { Type }
 
 ty2 :: { Type }
   : ty3 { $1 }
-  | cvar ty3s { TyApply $1 (reverse $2) }
+  | cvar ty3s { tyapply $1 (reverse $2) }
 
 ty3 :: { Type }
   : var { TyVar $1 }
@@ -195,5 +196,11 @@ parseError t = fail ("syntax error at '" ++ show t ++ "'")
 
 binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
+
+tyapply :: CVar -> [Type] -> Type
+tyapply (V "Int") [] = TyInt
+tyapply (V "Void") [] = TyVoid
+tyapply c args = TyApply c args
+
 
 }

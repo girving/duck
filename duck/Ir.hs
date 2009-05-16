@@ -3,6 +3,7 @@
 module Ir where
 
 import Var
+import Type
 import qualified Ast
 
 import qualified Data.Set as Set
@@ -14,8 +15,6 @@ import Data.List
 import Data.Either
 import Data.Function
 import GHC.Exts
-
-type Type = Ast.Type
 
 data Decl
   = LetD Var Exp
@@ -32,6 +31,14 @@ data Exp
   | Let Var Exp Exp
   | Cons CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
+  | Binop Binop Exp Exp
+  deriving Show
+
+data Binop
+  = IntAddOp
+  | IntSubOp
+  | IntMulOp
+  | IntDivOp
   deriving Show
 
 -- Ast to IR conversion
@@ -192,3 +199,19 @@ instance Pretty Exp where
             end = text "->" <+> pretty e
     def Nothing = []
     def (Just (v, e)) = [pretty v <+> text "->" <+> pretty e]
+  pretty' (Binop op e1 e2) | prec <- binopPrecedence op = (prec,
+    guard prec e1 <+> text (binopString op) <+> guard prec e2)
+
+binopPrecedence :: Binop -> Int
+binopPrecedence op = case op of
+  IntAddOp -> 20
+  IntSubOp -> 20
+  IntMulOp -> 30
+  IntDivOp -> 30
+
+binopString :: Binop -> String
+binopString op = case op of
+  IntAddOp -> "+"
+  IntSubOp -> "-"
+  IntMulOp -> "*"
+  IntDivOp -> "/"

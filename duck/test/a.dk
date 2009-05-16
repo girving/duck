@@ -27,3 +27,24 @@ let sum l = case l of
 let list = Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil)))
 let ten = sum list
 let Cons one (Cons two _) = list
+
+over (a -> b) -> List a -> List b
+let map f l = case l of
+    Nil -> Nil
+  | Cons x l -> Cons (f x) (map f l)
+
+-- unordered binary tree
+
+data Tree a = Leaf a | Node (Tree a) (Tree a) 
+
+over (a -> b) -> Tree a -> Tree b
+let map f l = case l of
+    Leaf x -> Leaf (f x)
+  | Node x y -> Node (map f x) (map f y)
+
+-- test list/tree overloading
+
+let negate x = 0 - x
+
+let la = map negate (Cons 3 (Cons 4 Nil))
+let ta = map negate (Node (Leaf 1) (Node (Leaf 2) (Leaf 3)))

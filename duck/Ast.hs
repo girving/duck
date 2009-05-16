@@ -3,6 +3,7 @@
 module Ast where
 
 import Var
+import Type
 import Pretty
 import Text.PrettyPrint
 import Data.List
@@ -31,12 +32,6 @@ data Pattern
   | PatVar Var
   | PatCons CVar [Pattern]
   | PatType Pattern Type
-  deriving Show
-
-data Type
-  = TyVar Var
-  | TyApply CVar [Type]
-  | TyFun Type Type
   deriving Show
 
 -- Pretty printing
@@ -83,9 +78,3 @@ instance Pretty Pattern where
   pretty' (PatCons c pl) | istuple c = (1, hcat $ intersperse (text ", ") $ map (guard 2) pl)
   pretty' (PatCons c pl) = (3, pretty c <+> sep (map (guard 4) pl))
   pretty' (PatType p t) = (2, guard 2 p <+> colon <+> guard 0 t)
-
-instance Pretty Type where
-  pretty' (TyVar v) = pretty' v
-  pretty' (TyApply t tl) | istuple t = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
-  pretty' (TyApply t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
-  pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
