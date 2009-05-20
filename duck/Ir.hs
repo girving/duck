@@ -1,6 +1,13 @@
+{-# LANGUAGE PatternGuards #-}
 -- Duck Intermediate Representation
 
-module Ir where
+module Ir 
+  ( Decl(..)
+  , Exp(..)
+  , Binop(..)
+  , prog
+  , binopString
+  ) where
 
 import Var
 import Type

@@ -1,6 +1,19 @@
+{-# LANGUAGE PatternGuards #-}
 -- Duck Variables
 
-module Var where
+module Var 
+  ( Var(..)
+  , CVar
+  , InScopeSet
+  , fresh
+  , freshVars
+  , standardVars
+  , ignored
+  , precedence
+  , tuple
+  , istuple
+  , tuplelen
+  ) where
 
 import Pretty
 import Text.PrettyPrint
@@ -10,7 +23,7 @@ import Data.List
 import Data.Set (Set)
 import qualified Data.Set as Set
 
-newtype Var = V String
+newtype Var = V String deriving (Eq, Ord)
 type CVar = Var
 
 instance Show Var where
@@ -22,12 +35,6 @@ instance Pretty Var where
     if isAlpha c || c == '_' then
       text v
     else parens $ text v)
-
-instance Eq Var where
-  (==) (V a) (V b) = a == b
-
-instance Ord Var where
-  compare (V a) (V b) = compare a b
 
 type InScopeSet = Set Var
   

@@ -1,8 +1,11 @@
+{-# LANGUAGE PatternGuards #-}
 -- Duck interpreter
 
 -- For now, this is dynamically typed
 
-module Interp where
+module Interp 
+  ( prog
+  ) where
 
 import Prelude hiding (lookup)
 import Data.List hiding (lookup)

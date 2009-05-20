@@ -1,5 +1,5 @@
 GHC = ghc
-GHCFLAGS = -O -Wall -Werror -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -XPatternGuards -XFlexibleInstances -XScopedTypeVariables
+GHCFLAGS = -O -Wall -Werror -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing
 HAPPY = happy
 HAPPYFLAGS = -agc
 ALEX = alex

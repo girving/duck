@@ -129,15 +129,15 @@ alexGetChar s = case ps_rest s of
 
 lexer :: P Token
 lexer = do
-  s <- getState
+  s <- get
   case alexScan s 0 of
     AlexEOF -> return TokEOF
     AlexError _ -> fail "lexical error"
     AlexSkip s' _ -> do
-      setState s'
+      put s'
       lexer
     AlexToken s' len action -> do
-      setState s'
+      put s'
       action s len
 
 -- happy wants the lexer in continuation form

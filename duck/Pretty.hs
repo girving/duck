@@ -1,6 +1,12 @@
+{-# LANGUAGE FlexibleInstances #-}
 -- Pretty printing typeclass
 
-module Pretty where
+module Pretty 
+  ( Pretty(..)
+  , pprint
+  , guard
+  , vjoin
+  ) where
 
 import Text.PrettyPrint
 import qualified Data.Map as Map

@@ -1,6 +1,14 @@
+{-# LANGUAGE MultiParamTypeClasses #-}
 -- Duck Lexer/Parser Monads
 
-module ParseMonad where
+module ParseMonad 
+  ( SrcLoc
+  , move
+  , P
+  , ParseState(..)
+  , runP
+  , get, put
+  ) where
 
 -- Simple parser monad lifted from a combination of a happy example and Language.Haskell
 -- This accomplishes three things:
@@ -9,6 +17,7 @@ module ParseMonad where
 --   3. It deals with success/failure.
 
 import Util
+import Control.Monad.State.Class
 
 data SrcLoc = SrcLoc !Int !Int -- line and column numbers
 
@@ -52,8 +61,7 @@ runP parser input =
     ParseOk _ a -> return a
     ParseFail (l, s) -> die (show l ++ ": " ++ s)
 
-getState :: P ParseState
-getState = P $ \s -> ParseOk s s
+instance MonadState ParseState P where
+  get = P $ \s -> ParseOk s s
 
-setState :: ParseState -> P ()
-setState s = P $ \_ -> ParseOk s ()
+  put s = P $ \_ -> ParseOk s ()

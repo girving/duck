@@ -1,6 +1,12 @@
+{-# LANGUAGE PatternGuards #-}
 -- Duck Abstract Syntax Tree
 
-module Ast where
+module Ast 
+  ( Prog
+  , Decl(..)
+  , Exp(..)
+  , Pattern(..)
+  ) where
 
 import Var
 import Type

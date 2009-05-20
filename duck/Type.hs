@@ -1,6 +1,9 @@
 -- Duck Types
 
-module Type where
+module Type 
+  ( Type(..)
+  , unifyList
+  ) where
 
 import Var
 import Pretty
@@ -27,8 +30,8 @@ type TypeEnv = Map Var Type
 --   2. unify treats all function types as the same, since my first use of this
 --      is for overload resolution, and you can't overload on a function type.
 --      Again, I'll probably have to fix this later.
-unify :: Type -> Type -> Maybe TypeEnv
-unify = unify' Map.empty
+_unify :: Type -> Type -> Maybe TypeEnv
+_unify = unify' Map.empty
 
 unify' :: TypeEnv -> Type -> Type -> Maybe TypeEnv
 unify' env (TyVar v) t = Just (Map.insert v t env)
