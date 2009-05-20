@@ -14,11 +14,16 @@ $digit = 0-9
 $lower = [a-z_]
 $upper = [A-Z]
 $alphanum = [a-zA-Z0-9_']
+$symbol = [! \# \$ \% & \* \+ \. \\ \/ \< = > \? @ \^ \| \- \~ :]
 
 tokens :-
 
   $white+ ;
   \-\-.*  ;
+  import  { c TokImport }
+  infixl  { c (TokInfix Leftfix) }
+  infixr  { c (TokInfix Rightfix) }
+  infix   { c (TokInfix Nonfix) }
   def     { c TokDef }
   data    { c TokData }
   over    { c TokOver }
@@ -26,24 +31,15 @@ tokens :-
   in      { c TokIn }
   case    { c TokCase }
   of      { c TokOf }
-  =       { c TokEq }
-  \->     { c TokArrow }
-  \+      { c TokPlus }
-  \-      { c TokMinus }
-  \*      { c TokTimes }
-  \/      { c TokDiv }
   \(      { c TokLP }
   \)      { c TokRP }
-  ::      { c TokDColon }
-  :       { c TokColon }
   \;      { c TokSep }
   \,      { c TokComma }
   _       { c TokAny }
-  \\      { c TokLambda }
-  \|      { c TokOr }
   $digit+ { v (TokInt . read) }
   $lower $alphanum* { v (TokVar . V) }
   $upper $alphanum* { v (TokCVar . V) }
+  $symbol+          { v sym }
 
 {
 
@@ -55,21 +51,27 @@ c t s _ = return $ t (ps_loc s)
 v :: (String -> SrcLoc -> Token) -> Action
 v t s len = return $ t (take len (ps_rest s)) (ps_loc s)
 
+sym :: String -> SrcLoc -> Token
+sym "=" = TokEq
+sym "->" = TokArrow
+sym "::" = TokDColon
+sym "\\" = TokLambda
+sym "|" = TokOr
+sym s@(':':_) = TokCSym (V s)
+sym s = TokSym (V s)
+
 -- Each action has type :: String -> Token
 
 data Token
   = TokVar Var SrcLoc
   | TokCVar Var SrcLoc
+  | TokSym Var SrcLoc
+  | TokCSym Var SrcLoc
   | TokInt Int SrcLoc
   | TokEq SrcLoc
-  | TokPlus SrcLoc
-  | TokMinus SrcLoc
-  | TokTimes SrcLoc
-  | TokDiv SrcLoc
   | TokLP SrcLoc
   | TokRP SrcLoc
   | TokSep SrcLoc
-  | TokColon SrcLoc
   | TokDColon SrcLoc
   | TokComma SrcLoc
   | TokDef SrcLoc
@@ -83,12 +85,16 @@ data Token
   | TokLambda SrcLoc
   | TokArrow SrcLoc
   | TokOr SrcLoc
+  | TokImport SrcLoc
+  | TokInfix Fixity SrcLoc
   | TokEOF
 
 instance Show Token where
   show t = case t of
     TokVar (V v) _ -> v
     TokCVar (V v) _ -> v
+    TokSym (V v) _ -> v
+    TokCSym (V v) _ -> v
     TokInt i _ -> show i
     TokDef _ -> "def"
     TokLet _ -> "let"
@@ -97,15 +103,14 @@ instance Show Token where
     TokIn _ -> "in"
     TokCase _ -> "case"
     TokOf _ -> "of"
+    TokImport _ -> "import"
+    TokInfix Leftfix _ -> "infixl"
+    TokInfix Rightfix _ -> "infixr"
+    TokInfix Nonfix _ -> "infix"
     TokEq _ -> "="
-    TokPlus _ -> "+"
-    TokMinus _ -> "-"
-    TokTimes _ -> "*"
-    TokDiv _ -> "/"
     TokLP _ -> "("
     TokRP _ -> ")"
     TokSep _ -> ";"
-    TokColon _ -> ":"
     TokDColon _ -> ":"
     TokComma _ -> ","
     TokAny _ -> "_"
@@ -125,7 +130,8 @@ alexGetChar s = case ps_rest s of
   c:r -> Just (c, ParseState
     { ps_loc = move (ps_loc s) c
     , ps_rest = r
-    , ps_prev = c } )
+    , ps_prev = c
+    , ps_prec = ps_prec s } )
 
 lexer :: P Token
 lexer = do

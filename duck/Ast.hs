@@ -20,6 +20,7 @@ data Decl
   = DefD Var (Maybe Type) [Pattern] Exp
   | LetD Pattern Exp
   | Data CVar [Var] [(CVar,[Type])]
+  | Infix Int Fixity [Var]
   deriving Show
 
 data Exp
@@ -55,6 +56,13 @@ instance Pretty Decl where
     text "data" <+> pretty t <+> hsep (map pretty args) $$ nest 2 (vcat (
       (equals <+> f hd) : map (\x -> text "|" <+> f x) tl))
     where f (c,args) = hsep (pretty c : map (guard 60) args)
+  pretty (Infix p d syms) =
+    text s <+> int p <+> hcat (intersperse (text ", ") (map (\ (V s) -> text s) syms))
+    where 
+    s = case d of
+      Leftfix -> "infixl"
+      Rightfix -> "infixr"
+      Nonfix -> "infix"
 
 instance Pretty Exp where
   pretty' (Let p e body) = (0,

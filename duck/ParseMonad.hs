@@ -6,6 +6,7 @@ module ParseMonad
   , move
   , P
   , ParseState(..)
+  , parseFile
   , runP
   , get, put
   ) where
@@ -18,18 +19,23 @@ module ParseMonad
 
 import Util
 import Control.Monad.State.Class
+import Control.Monad.Trans
+import Var
+import System.FilePath
+import Data.Map (Map)
+import qualified Data.Map as Map
 
-data SrcLoc = SrcLoc !Int !Int -- line and column numbers
+data SrcLoc = SrcLoc String !Int !Int -- filename, line and column numbers
 
 instance Show SrcLoc where
-  show (SrcLoc line col) = show line ++ ':': show col
+  show (SrcLoc file line col) = file ++ ':' : show line ++ ':': show col
 
-start :: SrcLoc
-start = SrcLoc 1 1
+start :: String -> SrcLoc
+start file = SrcLoc file 1 1
 
 move :: SrcLoc -> Char -> SrcLoc
-move (SrcLoc l _) '\n' = SrcLoc (l+1) 1
-move (SrcLoc l c) _    = SrcLoc l (c+1)
+move (SrcLoc f l _) '\n' = SrcLoc f (l+1) 1
+move (SrcLoc f l c) _    = SrcLoc f l (c+1)
 
 data ParseResult a
   = ParseOk ParseState a
@@ -40,28 +46,51 @@ type ParseError = (SrcLoc, String)
 data ParseState = ParseState {
   ps_loc  :: !SrcLoc, -- position at current input location
   ps_rest :: String,  -- the current input
-  ps_prev :: !Char }  -- the character before the input
+  ps_prev :: !Char,   -- the character before the input
+  ps_prec :: Map Var PrecFix } -- precedence and associativity of binary operators
 
-newtype P a = P { unP :: ParseState -> ParseResult a }
+newtype P a = P { unP :: ParseState -> IO (ParseResult a) }
 
 instance Monad P where
-  m >>= k = P $ \s -> case (unP m) s of
-    ParseOk s a -> (unP (k a)) s
-    ParseFail e -> ParseFail e
+  m >>= k = P $ \s -> (unP m) s >>= \r ->
+    case r of
+      ParseOk s a -> (unP (k a)) s
+      ParseFail e -> return (ParseFail e)
 
-  return a = P $ \s -> ParseOk s a
+  return a = P $ \s -> return (ParseOk s a)
 
-  fail msg = P $ \s -> ParseFail (ps_loc s, msg ++ case ps_rest s of
+  fail msg = P $ \s -> return $ ParseFail (ps_loc s, msg ++ case ps_rest s of
     [] -> " at end of file"
     c:_ -> " before " ++ show c)
 
-runP :: P a -> String -> IO a
-runP parser input =
-  case (unP parser) (ParseState start input '\n') of 
-    ParseOk _ a -> return a
-    ParseFail (l, s) -> die (show l ++ ": " ++ s)
+instance MonadIO P where
+  liftIO a = P $ \s -> a >>= \r -> return (ParseOk s r)
+
+parseString :: P a -> String -> String -> P a
+parseString parse file input = do
+  s <- get
+  put (ParseState (start file) input '\n' Map.empty)
+  r <- parse
+  s' <- get
+  put (s { ps_prec = ps_prec s' }) -- precedence declarations should carry through
+  return r
+
+parseFile :: P a -> String -> P a
+parseFile parse file = do
+  s <- get
+  let SrcLoc current _ _ = ps_loc s
+      dir = dropFileName current
+  input <- liftIO $ readFile (dir </> file++".dk")
+  parseString parse file input
+ 
+runP :: P a -> String -> String -> IO a
+runP parse file input = do
+  (unP parse) (ParseState (start file) input '\n' Map.empty) >>= \r ->
+    case r of
+      ParseOk _ a -> return a
+      ParseFail (l, s) -> die (show l ++ ": " ++ s)
 
 instance MonadState ParseState P where
-  get = P $ \s -> ParseOk s s
+  get = P $ \s -> return $ ParseOk s s
 
-  put s = P $ \_ -> ParseOk s ()
+  put s = P $ \_ -> return $ ParseOk s ()

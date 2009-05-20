@@ -6,6 +6,7 @@ import Parse
 import ParseMonad
 import Pretty
 import System.Environment
+import System.FilePath
 import qualified Ir
 import qualified Interp
 
@@ -15,15 +16,18 @@ newline = putStrLn ""
 
 main = do
   args <- getArgs
-  code <- case args of
+  (file,code) <- case args of
     [] -> do
       putStrLn header
-      getContents
-    [file] -> readFile file
+      c <- getContents
+      return ("<stdin>",c)
+    [file] -> do
+      c <- readFile file
+      return (dropExtension file, c)
     _ -> error "expected zero or one arguments"
 
   putStr "\n-- AST --\n"
-  ast <- runP parse code
+  ast <- runP parse file code
   pprint ast
 
   putStr "\n-- IR --\n"

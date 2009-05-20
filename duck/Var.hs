@@ -4,6 +4,9 @@
 module Var 
   ( Var(..)
   , CVar
+  , Precedence
+  , Fixity(..)
+  , PrecFix
   , InScopeSet
   , fresh
   , freshVars
@@ -25,6 +28,10 @@ import qualified Data.Set as Set
 
 newtype Var = V String deriving (Eq, Ord)
 type CVar = Var
+
+type Precedence = Int
+data Fixity = Leftfix | Nonfix | Rightfix deriving (Eq, Show)
+type PrecFix = (Precedence, Fixity)
 
 instance Show Var where
   show (V s) = show s

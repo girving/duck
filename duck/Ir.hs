@@ -11,8 +11,8 @@ module Ir
 
 import Var
 import Type
+import Data.Maybe
 import qualified Ast
-
 import qualified Data.Set as Set
 
 import Util
@@ -57,6 +57,7 @@ decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
 decl_vars s (Ast.DefD v _ _ _) = Set.insert v s 
 decl_vars s (Ast.LetD p _) = pattern_vars s p
 decl_vars s (Ast.Data _ _ _) = s
+decl_vars s (Ast.Infix _ _ _) = s
 
 pattern_vars :: InScopeSet -> Ast.Pattern -> InScopeSet
 pattern_vars s Ast.PatAny = s
@@ -65,20 +66,21 @@ pattern_vars s (Ast.PatCons _ pl) = foldl pattern_vars s pl
 pattern_vars s (Ast.PatType _ _) = s
 
 prog :: [Ast.Decl] -> [Decl]
-prog decls = map (decl (prog_vars decls)) decls
+prog decls = catMaybes $ map (decl (prog_vars decls)) decls
 
-decl :: InScopeSet -> Ast.Decl -> Decl
-decl s (Ast.DefD f Nothing args body) = LetD f (expr s (Ast.Lambda args body))
-decl s (Ast.DefD f (Just t) args body) = OverD f t (expr s (Ast.Lambda args body))
-decl s (Ast.LetD Ast.PatAny e) = LetD ignored (expr s e)
-decl s (Ast.LetD (Ast.PatVar v) e) = LetD v (expr s e)
-decl s (Ast.LetD p e) = d where
+decl :: InScopeSet -> Ast.Decl -> Maybe Decl
+decl s (Ast.DefD f Nothing args body) = Just $ LetD f (expr s (Ast.Lambda args body))
+decl s (Ast.DefD f (Just t) args body) = Just $ OverD f t (expr s (Ast.Lambda args body))
+decl s (Ast.LetD Ast.PatAny e) = Just $ LetD ignored (expr s e)
+decl s (Ast.LetD (Ast.PatVar v) e) = Just $ LetD v (expr s e)
+decl s (Ast.LetD p e) = Just d where
   d = case vars of
     [v] -> LetD v (m (expr s e) (Var v))
     vl -> LetMD vl (m (expr s e) (Cons (tuple vars) (map Var vars)))
   vars = Set.toList (pattern_vars Set.empty p)
   (_,_,m) = match s p
-decl _ (Ast.Data t args cons) = Data t args cons
+decl _ (Ast.Data t args cons) = Just $ Data t args cons
+decl _ (Ast.Infix _ _ _) = Nothing
 
 expr :: InScopeSet -> Ast.Exp -> Exp
 expr _ (Ast.Int i) = Int i

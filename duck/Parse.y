@@ -19,6 +19,8 @@ import Lex
 import Ast
 import Type
 import ParseMonad
+import ParseOps
+import qualified Data.Map as Map
 
 }
 
@@ -32,6 +34,8 @@ import ParseMonad
 %token
   var  { TokVar $$ _ }
   cvar { TokCVar $$ _ }
+  sym  { TokSym $$ _ }
+  csym { TokCSym $$ _ }
   int  { TokInt $$ _ }
   data { TokData _ }
   over { TokOver _ }
@@ -39,13 +43,7 @@ import ParseMonad
   in   { TokIn _ }
   case { TokCase _ }
   of   { TokOf _ }
-  -- ';'  { TokSep _ }
   '='  { TokEq _ }
-  '+'  { TokPlus _ }
-  '-'  { TokMinus _ }
-  '*'  { TokTimes _ }
-  '/'  { TokDiv _ }
-  -- ':'  { TokColon _ }
   '::' { TokDColon _ }
   ','  { TokComma _ }
   '('  { TokLP _ }
@@ -54,32 +52,38 @@ import ParseMonad
   '\\' { TokLambda _ }
   '->' { TokArrow _ }
   '|'  { TokOr _ }
+  import { TokImport _ }
+  infix  { TokInfix $$ _ }
 
 %left ';'
 %right '=' '->'
-%left '+' '-'
-%left '*' '/'
 
 %%
 
 --- Toplevel stuff ---
 
 prog :: { Prog }
-  : decls { reverse $1 }
+  : decls { concat $ reverse $1 }
 
-decls :: { [Decl] }
+decls :: { [[Decl]] }
   : {--} { [] }
   | decls decl { $2 : $1 }
 
-decl :: { Decl }
-  : let var patterns '=' exp { DefD $2 Nothing (reverse $3) $5 }
-  | over ty let var patterns '=' exp { DefD $4 (Just $2) (reverse $5) $7 }
-  | let pattern '=' exp { LetD $2 $4 }
-  | data cvar vars maybeConstructors { Data $2 (reverse $3) (reverse $4) }
+decl :: { [Decl] }
+  : let var patterns '=' exp { [DefD $2 Nothing (reverse $3) $5] }
+  | over ty let var patterns '=' exp { [DefD $4 (Just $2) (reverse $5) $7] }
+  | let pattern '=' exp { [LetD $2 $4] }
+  | data cvar vars maybeConstructors { [Data $2 (reverse $3) (reverse $4)] }
+  | import var {% let V file = $2 in parseFile parse file }
+  | infix int asyms {% setPrec $2 $1 $3 }
 
 vars :: { [Var] }
   : {--} { [] }
   | vars var { $2 : $1 }
+
+asyms :: { [Var] }
+  : asym { [$1] }
+  | asyms ',' asym { $3 : $1 }
 
 maybeConstructors :: { [(CVar,[Type])] }
   : {--} { [] }
@@ -111,11 +115,19 @@ exp0 :: { Exp }
   | exp1 '::' ty3 { TypeCheck $1 $3 }
 
 exp1 :: { Exp }
-  : exp1 '+' exp1 { binop $1 $2 $3 }
-  | exp1 '-' exp1 { binop $1 $2 $3 }
-  | exp1 '*' exp1 { binop $1 $2 $3 }
-  | exp1 '/' exp1 { binop $1 $2 $3 }
-  | apply { let f : a = reverse $1 in Apply f a }
+  : ops {% parseOps $1 }
+  | exp2 { $1 }
+
+ops :: { ([Exp],[Var]) }
+  : ops asym exp2 { let (e,o) = $1 in ($3:e,$2:o) }
+  | exp2 asym exp2 { ([$3,$1],[$2]) }
+
+asym :: { Var }
+  : sym { $1 }
+  | csym { $1 }
+
+exp2 :: { Exp }
+  : apply { let f : a = reverse $1 in Apply f a }
   | arg { $1 }
 
 apply :: { [Exp] }
@@ -202,5 +214,10 @@ tyapply (V "Int") [] = TyInt
 tyapply (V "Void") [] = TyVoid
 tyapply c args = TyApply c args
 
+setPrec :: Int -> Fixity -> [Var] -> P [Decl]
+setPrec p d syms = do
+  s <- get
+  put $ s { ps_prec = foldl (\f v -> Map.insert v (p,d) f) (ps_prec s) syms }
+  return $ [Infix p d (reverse syms)]
 
 }
