@@ -73,7 +73,9 @@ decls :: { [[Decl]] }
 
 decl :: { [Decl] }
   : let var patterns '=' exp { [DefD $2 Nothing (reverse $3) $5] }
+  | let pattern2 sym pattern2 '=' exp { [DefD $3 Nothing [$2,$4] $6] }
   | over ty let var patterns '=' exp { [DefD $4 (Just $2) (reverse $5) $7] }
+  | over ty let pattern2 sym pattern2 '=' exp { [DefD $5 (Just $2) [$4,$6] $8] }
   | let pattern '=' exp { [LetD $2 $4] }
   | import var {% let V file = $2 in parseFile parse file }
   | infix int asyms {% setPrec $2 $1 $3 }
@@ -161,11 +163,6 @@ patterns :: { [Pattern] }
   : pattern3 { [$1] }
   | patterns pattern3 { $2 : $1 }
 
--- allow empty
-patterns_ :: { [Pattern] }
-  : {--} { [] }
-  | patterns_ pattern3 { $2 : $1 }
-
 pattern :: { Pattern }
   : pattern1 { $1 }
   | pattuple { PatCons (tuple $1) (reverse $1) }
@@ -180,11 +177,12 @@ patternops :: { ([Pattern],[Var]) }
 
 pattern2 :: { Pattern }
   : pattern3 { $1 }
-  | cvar patterns_ { PatCons $1 (reverse $2) }
+  | cvar patterns { PatCons $1 (reverse $2) }
   | pattern3 '::' ty3 { PatType $1 $3 }
 
 pattern3 :: { Pattern }
   : var { PatVar $1 }
+  | cvar { PatCons $1 [] }
   | '_' { PatAny }
   | '(' pattern ')' { $2 }
   | '(' ')' { PatCons (V "()") [] }

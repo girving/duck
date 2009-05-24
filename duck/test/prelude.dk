@@ -1,6 +1,6 @@
 -- Duck prelude
 
--- standard operator precedence
+---- operator precedence
 
 infixr 9  .
 infixr 8  ^, ^^, **
@@ -14,7 +14,7 @@ infixl 1  >>, >>=
 infixr 1  =<<
 infixr 0  $, $!
 
--- basic types
+---- basic types
 
 data () = ()
 
@@ -22,7 +22,12 @@ data [a] = [] | a : [a]
 
 data Maybe a = Nothing | Just a
 
--- map
+---- misc
+
+let id x = x
+let f $ x = f x
+
+---- map
 
 over (a -> b) -> Maybe a -> Maybe b
 let map f m = case m of
@@ -34,7 +39,7 @@ let map f l = case l of
     [] -> []
   | x:l -> f x : map f l
 
--- fold
+---- fold
 
 over (a -> b -> a) -> a -> Maybe b -> a
 let fold f x l = case l of
@@ -46,7 +51,45 @@ let fold f x l = case l of
     [] -> x
   | y:l -> fold f (f x y) l
 
--- arithmetic
+---- join
+
+over Maybe (Maybe a) -> Maybe a
+let join m = case m of
+    Nothing -> Nothing
+  | Just Nothing -> Nothing
+  | Just (Just x) -> Just x
+
+over [[a]] -> [a]
+let join l = case l of
+    [] -> []
+  | []:l -> join l
+  | (x:y):l -> x : join (y:l)
+
+---- arithmetic
 
 let sum = fold (+) 0
 let product = fold (*) 1
+
+---- monads
+
+-- TODO: join0 should look something like
+--   over a -> a
+--   join0 x = x
+--
+--   over (join :: a -> b) => a -> b
+--   join0 x = join x
+
+over a -> a
+let join0 x = x
+
+over Maybe (Maybe a) -> Maybe a
+let join0 x = join x
+
+over [[a]] -> [a]
+let join0 x = join x
+
+-- In Haskell, join0 would be replaced with join.  The use
+-- of join0 here avoids the need for return as a separate construct
+
+-- (>>=) :: m a -> (a -> b) -> join0 (m b)
+let m >>= f = join0 (map f m)
