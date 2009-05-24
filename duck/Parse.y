@@ -48,6 +48,8 @@ import qualified Data.Map as Map
   ','  { TokComma _ }
   '('  { TokLP _ }
   ')'  { TokRP _ }
+  '['  { TokLB _ }
+  ']'  { TokRB _ }
   '_'  { TokAny _ }
   '\\' { TokLambda _ }
   '->' { TokArrow _ }
@@ -73,9 +75,11 @@ decl :: { [Decl] }
   : let var patterns '=' exp { [DefD $2 Nothing (reverse $3) $5] }
   | over ty let var patterns '=' exp { [DefD $4 (Just $2) (reverse $5) $7] }
   | let pattern '=' exp { [LetD $2 $4] }
-  | data cvar vars maybeConstructors { [Data $2 (reverse $3) (reverse $4)] }
   | import var {% let V file = $2 in parseFile parse file }
   | infix int asyms {% setPrec $2 $1 $3 }
+  | data cvar vars maybeConstructors { [Data $2 (reverse $3) (reverse $4)] }
+  | data '(' ')' maybeConstructors { [Data (V "()") [] (reverse $4)] } -- type ()
+  | data '[' var ']' maybeConstructors { [Data (V "[]") [$3] (reverse $5)] } -- type [a]
 
 vars :: { [Var] }
   : {--} { [] }
@@ -95,6 +99,9 @@ constructors :: { [(CVar,[Type])] }
 
 constructor :: { (CVar,[Type]) }
   : cvar ty3s { ($1,reverse $2) }
+  | ty2 csym ty2 { ($2,[$1,$3]) }
+  | '(' ')' { (V "()",[]) }
+  | '[' ']' { (V "[]",[]) }
 
 --- Expressions ---
 
@@ -115,7 +122,7 @@ exp0 :: { Exp }
   | exp1 '::' ty3 { TypeCheck $1 $3 }
 
 exp1 :: { Exp }
-  : ops {% parseOps $1 }
+  : ops {% parseOps (\a op b -> Apply (Var op) [a,b]) $1 }
   | exp2 { $1 }
 
 ops :: { ([Exp],[Var]) }
@@ -139,6 +146,9 @@ arg :: { Exp }
   | var { Var $1 }
   | cvar { Var $1 }
   | '(' exp ')' { $2 }
+  | '(' ')' { Var (V "()") }
+  | '[' ']' { Var (V "[]") }
+  | '[' exptuple ']' { List (reverse $2) }
 
 cases :: { [(Pattern,Exp)] }
   : pattern '->' exp { [($1,$3)] }
@@ -147,13 +157,13 @@ cases :: { [(Pattern,Exp)] }
 --- Patterns ---
 
 patterns :: { [Pattern] }
-  : pattern2 { [$1] }
-  | patterns pattern2 { $2 : $1 }
+  : pattern3 { [$1] }
+  | patterns pattern3 { $2 : $1 }
 
 -- allow empty
 patterns_ :: { [Pattern] }
   : {--} { [] }
-  | patterns_ pattern2 { $2 : $1 }
+  | patterns_ pattern3 { $2 : $1 }
 
 pattern :: { Pattern }
   : pattern1 { $1 }
@@ -161,13 +171,23 @@ pattern :: { Pattern }
 
 pattern1 :: { Pattern }
   : pattern2 { $1 }
-  | cvar patterns_ { PatCons $1 (reverse $2) }
-  | pattern2 '::' ty3 { PatType $1 $3 }
+  | patternops {% parseOps (\a op b -> PatCons op [a,b]) $1 }
+
+patternops :: { ([Pattern],[Var]) }
+  : patternops csym pattern2 { let (e,o) = $1 in ($3:e,$2:o) }
+  | pattern2 csym pattern2 { ([$3,$1],[$2]) }
 
 pattern2 :: { Pattern }
+  : pattern3 { $1 }
+  | cvar patterns_ { PatCons $1 (reverse $2) }
+  | pattern3 '::' ty3 { PatType $1 $3 }
+
+pattern3 :: { Pattern }
   : var { PatVar $1 }
   | '_' { PatAny }
   | '(' pattern ')' { $2 }
+  | '(' ')' { PatCons (V "()") [] }
+  | '[' ']' { PatCons (V "[]") [] }
 
 pattuple :: { [Pattern] }
   : pattern1 ',' pattern1 { [$3,$1] }
@@ -190,6 +210,7 @@ ty2 :: { Type }
 ty3 :: { Type }
   : var { TyVar $1 }
   | '(' ty ')' { $2 }
+  | '[' ty ']' { TyApply (V "[]") [$2] }
 
 tytuple :: { [Type] }
   : ty1 ',' ty1 { [$3,$1] }

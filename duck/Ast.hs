@@ -30,6 +30,7 @@ data Exp
   | Apply Exp [Exp]
   | Var Var
   | Int Int
+  | List [Exp]
   | TypeCheck Exp Type
   | Case Exp [(Pattern,Exp)]
   deriving Show
@@ -81,6 +82,8 @@ instance Pretty Exp where
   pretty' (Apply e el) = (50, guard 51 e <+> hsep (map (guard 51) el))
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
+  pretty' (List el) = (100,
+    lbrack <> hcat (intersperse (text ", ") $ map (guard 2) el) <> rbrack)
   pretty' (Case e cases) = (0,
     text "case" <+> pretty e <+> text "of" $$ nest 2 (
       vjoin '|' (map (\ (p,e) -> pretty p <+> text "->" <+> pretty e) cases)))

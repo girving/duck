@@ -39,7 +39,7 @@ instance Show Var where
 instance Pretty Var where
   pretty' (V v) = (100,
     let c = head v in
-    if isAlpha c || c == '_' then
+    if isAlpha c || c == '_' || c == '(' || c == '[' then
       text v
     else parens $ text v)
 

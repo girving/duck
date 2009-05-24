@@ -20,20 +20,13 @@ let t1,t2,t3 = 1,2,(1,2) :: (Int,Int)
 
 -- lists
 
-data List a = Nil | Cons a (List a)
-
 let sum l = case l of
-    Nil -> 0
-  | Cons x l -> x + sum l
+    [] -> 0
+  | x:l -> x + sum l
 
-let list = Cons 1 (Cons 2 (Cons 3 (Cons 4 Nil)))
+let list = 1 : [2, 3, 4]
 let ten = sum list
-let Cons one (Cons two _) = list
-
-over (a -> b) -> List a -> List b
-let map f l = case l of
-    Nil -> Nil
-  | Cons x l -> Cons (f x) (map f l)
+let one : two : _ = list
 
 -- unordered binary tree
 
@@ -48,5 +41,5 @@ let map f l = case l of
 
 let negate x = 0 - x
 
-let la = map negate (Cons 3 (Cons 4 Nil))
+let la = map negate [3,4]
 let ta = map negate (Node (Leaf 1) (Node (Leaf 2) (Leaf 3)))

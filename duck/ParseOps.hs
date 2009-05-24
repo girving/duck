@@ -7,30 +7,29 @@ module ParseOps (parseOps) where
 -- Borrowed from http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs
 
 import Var
-import Ast
 import ParseMonad
 import Pretty
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-parseOps :: ([Exp],[Var]) -> P Exp
-parseOps (args,ops) = do
+parseOps :: (a -> Var -> a -> a) -> ([a],[Var]) -> P a
+parseOps apply (args,ops) = do
   state <- get
   let prec = ps_prec state
-  (e,[],[]) <- parse prec (-1) Nonfix (reverse args) (reverse ops)
+  (e,[],[]) <- parse apply prec (-1) Nonfix (reverse args) (reverse ops)
   return e
 
-parse :: Map Var PrecFix -> Int -> Fixity -> [Exp] -> [Var] -> P (Exp, [Var], [Exp])
-parse _ _ _ [e] _ = return (e, [], [])
-parse prec p d (e:rest) ops@(op:ops')
+parse :: (a -> Var -> a -> a) -> Map Var PrecFix -> Int -> Fixity -> [a] -> [Var] -> P (a, [Var], [a])
+parse _ _ _ _ [e] _ = return (e, [], [])
+parse apply prec p d (e:rest) ops@(op:ops')
   | p == p' && (d /= d' || d == Nonfix) = fail ("ambiguous infix expression at operator "++show (pretty op))
   | p > p' || p == p' && (d == Leftfix || d' == Nonfix) = return (e, ops, rest)
   | otherwise = do
-    (e',ops'',rest') <- parse prec p' d' rest ops'
-    parse prec p d (Apply (Var op) [e, e'] : rest') ops''
+    (e',ops'',rest') <- parse apply prec p' d' rest ops'
+    parse apply prec p d (apply e op e' : rest') ops''
   where
   (p', d') = case Map.lookup op prec of
     Nothing -> (maxBound, Leftfix)
     Just f -> f
-parse _ _ _ _ _ = undefined
+parse _ _ _ _ _ _ = undefined

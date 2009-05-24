@@ -11,3 +11,16 @@ infixr 2  ||
 infixl 1  >>, >>=
 infixr 1  =<<
 infixr 0  $, $!
+
+-- Units
+
+data () = ()
+
+-- Lists
+
+data [a] = [] | a : [a]
+
+over (a -> b) -> [a] -> [b]
+let map f l = case l of
+    [] -> []
+  | x:l -> f x : map f l

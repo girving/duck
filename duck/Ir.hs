@@ -96,6 +96,7 @@ expr s (Ast.Def f args body c) = Let f lambda (expr sc c) where
   sc = Set.insert f s
 expr s (Ast.Case e cl) = cases s (expr s e) cl
 expr s (Ast.TypeCheck e _) = expr s e
+expr s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Var (V "[]")) (map (expr s) el)
 
 -- match processes a single pattern into an input variable, a new in-scope set,
 -- and a transformer that converts an input expression and a result expression

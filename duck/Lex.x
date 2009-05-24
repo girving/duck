@@ -33,6 +33,8 @@ tokens :-
   of      { c TokOf }
   \(      { c TokLP }
   \)      { c TokRP }
+  \[      { c TokLB }
+  \]      { c TokRB }
   \;      { c TokSep }
   \,      { c TokComma }
   _       { c TokAny }
@@ -71,6 +73,8 @@ data Token
   | TokEq SrcLoc
   | TokLP SrcLoc
   | TokRP SrcLoc
+  | TokLB SrcLoc
+  | TokRB SrcLoc
   | TokSep SrcLoc
   | TokDColon SrcLoc
   | TokComma SrcLoc
@@ -110,6 +114,8 @@ instance Show Token where
     TokEq _ -> "="
     TokLP _ -> "("
     TokRP _ -> ")"
+    TokLB _ -> "["
+    TokRB _ -> "]"
     TokSep _ -> ";"
     TokDColon _ -> ":"
     TokComma _ -> ","
