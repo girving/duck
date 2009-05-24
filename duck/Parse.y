@@ -146,6 +146,7 @@ arg :: { Exp }
   | var { Var $1 }
   | cvar { Var $1 }
   | '(' exp ')' { $2 }
+  | '(' asym ')' { Var $2 }
   | '(' ')' { Var (V "()") }
   | '[' ']' { Var (V "[]") }
   | '[' exptuple ']' { List (reverse $2) }

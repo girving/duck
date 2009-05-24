@@ -20,26 +20,13 @@ let t1,t2,t3 = 1,2,(1,2) :: (Int,Int)
 
 -- lists
 
-let sum l = case l of
-    [] -> 0
-  | x:l -> x + sum l
-
 let list = 1 : [2, 3, 4]
 let ten = sum list
 let one : two : _ = list
 
--- unordered binary tree
-
-data Tree a = Leaf a | Node (Tree a) (Tree a) 
-
-over (a -> b) -> Tree a -> Tree b
-let map f l = case l of
-    Leaf x -> Leaf (f x)
-  | Node x y -> Node (map f x) (map f y)
-
--- test list/tree overloading
+-- test map overloading
 
 let negate x = 0 - x
 
 let la = map negate [3,4]
-let ta = map negate (Node (Leaf 1) (Node (Leaf 2) (Leaf 3)))
+let ma = map negate (Just 5)
