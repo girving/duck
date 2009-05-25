@@ -1,6 +1,14 @@
 -- Duck utility functions
 
-module Util where
+module Util
+  ( debug
+  , foldmap
+  , groupPairs
+  , die
+  , Stack(..)
+  , (++.)
+  , splitStack
+  ) where
 
 import System.IO
 import System.Exit
@@ -10,7 +18,7 @@ import Data.List
 
 debug :: Show a => a -> b -> b
 debug a b =
-  seq (unsafePerformIO (print a)) b
+  unsafePerformIO (print a >> return b)
 
 foldmap :: (a -> b -> (a,c)) -> a -> [b] -> (a,[c])
 foldmap _ x [] = (x,[])
