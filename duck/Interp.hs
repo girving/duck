@@ -187,6 +187,12 @@ instance Pretty Value where
   pretty' (ValCons c []) = pretty' c
   pretty' (ValCons c fields) | istuple c = (1,
     hcat $ intersperse (text ", ") $ map (guard 2) fields)
+  pretty' (ValCons (V ":") [h,t]) = (100,
+    lbrack <> hcat (intersperse (text ", ") $ map (guard 2) (h : extract t)) <> rbrack)
+    where
+    extract (ValCons (V "[]") []) = []
+    extract (ValCons (V ":") [h,t]) = h : extract t
+    extract e = error ("invalid tail "++show (pretty e)++" in list")
   pretty' (ValCons c fields) = (2, pretty c <+> sep (map (guard 3) fields))
   pretty' (ValFun _ v e) = -- conveniently ignore env
     (0, text "\\" <> pretty v <> text " -> " <> pretty e)

@@ -1,13 +1,20 @@
 -- Duck parser
 
--- shift/reduce conflicts: exactly 1
+-- shift/reduce conflicts: exactly 8
 --
--- This conflict is due to nested case expressions:
+-- The first conflict is due to nested case expressions:
 --   case x of _ -> case y of _ -> a | _ -> b
 -- Since we want the alternative to bind to the inner case, resolving
 -- the conflict via shift is good.  Removing this would be annoying
 -- since we'd need two kinds of case productions, and it will also
 -- vanish when we add whitespace dependent syntax.
+--
+-- The other seven are due to expressions like 1 + \x -> x, which we
+-- parse as 1 + (\x -> x).  Parsing this requires the lambda rule to
+-- go in exp2 (arguments to infix expressions).  Expressions of the
+-- form \x -> x + 1 then become ambiguous.  In order to avoid duplicating
+-- a slew of expression nonterminals, we let the generator resolve the
+-- ambiguity correctly in favor of shift.
 
 {
 {-# OPTIONS_GHC -w #-}
@@ -110,10 +117,13 @@ constructor :: { (CVar,[Type]) }
 exp :: { Exp }
   : let var patterns '=' exp in exp { Def $2 (reverse $3) $5 $7 }
   | let pattern '=' exp in exp { Let $2 $4 $6 }
-  | '\\' patterns '->' exp { Lambda (reverse $2) $4 }
   | case exp of cases { Case $2 (reverse $4) }
   | exptuple { Apply (Var (tuple $1)) (reverse $1) }
   | exp0 { $1 }
+
+exps :: { [Exp] }
+  : exp0 { [$1] }
+  | exps ',' exp0 { $3 : $1 }
 
 exptuple :: { [Exp] }
   : exp0 ',' exp0 { [$3,$1] }
@@ -137,6 +147,7 @@ asym :: { Var }
 
 exp2 :: { Exp }
   : apply { let f : a = reverse $1 in Apply f a }
+  | '\\' patterns '->' exp { Lambda (reverse $2) $4 }
   | arg { $1 }
 
 apply :: { [Exp] }
@@ -151,7 +162,7 @@ arg :: { Exp }
   | '(' asym ')' { Var $2 }
   | '(' ')' { Var (V "()") }
   | '[' ']' { Var (V "[]") }
-  | '[' exptuple ']' { List (reverse $2) }
+  | '[' exps ']' { List (reverse $2) }
 
 cases :: { [(Pattern,Exp)] }
   : pattern '->' exp { [($1,$3)] }

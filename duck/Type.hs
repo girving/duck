@@ -60,6 +60,7 @@ unifyList' _ _ _ = Nothing
 instance Pretty Type where
   pretty' (TyVar v) = pretty' v
   pretty' (TyApply t tl) | istuple t = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
+  pretty' (TyApply (V "[]") [t]) = (100, brackets (pretty t))
   pretty' (TyApply t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
   pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
   pretty' TyInt = (100, text "Int")
