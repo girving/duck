@@ -30,6 +30,11 @@ type TypeEnv = Map Var Type
 --   2. unify treats all function types as the same, since my first use of this
 --      is for overload resolution, and you can't overload on a function type.
 --      Again, I'll probably have to fix this later.
+--
+-- Operationally, unify x y answers the question "If a function takes an
+-- argument of type x, can we pass it a y?"  As an example, unify x Void always
+-- succeeds since the hypothesis is vacuously true: there are no values of
+-- type Void.
 _unify :: Type -> Type -> Maybe TypeEnv
 _unify = unify' Map.empty
 
@@ -38,7 +43,7 @@ unify' env (TyVar v) t = Just (Map.insert v t env)
 unify' env (TyApply c tl) (TyApply c' tl') | c == c' = unifyList' env tl tl'
 unify' env (TyFun _ _) (TyFun _ _) = Just env
 unify' env TyInt TyInt = Just env
-unify' env TyVoid _ = Just env
+unify' env _ TyVoid = Just env
 unify' _ _ _ = Nothing
 
 -- The equivalent of unify for lists.  To succeed, the first argument must be
