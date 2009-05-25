@@ -30,3 +30,12 @@ let negate x = 0 - x
 
 let la = map negate [3,4]
 let ma = map negate (Just 5)
+
+-- test the list monad
+
+let j = join [[]]
+
+let m =
+  [1,2] >>= \a ->
+  [10 * a, 100 * a] >>= \b ->
+  b + 1
