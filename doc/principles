@@ -10,6 +10,8 @@ Design principles:
 
 5. Containers are homogeneous.
 
+6. Brevity of optimized code is more important than brevity of throwaway code.
+
 IMPORTANT:
 
 The type of an expression should depend only on the types of its inputs.
