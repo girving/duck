@@ -96,7 +96,7 @@ expr s (Ast.Def f args body c) = Let f lambda (expr sc c) where
   sc = Set.insert f s
 expr s (Ast.Case e cl) = cases s (expr s e) cl
 expr s (Ast.TypeCheck e _) = expr s e
-expr s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Var (V "[]")) (map (expr s) el)
+expr s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) (map (expr s) el)
 
 -- match processes a single pattern into an input variable, a new in-scope set,
 -- and a transformer that converts an input expression and a result expression
@@ -198,6 +198,11 @@ instance Pretty Exp where
   pretty' (Let v e body) = (0,
     text "let" <+> pretty v <+> equals <+> guard 0 e <+> text "in"
       $$ guard 0 body)
+  pretty' (Cons (V ":") [h,t]) | Just t' <- extract t = (100,
+    brackets (hcat (intersperse (text ", ") $ map (guard 2) (h : t')))) where
+    extract (Cons (V "[]") []) = Just []
+    extract (Cons (V ":") [h,t]) = (h :) =<<. extract t
+    extract _ = Nothing
   pretty' (Cons c args) | istuple c = (1,
     hcat $ intersperse (text ", ") $ map (guard 2) args)
   pretty' (Cons c args) = (50, pretty c <+> sep (map (guard 51) args))
