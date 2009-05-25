@@ -85,14 +85,14 @@ decl _ (Ast.Infix _ _ _) = Nothing
 expr :: InScopeSet -> Ast.Exp -> Exp
 expr _ (Ast.Int i) = Int i
 expr _ (Ast.Var v) = Var v
-expr s (Ast.Lambda args e) = foldr Lambda (m $ expr s' e) vl where
+expr s (Ast.Lambda args e) = foldr Lambda (m (map Var vl) (expr s' e)) vl where
   (vl, s', m) = matches s args
 expr s (Ast.Apply f args) = foldl Apply (expr s f) (map (expr s) args)
 expr s (Ast.Let p e c) = m (expr s e) (expr s' c) where
   (_,s',m) = match s p
 expr s (Ast.Def f args body c) = Let f lambda (expr sc c) where
   (vl, s', m) = matches s args
-  lambda = foldr Lambda (m $ expr s' body) vl
+  lambda = foldr Lambda (m (map Var vl) (expr s' body)) vl
   sc = Set.insert f s
 expr s (Ast.Case e cl) = cases s (expr s e) cl
 expr s (Ast.TypeCheck e _) = expr s e
@@ -108,16 +108,16 @@ match s (Ast.PatType p _) = match s p
 match s (Ast.PatCons c args) = (x, s', m) where
   x = fresh s
   (vl, s', ms) = matches s args
-  m em er = Case em [(c, vl, ms er)] Nothing
+  m em er = Case em [(c, vl, ms (map Var vl) er)] Nothing
 
 match_helper v em er = case em of
   Var v' | v == v' -> er
   _ -> Let v em er
 
 -- in spirit, matches = fold match
-matches :: InScopeSet -> [Ast.Pattern] -> ([Var], InScopeSet, Exp -> Exp)
-matches s pl = foldr f ([],s,id) pl where
-  f p (vl,s,m) = (v:vl, s', m' (Var v) . m) where
+matches :: InScopeSet -> [Ast.Pattern] -> ([Var], InScopeSet, [Exp] -> Exp -> Exp)
+matches s pl = foldr f ([],s,\[] -> id) pl where
+  f p (vl,s,m) = (v:vl, s', \ (e:el) -> m' e . m el) where
     (v,s',m') = match s p
 
 -- cases turns a multilevel pattern match into iterated single level pattern match by
@@ -147,9 +147,11 @@ cases s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where
     -- If only one alternative remains, we break out of the 'reduce' recursion and switch
     -- to 'matches', which avoids trivial matches of the form "case v of v -> ..."
     cons ((c,arity),alts') = case alts' of
-      [alt] -> (c,vl,m (expr s' e)) where -- single alternative, use matches
+      [alt] -> (c,vl',m ex (expr s' e)) where -- single alternative, use matches
         (pl,e) = splitStack alt
         (vl,s',m) = matches s pl
+        vl' = take arity vl
+        ex = (map Var vl') ++ rest
       _ -> (c,vl,ex) where -- many alernatives, use reduce
         (s',vl) = freshVars s arity
         ex = reduce s' (map Var vl ++ rest) alts'
