@@ -11,6 +11,7 @@ import Text.PrettyPrint
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Util
 
 data Type
   = TyVar Var
@@ -21,6 +22,28 @@ data Type
   deriving Show
 
 type TypeEnv = Map Var Type
+
+-- Symmetric unify: unifyS x y = Just z means that a value of type x or y
+-- can be safely viewed as having type z.
+--
+-- As with unify below, unifyS treats all function types as the same.
+unifyS :: Type -> Type -> Maybe Type
+unifyS t@(TyVar v) (TyVar v') | v == v' = Just t
+unifyS (TyApply c tl) (TyApply c' tl') | c == c' = TyApply c =<<. unifySList tl tl'
+unifyS t@(TyFun _ _) (TyFun _ _) = Just t
+unifyS TyInt TyInt = Just TyInt
+unifyS TyVoid t = Just t
+unifyS t TyVoid = Just t
+unifyS _ _ = Nothing
+
+-- The equivalent of unifyS for lists.  The two lists must have the same size.
+unifySList :: [Type] -> [Type] -> Maybe [Type]
+unifySList [] [] = Just []
+unifySList (t:tl) (t':tl') = do
+  t'' <- unifyS t t'
+  tl'' <- unifySList tl tl'
+  return $ t'' : tl''
+unifySList _ _ = Nothing
 
 -- Directed unify: unify s t tries to turn s into t via variable substitutions,
 -- but not the other way round.  Notes:
@@ -39,7 +62,10 @@ _unify :: Type -> Type -> Maybe TypeEnv
 _unify = unify' Map.empty
 
 unify' :: TypeEnv -> Type -> Type -> Maybe TypeEnv
-unify' env (TyVar v) t = Just (Map.insert v t env)
+unify' env (TyVar v) t = 
+  case Map.lookup v env of
+    Nothing -> Just (Map.insert v t env)
+    Just t' -> unifyS t t' >>=. \t'' -> Map.insert v t'' env
 unify' env (TyApply c tl) (TyApply c' tl') | c == c' = unifyList' env tl tl'
 unify' env (TyFun _ _) (TyFun _ _) = Just env
 unify' env TyInt TyInt = Just env
