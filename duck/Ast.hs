@@ -92,6 +92,7 @@ instance Pretty Exp where
 instance Pretty Pattern where
   pretty' (PatAny) = pretty' '_'
   pretty' (PatVar v) = pretty' v
+  pretty' (PatCons c []) = pretty' c
   pretty' (PatCons c pl) | istuple c = (1, hcat $ intersperse (text ", ") $ map (guard 2) pl)
   pretty' (PatCons c pl) = (3, pretty c <+> sep (map (guard 4) pl))
   pretty' (PatType p t) = (2, guard 2 p <+> colon <+> guard 0 t)
