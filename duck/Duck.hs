@@ -9,6 +9,7 @@ import System.Environment
 import System.FilePath
 import qualified Ir
 import qualified Interp
+import ExecMonad
 
 header = "Duck interactive mode"
 
@@ -35,7 +36,7 @@ main = do
   pprint ir
 
   putStr "\n-- Result --\n"
-  let env = Interp.prog ir
+  env <- runExec (Interp.prog ir)
   pprint env
 
 -- for ghci use
