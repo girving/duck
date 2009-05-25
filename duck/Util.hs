@@ -8,6 +8,7 @@ module Util
   , Stack(..)
   , (++.)
   , splitStack
+  , (>>=.), (=<<.)
   ) where
 
 import System.IO
@@ -49,7 +50,22 @@ data Stack a b
 (++.) [] r = r
 (++.) (h:t) r = h :. (t ++. r)
 
+instance (Show a, Show b) => Show (Stack a b) where
+  show s = '[' : concat (intersperse "," (map show a)) ++ " . " ++ show b ++ "]" where
+    (a,b) = splitStack s
+
 splitStack :: Stack a b -> ([a],b)
 splitStack (Base b) = ([],b)
 splitStack (a :. s) = (a:l,b) where
   (l,b) = splitStack s
+
+-- Some convenient extra monad operators
+
+infixl 1 >>=.
+infixr 1 =<<.
+
+(>>=.) :: Monad m => m a -> (a -> b) -> m b
+m >>=. f = m >>= return . f
+
+(=<<.) :: Monad m => (a -> b) -> m a -> m b
+(=<<.) = flip (>>=.)
