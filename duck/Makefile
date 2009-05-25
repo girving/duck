@@ -26,4 +26,4 @@ others: Parse.hs Lex.hs
 
 .PHONY: clean
 clean:
-	rm -f *.o *.hi *.info duck Parse.hs 
+	rm -f *.o *.hi *.info duck Parse.hs Lex.hs

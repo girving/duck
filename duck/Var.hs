@@ -63,7 +63,7 @@ freshVars s n = (s', v : vl) where
 standardVars :: [Var]
 standardVars = letters ++ others where
   letters = [V [x] | x <- "abcdefghijklmnopqrstuvwxyz"]
-  others = [V ("t" ++ show i) | i <- [1..]]
+  others = [V ("t" ++ show i) | i <- [1..] :: [Int]]
 
 ignored = V "_"
 
