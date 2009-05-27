@@ -1,0 +1,18 @@
+A place for miscellaneous notes:
+
+1. Array syntax.  Since a[i] would require whitespace-based parsing, it might be
+   reasonable just to use function application syntax for array lookups.  I.e.,
+   a i.  This requires overloading application, which we were already planning
+   to do (and is straightforward in any case).
+
+   If we go with array _monads_ for mutable arrays, it's possible that "a i" could
+   return a helper type that would be usable for both reading and writing.  "a i"
+   probably can't be a direct extraction anyways; instead, it would be a monad, and
+   reading might look like
+
+      x <- a i
+
+   It's a fairly short leap from there to the idea that "a i" could be overloaded
+   to work for reading as well.  Interestingly, the "a i" syntax might otherwise
+   be unused on the left side of "<-" in "do" notation, since <- never defines
+   functions.
