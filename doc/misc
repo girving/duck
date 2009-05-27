@@ -16,3 +16,14 @@ A place for miscellaneous notes:
    to work for reading as well.  Interestingly, the "a i" syntax might otherwise
    be unused on the left side of "<-" in "do" notation, since <- never defines
    functions.
+
+2. It would be useful to eventually have an "explain" function which explains why
+   a particular overload is chosen.  E.g., if you do
+
+       f x y
+
+   and don't understand the result,
+
+       explain f x y
+
+   would explain all the overload resolution steps in detail.
