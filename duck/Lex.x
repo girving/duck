@@ -59,6 +59,7 @@ sym "->" = TokArrow
 sym "::" = TokDColon
 sym "\\" = TokLambda
 sym "|" = TokOr
+sym "-" = TokMinus
 sym s@(':':_) = TokCSym (V s)
 sym s = TokSym (V s)
 
@@ -89,6 +90,7 @@ data Token
   | TokLambda SrcLoc
   | TokArrow SrcLoc
   | TokOr SrcLoc
+  | TokMinus SrcLoc
   | TokImport SrcLoc
   | TokInfix Fixity SrcLoc
   | TokEOF
@@ -123,6 +125,7 @@ instance Show Token where
     TokLambda _ -> "\\"
     TokArrow _ -> "->"
     TokOr _ -> "|"
+    TokMinus _ -> "-"
     TokEOF -> "<eof>"
 
 type AlexInput = ParseState

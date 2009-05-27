@@ -1,6 +1,6 @@
 -- Duck parser
 
--- shift/reduce conflicts: exactly 8
+-- shift/reduce conflicts: exactly 7
 --
 -- The first conflict is due to nested case expressions:
 --   case x of _ -> case y of _ -> a | _ -> b
@@ -9,7 +9,7 @@
 -- since we'd need two kinds of case productions, and it will also
 -- vanish when we add whitespace dependent syntax.
 --
--- The other seven are due to expressions like 1 + \x -> x, which we
+-- The other 6 are due to expressions like 1 + \x -> x, which we
 -- parse as 1 + (\x -> x).  Parsing this requires the lambda rule to
 -- go in exp2 (arguments to infix expressions).  Expressions of the
 -- form \x -> x + 1 then become ambiguous.  In order to avoid duplicating
@@ -61,6 +61,7 @@ import qualified Data.Map as Map
   '\\' { TokLambda _ }
   '->' { TokArrow _ }
   '|'  { TokOr _ }
+  '-'  { TokMinus _ }
   import { TokImport _ }
   infix  { TokInfix $$ _ }
 
@@ -134,16 +135,20 @@ exp0 :: { Exp }
   | exp1 '::' ty3 { TypeCheck $1 $3 }
 
 exp1 :: { Exp }
-  : ops {% parseOps (\a op b -> Apply (Var op) [a,b]) $1 }
-  | exp2 { $1 }
+  : ops {% parseExpOps $1 }
 
-ops :: { ([Exp],[Var]) }
-  : ops asym exp2 { let (e,o) = $1 in ($3:e,$2:o) }
-  | exp2 asym exp2 { ([$3,$1],[$2]) }
+ops :: { [Either Exp Var] }
+  : ops asym unops { $3 ++ (Right $2 : $1) }
+  | unops { $1 }
+
+unops :: { [Either Exp Var] }
+  : exp2 { [Left $1] }
+  | '-' unops { $2 ++ [Right (V "-")] }
 
 asym :: { Var }
   : sym { $1 }
   | csym { $1 }
+  | '-' { V "-" }
 
 exp2 :: { Exp }
   : apply { let f : a = reverse $1 in Apply f a }
@@ -180,11 +185,11 @@ pattern :: { Pattern }
 
 pattern1 :: { Pattern }
   : pattern2 { $1 }
-  | patternops {% parseOps (\a op b -> PatCons op [a,b]) $1 }
+  | patternops {% parsePatOps $1 }
 
-patternops :: { ([Pattern],[Var]) }
-  : patternops csym pattern2 { let (e,o) = $1 in ($3:e,$2:o) }
-  | pattern2 csym pattern2 { ([$3,$1],[$2]) }
+patternops :: { [Either Pattern Var] }
+  : patternops csym pattern2 { Left $3 : Right $2 : $1 }
+  | pattern2 csym pattern2 { [Left $3,Right $2,Left $1] }
 
 pattern2 :: { Pattern }
   : pattern3 { $1 }

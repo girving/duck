@@ -67,6 +67,10 @@ let join l = case l of
 
 ---- arithmetic
 
+-- implicitly declared: (+), (-), (*), (/)
+
+let negate x = 0 - x
+
 let sum = fold (+) 0
 let product = fold (*) 1
 
