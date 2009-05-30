@@ -27,3 +27,30 @@ A place for miscellaneous notes:
        explain f x y
 
    would explain all the overload resolution steps in detail.
+
+3. There's not really any need to hide the overloading concept within named
+   functions.  E.g., there could be a combination function overload with a
+   type like
+
+       overload :: (a -> b) -> (c -> d) -> (a -> b) | (c -> d)
+
+   or however we decided to denote alternation.
+
+4. Effects might be a better core representation than monads for IO and the like.
+   The translation from monads to effects is trivial, and the only advantage of see
+   in the IO monad is a nicer algebraic notation for types.
+
+   ...which raises the obvious point: why not expose effect types to the user via
+   a convenient algebraic notation (making them identical to monads).
+
+   Let's see:
+
+      print :: String -> IO ()
+
+   Actually, I suppose monads have advantages in terms of optimization.  But the
+   basic question remains.
+
+   Ah!  Perhaps the way to proceed is expose monads as MORE of a core type construct.
+   GHC translates monads internally into RealWorld threading, but this strikes me as
+   basically a hack.  The monad laws don't seem all that complicated, so making them
+   primitive might eliminate the complexity.
