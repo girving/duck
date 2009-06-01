@@ -17,6 +17,7 @@ data Type
   = TyVar Var
   | TyApply CVar [Type]
   | TyFun Type Type
+  | TyIO Type
   | TyInt
   | TyVoid
   deriving Show
@@ -31,6 +32,7 @@ unifyS :: Type -> Type -> Maybe Type
 unifyS t@(TyVar v) (TyVar v') | v == v' = Just t
 unifyS (TyApply c tl) (TyApply c' tl') | c == c' = TyApply c =<<. unifySList tl tl'
 unifyS t@(TyFun _ _) (TyFun _ _) = Just t
+unifyS t@(TyIO _) (TyIO _) = Just t
 unifyS TyInt TyInt = Just TyInt
 unifyS TyVoid t = Just t
 unifyS t TyVoid = Just t
@@ -53,6 +55,8 @@ unifySList _ _ = Nothing
 --   2. unify treats all function types as the same, since my first use of this
 --      is for overload resolution, and you can't overload on a function type.
 --      Again, I'll probably have to fix this later.
+--   3. IO types are similarly collapsed: you can't overload based on what
+--      inside IO either.
 --
 -- Operationally, unify x y answers the question "If a function takes an
 -- argument of type x, can we pass it a y?"  As an example, unify x Void always
@@ -68,6 +72,7 @@ unify' env (TyVar v) t =
     Just t' -> unifyS t t' >>=. \t'' -> Map.insert v t'' env
 unify' env (TyApply c tl) (TyApply c' tl') | c == c' = unifyList' env tl tl'
 unify' env (TyFun _ _) (TyFun _ _) = Just env
+unify' env (TyIO _) (TyIO _) = Just env
 unify' env TyInt TyInt = Just env
 unify' env _ TyVoid = Just env
 unify' _ _ _ = Nothing
@@ -94,5 +99,6 @@ instance Pretty Type where
   pretty' (TyApply (V "[]") [t]) = (100, brackets (pretty t))
   pretty' (TyApply t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
   pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
+  pretty' (TyIO t) = (1, text "IO" <+> guard 2 t)
   pretty' TyInt = (100, text "Int")
   pretty' TyVoid = (100, text "Void")

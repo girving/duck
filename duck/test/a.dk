@@ -17,25 +17,34 @@ let g = \x -> x
 -- tuples
 
 let t1,t2,t3 = 1,2,(1,2) :: (Int,Int)
+let test_tuple = assert $ (t1,t2,t3) == (1,2,(1,2))
 
 -- lists
 
 let list = 1 : [2, 3, 4]
-let ten = sum list
 let one : two : _ = list
+
+let test_sum = assert $ 10 == sum list
+let test_cons = assert $ (one,two) == (1,2)
+
+let test_eq1 = assert $ [1,1] == [1,1]
+let test_eq2 = assert $ not $ [1,1] == [1,2]
 
 -- test map overloading
 
-let negate x = 0 - x
-
-let la = map negate [3,4]
-let ma = map negate (Just 5)
+let test_map1 = assert $ (map negate [3,4]) == [-3,-4]
+let test_map2 = assert $ (map negate (Just 5)) == (Just $ -5)
 
 -- test the list monad
 
-let j = join [[]]
+let test_join1 = assert $ join [[]] == []
+let test_join2 = assert $ join [[1,2],[3,4]] == [1,2,3,4]
 
-let m =
+let test_monad = assert $ [11,101,21,201] == (
   [1,2] >>= \a ->
   [10 * a, 100 * a] >>= \b ->
-  b + 1
+  b + 1)
+
+-- toplevel
+
+let main = testAll

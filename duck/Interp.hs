@@ -5,6 +5,7 @@
 
 module Interp 
   ( prog
+  , main
   ) where
 
 import Prelude hiding (lookup)
@@ -16,11 +17,13 @@ import Value
 import Pretty
 import Text.PrettyPrint
 import qualified Ir
+import qualified Prims
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Util
 import ExecMonad
 import Control.Monad hiding (guard)
+import Control.Monad.Trans
 
 -- Environments
 
@@ -66,7 +69,7 @@ addConsType global v c tvl ty = global { consesG = Map.insert v (c,tvl,ty) (cons
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
 prog :: [Ir.Decl] -> Exec GlobalEnv
-prog decls = foldM decl emptyGlobalEnv (prelude ++ decls)
+prog decls = foldM decl emptyGlobalEnv (Prims.prelude ++ decls)
 
 -- The first environment contains all global definitions,
 -- and isn't defined until after decl completes
@@ -139,7 +142,12 @@ expr global env = exp where
   exp (Ir.Binop op e1 e2) = do
     d1 <- exp e1
     d2 <- exp e2
-    prim op d1 d2
+    Prims.prim op d1 d2
+  exp (Ir.Bind v e1 e2) = do
+    d <- exp e1
+    return (ValBindIO v d e2)
+  exp (Ir.Return e) = exp e >>=. ValLiftIO
+  exp (Ir.PrimIO p el) = mapM exp el >>=. ValPrimIO p
 
 -- Overloaded function application
 apply :: GlobalEnv -> Var -> [Value] -> Exec Value
@@ -175,25 +183,42 @@ typeof global (ValCons c args) = do
       showlist = unwords . (map (show . guard 51))
 typeof _ (ValFun _ _ _) = return $ TyFun TyVoid TyVoid
 typeof _ (ValClosure _ _) = return $ TyFun TyVoid TyVoid
+typeof _ (ValBindIO _ _ _) = return $ TyIO TyVoid
+typeof _ (ValPrimIO _ _) = return $ TyIO TyVoid
+typeof _ (ValLiftIO _) = return $ TyIO TyVoid
 
-prim :: Ir.Binop -> Value -> Value -> Exec Value
-prim Ir.IntAddOp (ValInt i) (ValInt j) = return $ ValInt (i+j)
-prim Ir.IntSubOp (ValInt i) (ValInt j) = return $ ValInt (i-j)
-prim Ir.IntMulOp (ValInt i) (ValInt j) = return $ ValInt (i*j)
-prim Ir.IntDivOp (ValInt i) (ValInt j) = return $ ValInt (div i j)
-prim op v1 v2 = execError ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
+-- IO and main
+main :: GlobalEnv -> IO ()
+main global = runExec $ do
+  main <- lookup global Map.empty (V "main")
+  _ <- runIO global Map.empty main
+  return ()
 
-prelude :: [Ir.Decl]
-prelude = decTuples ++ binops where
-  [a,b] = take 2 standardVars
-  ty = TyFun TyInt (TyFun TyInt TyInt)
-  binops = map binop [Ir.IntAddOp, Ir.IntSubOp, Ir.IntMulOp, Ir.IntDivOp ]
-  binop op = Ir.OverD (V (Ir.binopString op)) ty (Ir.Lambda a (Ir.Lambda b (Ir.Binop op (Ir.Var a) (Ir.Var b))))
+runIO :: GlobalEnv -> Env -> Value -> Exec Value
+runIO _ _ (ValLiftIO d) = return d
+runIO global _ (ValPrimIO Ir.TestAll []) = testAll global
+runIO _ _ (ValPrimIO p args) = Prims.primIO p args
+runIO global env (ValBindIO v m e) = do
+  d <- runIO global env m
+  let env' = Map.insert v d env
+  d' <- expr global env' e
+  runIO global env' d'
+runIO _ _ d =
+  execError ("expected IO computation, got "++show (pretty d))
 
-  decTuples = map decTuple (0 : [2..5])
-  decTuple i = Ir.Data c vars [(c, map TyVar vars)] where
-    c = tuple vars
-    vars = take i standardVars
+testAll :: GlobalEnv -> Exec Value
+testAll global = do
+  liftIO $ putStrLn "running unit tests..."
+  mapM_ test (Map.toList (globalsG global))
+  liftIO $ putStrLn "success!"
+  nop
+  where
+  test (V v,d)
+    | isPrefixOf "test_" v = do
+        liftIO $ putStrLn ("  "++v)
+        runIO global Map.empty d
+    | otherwise = nop
+  nop = return $ ValCons (V "()") []
 
 -- Pretty printing
 

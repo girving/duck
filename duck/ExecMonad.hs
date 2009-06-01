@@ -24,7 +24,7 @@ import Util
 type Callstack = [(Var, [Value])]
 
 newtype Exec a = Exec { unExec :: StateT Callstack IO a }
-  deriving Monad
+  deriving (Monad, MonadIO)
 
 handleE :: Exception e => (forall a. e -> Exec a) -> Exec b -> Exec b
 handleE h e = Exec (do

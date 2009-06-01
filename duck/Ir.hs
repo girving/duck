@@ -5,6 +5,7 @@ module Ir
   ( Decl(..)
   , Exp(..)
   , Binop(..)
+  , PrimIO(..)
   , prog
   , binopString
   ) where
@@ -39,6 +40,10 @@ data Exp
   | Cons CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
   | Binop Binop Exp Exp
+    -- Monadic IO
+  | Bind Var Exp Exp
+  | Return Exp
+  | PrimIO PrimIO [Exp]
   deriving Show
 
 data Binop
@@ -46,6 +51,13 @@ data Binop
   | IntSubOp
   | IntMulOp
   | IntDivOp
+  | IntEqOp
+  | IntLessOp
+  deriving Show
+
+data PrimIO
+  = ExitFailure
+  | TestAll
   deriving Show
 
 -- Ast to IR conversion
@@ -97,6 +109,7 @@ expr s (Ast.Def f args body c) = Let f lambda (expr sc c) where
 expr s (Ast.Case e cl) = cases s (expr s e) cl
 expr s (Ast.TypeCheck e _) = expr s e
 expr s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) (map (expr s) el)
+expr s (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) (expr s c)) (expr s e1)) (expr s e2)
 
 -- match processes a single pattern into an input variable, a new in-scope set,
 -- and a transformer that converts an input expression and a result expression
@@ -218,6 +231,14 @@ instance Pretty Exp where
     def (Just (v, e)) = [pretty v <+> text "->" <+> pretty e]
   pretty' (Binop op e1 e2) | prec <- binopPrecedence op = (prec,
     guard prec e1 <+> text (binopString op) <+> guard prec e2)
+  pretty' (Bind v e1 e2) = (6,
+    pretty v <+> text "<-" <+> guard 0 e1 $$ guard 0 e2)
+  pretty' (Return e) = (6, text "return" <+> guard 7 e)
+  pretty' (PrimIO p []) = pretty' p
+  pretty' (PrimIO p args) = (50, guard 50 p <+> hsep (map (guard 51) args))
+
+instance Pretty PrimIO where
+  pretty' p = (100, text (show p))
 
 binopPrecedence :: Binop -> Int
 binopPrecedence op = case op of
@@ -225,6 +246,8 @@ binopPrecedence op = case op of
   IntSubOp -> 20
   IntMulOp -> 30
   IntDivOp -> 30
+  IntEqOp -> 10
+  IntLessOp -> 10
 
 binopString :: Binop -> String
 binopString op = case op of
@@ -232,3 +255,5 @@ binopString op = case op of
   IntSubOp -> "-"
   IntMulOp -> "*"
   IntDivOp -> "/"
+  IntEqOp -> "=="
+  IntLessOp -> "<"

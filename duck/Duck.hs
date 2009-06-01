@@ -10,6 +10,7 @@ import System.FilePath
 import qualified Ir
 import qualified Interp
 import ExecMonad
+import Control.Monad
 
 header = "Duck interactive mode"
 
@@ -27,17 +28,22 @@ main = do
       return (dropExtension file, c)
     _ -> error "expected zero or one arguments"
 
-  putStr "\n-- AST --\n"
+  let ifv = when False
+
+  ifv $ putStr "\n-- AST --\n"
   ast <- runP parse file code
-  pprint ast
+  ifv $ pprint ast
 
-  putStr "\n-- IR --\n"
+  ifv $ putStr "\n-- IR --\n"
   let ir = Ir.prog ast
-  pprint ir
+  ifv $ pprint ir
 
-  putStr "\n-- Result --\n"
+  ifv $ putStr "\n-- Environment --\n"
   env <- runExec (Interp.prog ir)
-  pprint env
+  ifv $ pprint env
+
+  ifv $ putStr "\n-- Main --\n"
+  Interp.main env
 
 -- for ghci use
 run :: String -> IO ()

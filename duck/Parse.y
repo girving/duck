@@ -50,6 +50,9 @@ import qualified Data.Map as Map
   in   { TokIn _ }
   case { TokCase _ }
   of   { TokOf _ }
+  if   { TokIf _ }
+  then { TokThen _ }
+  else { TokElse _ }
   '='  { TokEq _ }
   '::' { TokDColon _ }
   ','  { TokComma _ }
@@ -80,9 +83,9 @@ decls :: { [[Decl]] }
   | decls decl { $2 : $1 }
 
 decl :: { [Decl] }
-  : let var patterns '=' exp { [DefD $2 Nothing (reverse $3) $5] }
+  : let avar patterns '=' exp { [DefD $2 Nothing (reverse $3) $5] }
   | let pattern2 sym pattern2 '=' exp { [DefD $3 Nothing [$2,$4] $6] }
-  | over ty let var patterns '=' exp { [DefD $4 (Just $2) (reverse $5) $7] }
+  | over ty let avar patterns '=' exp { [DefD $4 (Just $2) (reverse $5) $7] }
   | over ty let pattern2 sym pattern2 '=' exp { [DefD $5 (Just $2) [$4,$6] $8] }
   | let pattern '=' exp { [LetD $2 $4] }
   | import var {% let V file = $2 in parseFile parse file }
@@ -90,6 +93,11 @@ decl :: { [Decl] }
   | data cvar vars maybeConstructors { [Data $2 (reverse $3) (reverse $4)] }
   | data '(' ')' maybeConstructors { [Data (V "()") [] (reverse $4)] } -- type ()
   | data '[' var ']' maybeConstructors { [Data (V "[]") [$3] (reverse $5)] } -- type [a]
+
+avar :: { Var }
+  : var { $1 }
+  | '(' asym ')' { $2 }
+  | '(' if ')' { V "if" }
 
 vars :: { [Var] }
   : {--} { [] }
@@ -119,6 +127,7 @@ exp :: { Exp }
   : let var patterns '=' exp in exp { Def $2 (reverse $3) $5 $7 }
   | let pattern '=' exp in exp { Let $2 $4 $6 }
   | case exp of cases { Case $2 (reverse $4) }
+  | if exp then exp else exp { If $2 $4 $6 }
   | exptuple { Apply (Var (tuple $1)) (reverse $1) }
   | exp0 { $1 }
 
@@ -246,6 +255,7 @@ binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
 
 tyapply :: CVar -> [Type] -> Type
+tyapply (V "IO") [t] = TyIO t
 tyapply (V "Int") [] = TyInt
 tyapply (V "Void") [] = TyVoid
 tyapply c args = TyApply c args

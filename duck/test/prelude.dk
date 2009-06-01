@@ -7,51 +7,69 @@ infixr 8  ^, ^^, **
 infixl 7  *, /
 infixl 6  +, -
 infixr 5  :
-infix  4  ==, /=, <, <=, >=, >
+infix  4  ==, !=, <, <=, >=, >
 infixr 3  &&
 infixr 2  ||
 infixl 1  >>, >>=
 infixr 1  =<<
 infixr 0  $, $!
 
----- basic types
-
-data () = ()
-
-data [a] = [] | a : [a]
-
-data Maybe a = Nothing | Just a
-
----- misc
+--------- miscellaneous basic functions
 
 let id x = x
 let f $ x = f x
 
----- map
+--------- basic types and related functions
+
+---- unit
+
+data () = ()
+
+---- bool
+
+data Bool = False | True
+
+over Bool -> Bool
+let bool x = x
+
+over a -> b -> b -> b
+let (if) c x y = case bool c of
+    True -> x
+  | False -> y
+
+over a -> Bool
+let not x = if x then False else True
+
+-- TODO: && needs to be short circuiting
+over a -> a -> a
+let x && y = if x then y else x
+
+over a -> a -> a
+let x || y = if x then x else y
+
+over Bool -> Bool -> Bool
+let x == y = case x of
+    False -> not y
+  | True -> y
+
+over Bool -> Bool -> Bool
+let x < y = case x of
+    False -> y
+  | True -> False
+
+---- maybe
+
+data Maybe a = Nothing | Just a
 
 over (a -> b) -> Maybe a -> Maybe b
 let map f m = case m of
     Nothing -> Nothing
   | Just x -> Just (f x)
 
-over (a -> b) -> [a] -> [b]
-let map f l = case l of
-    [] -> []
-  | x:l -> f x : map f l
-
----- fold
-
 over (a -> b -> a) -> a -> Maybe b -> a
 let fold f x l = case l of
     Nothing -> x
   | Just y -> f x y
-
-over (a -> b -> a) -> a -> [b] -> a
-let fold f x l = case l of
-    [] -> x
-  | y:l -> fold f (f x y) l
-
----- join
 
 over Maybe (Maybe a) -> Maybe a
 let join m = case m of
@@ -59,13 +77,132 @@ let join m = case m of
   | Just Nothing -> Nothing
   | Just (Just x) -> Just x
 
+over Maybe a -> Bool
+let bool x = case x of Nothing -> False | _ -> True
+
+over Maybe (Maybe a) -> Maybe a
+let join0 x = join x
+
+over Maybe a -> Maybe b -> Bool
+let x == y = case x,y of
+    Nothing, Nothing -> True
+  | Just x, Just y -> x == y
+  | _ -> False
+
+over Maybe a -> Maybe b -> Ordering
+let cmp x y = case x,y of
+    Nothing, Nothing -> EQ
+  | Nothing, Just _ -> LT
+  | Just _, Nothing -> GT
+  | Just x, Just y -> cmp x y
+
+---- lists
+
+data [a] = [] | a : [a]
+
+over (a -> b) -> [a] -> [b]
+let map f l = case l of
+    [] -> []
+  | x:l -> f x : map f l
+
+over (a -> b -> a) -> a -> [b] -> a
+let fold f x l = case l of
+    [] -> x
+  | y:l -> fold f (f x y) l
+
 over [[a]] -> [a]
 let join l = case l of
     [] -> []
   | []:l -> join l
   | (x:y):l -> x : join (y:l)
 
----- arithmetic
+over [[a]] -> [a]
+let join0 x = join x
+
+over [a] -> Bool
+let bool x = case x of [] -> False | _ -> True
+
+over [a] -> [b] -> Bool
+let x == y = case x,y of
+    [],[] -> True
+  | x:x',y:y' -> x == y && x' == y'
+
+over [a] -> [b] -> Ordering
+let cmp x y = case x,y of
+    [],[] -> EQ
+  | [],_ -> LT
+  | _,[] -> GT
+  | x:x',y:y' -> cmp x y || cmp x' y'
+
+---- tuples
+
+over (a,b) -> (a',b') -> Bool
+let (a,b) == (a',b') = a == a' && b == b'
+
+over (a,b) -> (a',b') -> Ordering
+let cmp (a,b) (a',b') = cmp a a' || cmp b b'
+
+over (a,b,c) -> (a',b',c') -> Bool
+let (a,b,c) == (a',b',c') = a == a' && b == b' && c == c'
+
+over (a,b,c) -> (a',b',c') -> Ordering
+let cmp (a,b,c) (a',b',c') = cmp a a' || cmp b b' || cmp c c'
+
+---- orderings
+
+data Ordering = LT | EQ | GT
+
+over Ordering -> Ordering
+let negate x = case x of
+    LT -> GT
+  | EQ -> EQ
+  | GT -> LT
+
+over Ordering -> Ordering -> Bool
+let x == y = case x,y of
+    LT,LT -> True
+  | EQ,EQ -> True
+  | GT,GT -> True
+  | _ -> False
+
+over Ordering -> Ordering -> Bool
+let x < y = case y of
+    LT -> False
+  | EQ -> x == LT
+  | GT -> x != GT
+
+over Ordering -> Bool
+let bool x = x != EQ
+
+-------- comparison
+
+-- Most comparison operators are defined in terms of (==) and (<),
+-- which are in turn defined for the types which support them
+
+let x != y = not (x == y)
+let x > y = y < x
+let x <= y = not (y < x)
+let x >= y = not (x < y)
+
+-- For large types, using cmp can be more efficient.  cmp and (<)
+-- are recursively defined in terms of each other.
+
+-- TODO: This currently loops forever if neither one is given a
+-- specialization, and it would be nice to give an error message
+-- instead.  Depending on how the type inference semantics turn
+-- out, it might be possible to this with the overload restrictions
+--
+--   cmp :: ((<) :: a -> b -> Bool) -> a -> b -> Ordering
+--   (<) :: (cmp :: a -> b -> Ordering) -> a -> b -> Bool
+
+let cmp x y =
+  if x < y then LT
+  else if x == y then EQ
+  else GT
+
+let x < y = cmp x y == EQ
+
+-------- arithmetic
 
 -- implicitly declared: (+), (-), (*), (/)
 
@@ -74,7 +211,7 @@ let negate x = 0 - x
 let sum = fold (+) 0
 let product = fold (*) 1
 
----- monads
+-------- monads
 
 -- TODO: join0 should look something like
 --   over a -> a
@@ -86,14 +223,28 @@ let product = fold (*) 1
 over a -> a
 let join0 x = x
 
-over Maybe (Maybe a) -> Maybe a
-let join0 x = join x
-
-over [[a]] -> [a]
-let join0 x = join x
-
 -- In Haskell, join0 would be replaced with join.  The use
 -- of join0 here avoids the need for return as a separate construct
 
 -- (>>=) :: m a -> (a -> b) -> join0 (m b)
 let m >>= f = join0 (map f m)
+
+let a >> b = a >>= \_ -> b
+
+-------- IO!
+
+----- Since IO is magical, we mention the types here but don't actually declare them.
+--
+-- data IO a = ... 
+-- join :: IO (IO a) -> IO a
+-- map :: (a -> b) -> IO a -> IO b
+-- 
+----- And here are some primitives:
+--
+-- exitFailure :: IO Void 
+-- returnIO :: a -> IO a
+-- testAll :: IO Void
+
+let assert x =
+  if x then returnIO ()
+  else exitFailure

@@ -31,6 +31,9 @@ tokens :-
   in      { c TokIn }
   case    { c TokCase }
   of      { c TokOf }
+  if      { c TokIf }
+  then    { c TokThen }
+  else    { c TokElse }
   \(      { c TokLP }
   \)      { c TokRP }
   \[      { c TokLB }
@@ -86,6 +89,9 @@ data Token
   | TokIn SrcLoc
   | TokCase SrcLoc
   | TokOf SrcLoc
+  | TokIf SrcLoc
+  | TokThen SrcLoc
+  | TokElse SrcLoc
   | TokAny SrcLoc
   | TokLambda SrcLoc
   | TokArrow SrcLoc
@@ -109,6 +115,9 @@ instance Show Token where
     TokIn _ -> "in"
     TokCase _ -> "case"
     TokOf _ -> "of"
+    TokIf _ -> "if"
+    TokThen _ -> "then"
+    TokElse _ -> "else"
     TokImport _ -> "import"
     TokInfix Leftfix _ -> "infixl"
     TokInfix Rightfix _ -> "infixr"

@@ -33,6 +33,7 @@ data Exp
   | List [Exp]
   | TypeCheck Exp Type
   | Case Exp [(Pattern,Exp)]
+  | If Exp Exp Exp
   deriving Show
 
 data Pattern
@@ -88,6 +89,8 @@ instance Pretty Exp where
     text "case" <+> pretty e <+> text "of" $$ nest 2 (
       vjoin '|' (map (\ (p,e) -> pretty p <+> text "->" <+> pretty e) cases)))
   pretty' (TypeCheck e t) = (2, guard 2 e <+> text "::" <+> guard 60 t)
+  pretty' (If c e1 e2) = (0,
+    text "if" <+> pretty c <+> text "then" <+> pretty e1 <+> text "else" <+> pretty e2)
 
 instance Pretty Pattern where
   pretty' (PatAny) = pretty' '_'

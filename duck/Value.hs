@@ -24,6 +24,10 @@ data Value
   | ValCons Var [Value]
   | ValFun Env [Var] Ir.Exp
   | ValClosure Var [Value]
+    -- Monadic IO
+  | ValLiftIO Value
+  | ValPrimIO Ir.PrimIO [Value]
+  | ValBindIO Var Value Ir.Exp
   deriving Show
 
 -- Pretty printing
@@ -43,3 +47,9 @@ instance Pretty Value where
   pretty' (ValFun _ vl e) = -- conveniently ignore env
     (0, text "\\" <> hsep (map pretty vl) <> text " -> " <> pretty e)
   pretty' (ValClosure v args) = (2, pretty v <+> sep (map (guard 3) args))
+  pretty' (ValLiftIO v) = (2, text "return" <+> guard 3 v)
+  pretty' (ValPrimIO p []) = pretty' p
+  pretty' (ValPrimIO p args) = (2, pretty p <+> sep (map (guard 3) args))
+  pretty' (ValBindIO v d e) = (0,
+    pretty v <+> text "<-" <+> guard 0 d $$ guard 0 e)
+
