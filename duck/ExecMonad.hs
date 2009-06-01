@@ -51,4 +51,4 @@ showStack s = unlines (h : reverse (map p s)) where
 
 execError :: String -> Exec a
 execError msg = Exec $ get >>= \s ->
-  liftIO (die (showStack s ++ msg ++ "\n"))
+  liftIO (die (showStack s ++ "Error: "++msg))
