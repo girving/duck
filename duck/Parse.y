@@ -217,7 +217,7 @@ pattuple :: { [Pattern] }
   : pattern1 ',' pattern1 { [$3,$1] }
   | pattuple ',' pattern1 { $3 : $1 }
 
---- Tuples ---
+--- Types ---
 
 ty :: { Type }
   : ty1 { $1 }
