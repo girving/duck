@@ -1,56 +1,263 @@
 A place for miscellaneous notes:
 
-1. Array syntax.  Since a[i] would require whitespace-based parsing, it might be
-   reasonable just to use function application syntax for array lookups.  I.e.,
-   a i.  This requires overloading application, which we were already planning
-   to do (and is straightforward in any case).
+1.  Array syntax.  Since a[i] would require whitespace-based parsing, it might be
+    reasonable just to use function application syntax for array lookups.  I.e.,
+    a i.  This requires overloading application, which we were already planning
+    to do (and is straightforward in any case).
 
-   If we go with array _monads_ for mutable arrays, it's possible that "a i" could
-   return a helper type that would be usable for both reading and writing.  "a i"
-   probably can't be a direct extraction anyways; instead, it would be a monad, and
-   reading might look like
+    If we go with array _monads_ for mutable arrays, it's possible that "a i" could
+    return a helper type that would be usable for both reading and writing.  "a i"
+    probably can't be a direct extraction anyways; instead, it would be a monad, and
+    reading might look like
 
-      x <- a i
+        x <- a i
 
-   It's a fairly short leap from there to the idea that "a i" could be overloaded
-   to work for reading as well.  Interestingly, the "a i" syntax might otherwise
-   be unused on the left side of "<-" in "do" notation, since <- never defines
-   functions.
+    It's a fairly short leap from there to the idea that "a i" could be overloaded
+    to work for reading as well.  Interestingly, the "a i" syntax might otherwise
+    be unused on the left side of "<-" in "do" notation, since <- never defines
+    functions.
 
-2. It would be useful to eventually have an "explain" function which explains why
-   a particular overload is chosen.  E.g., if you do
+2.  It would be useful to eventually have an "explain" function which explains why
+    a particular overload is chosen.  E.g., if you do
 
-       f x y
+        f x y
 
-   and don't understand the result,
+    and don't understand the result,
 
-       explain f x y
+        explain f x y
 
-   would explain all the overload resolution steps in detail.
+    would explain all the overload resolution steps in detail.
 
-3. There's not really any need to hide the overloading concept within named
-   functions.  E.g., there could be a combination function overload with a
-   type like
+    3. There's not really any need to hide the overloading concept within named
+    functions.  E.g., there could be a combination function overload with a
+    type like
 
-       overload :: (a -> b) -> (c -> d) -> (a -> b) | (c -> d)
+        overload :: (a -> b) -> (c -> d) -> (a -> b) | (c -> d)
 
-   or however we decided to denote alternation.
+    or however we decided to denote alternation.
 
-4. Effects might be a better core representation than monads for IO and the like.
-   The translation from monads to effects is trivial, and the only advantage of see
-   in the IO monad is a nicer algebraic notation for types.
+4.  Effects might be a better core representation than monads for IO and the like.
+    The translation from monads to effects is trivial, and the only advantage of see
+    in the IO monad is a nicer algebraic notation for types.
 
-   ...which raises the obvious point: why not expose effect types to the user via
-   a convenient algebraic notation (making them identical to monads).
+    ...which raises the obvious point: why not expose effect types to the user via
+    a convenient algebraic notation (making them identical to monads).
 
-   Let's see:
+    Let's see:
 
-      print :: String -> IO ()
+        print :: String -> IO ()
 
-   Actually, I suppose monads have advantages in terms of optimization.  But the
-   basic question remains.
+    Actually, I suppose monads have advantages in terms of optimization.  But the
+    basic question remains.
 
-   Ah!  Perhaps the way to proceed is expose monads as MORE of a core type construct.
-   GHC translates monads internally into RealWorld threading, but this strikes me as
-   basically a hack.  The monad laws don't seem all that complicated, so making them
-   primitive might eliminate the complexity.
+    Ah!  Perhaps the way to proceed is expose monads as MORE of a core type construct.
+    GHC translates monads internally into RealWorld threading, but this strikes me as
+    basically a hack.  The monad laws don't seem all that complicated, so making them
+    primitive might eliminate the complexity.
+
+5.  Since our type system is in spirit the untyped lambda calculus, we can hopefully
+    afford to be cavalier about kinds and such.  A higher kinded type can just be a
+    type with a type application operator that happens to be uninhabited.
+
+    The natural question is how far we can carry this cavalier attitude in various
+    directions.  There are a couple things it would be nice to identify:
+
+       1. Tuples of types and tuple types.
+       2. Function (names, at least) and their associated function types.
+
+    In particular, it would be notationally convenient if one could write
+
+        join0 :: a -> join a
+
+    This poses two difficulties:
+
+        1. There is a parsing ambiguity: how we know that join isn't a quantified
+           type argument?
+        2. It is not clean the value "join" and the type "join" can be compatibly
+           overloaded.
+
+    Aside: can we solve these two problems simultaneously by declaring the type of
+    "join" to be "Join"?  That might be a pretty sweet solution to the dilemma.
+
+    Leaving aside the more mundane issue (1), let's consider some examples of (2).
+    (2) doesn't arise at all in a language like haskell or ocaml, since types and
+    values are completely separated.  This isn't the case in duck: we would like
+    to be able to pass types as argments, effectively combining the syntaxes of
+    template metaprogramming and normal programming.  E.g., it should be possible
+    to write functions with signatures like
+
+        mkShow :: Type a -> a -> String
+
+    which be invoked as
+
+        mkShow [Int] [1,2,3]
+
+    There are a few consequences of this:
+
+        1. We no longer have the luxury of separate namespaces for types and
+           constructors, or indeed for type variables and value variables.
+        2. Some expressions can be naturally parsed as either a type or a value,
+           with different meanings in each case.  "[Int]" is an example of this
+           in the above; its type could be either "Type [Int]" or "[Type Int]".
+
+    Since value (lowercase) and type (uppercase) identifiers are separate, the
+    only ambiguities occur for type expressions involving special syntax.  Here's
+    our current (collapsed) grammar for types (aren't grammar specs wonderful?):
+
+        ty : ty ty      -- application
+           | ty -> ty   -- functions
+           | ty , ty    -- tuples
+           | [ ty ]     -- lists
+
+    Let's go over these one by one:
+
+    1.  Application is fine as long as we don't overload "join" to mean both a
+        function and it's type.  I think I'm settled on this: using "Join" as the
+        type is so elegant that I can't help but go for it.
+
+    2.  Function types are problematic: "->" is used for both anonymous functions
+        and case expressions.  Allowing it as a type constructor in expressions
+        might be confusing.  Here are examples of the resulting expressions:
+
+            Apply (Int -> Int) Int
+            \t -> Maybe (t -> t)
+            case t of (Int -> Int) -> 3
+
+        Hmm.  Those actually don't look half bad.  case is the worst of the three,
+        but I expect pattern matches on function types will be quite rare due to
+        the fact that you can't overload on the arguments to functions.  Note that
+        syntactically we're saved from ambiguity by the fact that '->' is always
+        bound to special extra syntax in expressions (\ or case).
+       
+    3.  Tuples are interesting.  We have
+
+            (1, 1) :: (Int, Int)                (a)
+            (Int, Int) :: (Type Int, Type Int)  (b)
+
+        Not so interesting after all, I think.  I was hoping that somehow these two
+        examples could collapse, but it doesn't feel likely.  If so, we are left
+        with the issue of how to indicate the difference between the rhs of (a) and
+        the lhs of (b).  The first thing that comes to mind is "Tuple" and "tuple".
+        Expressed in this form we'd get something like
+
+            tuple2 1 1 :: Tuple2 Int Int
+            tuple2 Int Int :: Tuple2 (Type Int) (Type Int)
+
+        Needless to say, those are horrifically ugly.  Hmm.  We can do a bit
+        better if we always pick (,) to mean one thing, say the expression, and
+        use a converter:
+
+            T :: (Type a, Type b) -> Type (a,b) -- if you know what I mean
+
+            (1, 1) :: T (Int, Int)
+            (Int, Int) :: T (Type Int, Type Int)
+            T (Int, Int) :: Type (T (Type Int, Type Int))
+
+        That's still unsatisfactory though: one shouldn't _have_ to descend to
+        values to build a type, and tuple type syntax has to be elegant.
+
+        Let's go back a bit to why I thought they could collapse.  The types
+        (Int, Int) and Type (Int, Int) have only one value each.  So what, I
+        now say.  After putting this down in writing it seems foolish to
+        imagine that they were going to collapse, and more than iterated
+        newtype constructors should collapse.
+
+        It's possible there could be a conversion between them, but that
+        doesn't help: we still need to be able to refer to the raw values.
+
+        I'll get back to this.
+
+    4.  Lists are more clear cut: there are many different values of type
+        [Int], namely [], [Int], [Int,Int], etc., so [Int] the value and
+        [Int] the type are clearly different.  I think I'm fine with giving
+        up the [a] syntax for lists in favor of List a.
+
+    Hmm.  One more wrinkle: if types are perfectly valid expressions, then
+    what is the type of the expression "Join"?  "Join" is a type and a
+    type function: we have things like
+
+        Join (Maybe (Maybe Int)) = Maybe Int
+
+    If you wanted to make a function that accepts "Join" as an argument,
+    you could do 
+
+        f :: Type a -> Type (a,a)
+
+    I think this is all fine and consistent:
+
+        join :: Join
+        Join :: Type Join
+        join :: Maybe (Maybe a) -> Maybe a
+        Join :: Type (Maybe (Maybe a)) -> Type (Maybe a)
+
+    So it looks like tuples are the primary remaining problem.  I'm also
+    still a little leary of '->'.  I think I'm pretty happy with the
+    join/Join difference.
+
+    Can we use overload "Type" to also mean typeof?  I believe so:
+
+        join :: Join
+        typeof join = Join :: Type Join
+        typeof Join = Type Join :: Type (Type Join)
+        typeof (Type Join) = Type (Type Join)
+
+    "typeof" and "Type" both add one level of "Type" once we get up into
+    Join, Type Join, etc., so it's natural to push this symmetry back
+    downwards to make typeof and Type the same.
+
+6.  That last note was getting a little long and wandering, so I'll
+    start a new one.  This one is about the possible unification of
+    functions and function types.
+
+        \x -> x :: a -> a
+
+    The lhs is a function and the rhs is a type, but the rhs is also
+    a function:
+
+        (a -> a) b = b
+
+    Can "\x -> x" be viewed as a type?  It would have to be an anonymous
+    type, but so is "a -> a", so that's fine.
+
+    The key here is that function types in duck are a rather amorphous
+    thing, since the output type can depend arbitarily on the input
+    type.  The other key is the collapse of the kind hierarchy.  In
+    haskell, the type expression (a -> a) Int is invalid, since (a -> a)
+    has kind *, not * -> *.  In other words, the type system of types
+    in haskell is akin to simply typed lambda calculus.
+
+    Where does this leave us?  I think it's going to work: function
+    types are just functions used as types.  This allows us to write
+    fun things like
+
+        \x -> x :: \x -> x
+
+    Stepping back a bit, this works because duck type checking is
+    concrete only: we never try to establish that this rule holds for
+    all x.  Instead, we only need to worry about what happens when
+    we make both sides concrete:
+
+        (\x -> x) 1 :: (\x -> x) Int
+        1 :: Int
+
+    That's pretty sweet.  One wrinkle in this is that we never bothered
+    to type check the rhs itself:
+
+        (\x -> x) Int :: (\x -> x) (Type Int)
+        Int :: Type Int
+
+    For all of this to be sensible, we need this recursion to develop
+    a simple pattern, at which point we can appeal to the pattern to
+    know that everything that follows checks out.  In this case, that
+    happens because the type of id has exactly the same structure as
+    id itself.  Let's see what happens in another case:
+
+        data T x = A x
+        \x -> A x :: \x -> T x
+        \x -> T x :: \(Type x) -> Type (T x)
+
+        (\x -> A x) 1 :: (\x -> T x) Int
+        A 1 :: T Int
+
+    Hmm.  I think there might be something wrong here, but I think
+    it's time to step away for a bit.
