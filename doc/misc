@@ -261,3 +261,30 @@ A place for miscellaneous notes:
 
     Hmm.  I think there might be something wrong here, but I think
     it's time to step away for a bit.
+
+7.  It is worth exploring the connections between the duck type system and
+    the "infinitely searchable sets" work.  Duck function types appears to fit
+    the necessary compactness criteria (Tychonoff's (sp) theorem is awesome),
+    which provides more evience that the next step is going to work.
+
+    To explain: even though a duck functino type is any algorithm function
+    from types to types, convergent programs with only plug in a finite number
+    of possible arguments.
+
+8.  Implicit monad overloading: if t and Maybe t are allowed to implicitly
+    unify, producing Maybe t, there are several interesting consequences.
+    For example, you can check if a list of elements is constant without
+    checking for emptiness first:
+
+        all (map (== $ head []) [])
+        = all (map (== Nothing) [])
+        = all []
+        = True
+
+        all (map (== $ head [1]) [1]))
+        = all (map (== $ Just 1) [1])
+        = all ([Just 1 == 1])
+        = all ([Just 1 == Just 1]) -- unify
+        = True
+
+    It's not clear whether this is a good idea or not, though.

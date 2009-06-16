@@ -63,4 +63,34 @@ What about higher order programs?  Here's fold:
     let sum = fold (+) 0
     let product = fold (*) 1
 
-    IMPORTANT: CONTINUE HERE
+Before contining, I need to introduce two new notational concepts.  First, rather than writing
+function types as (a -> b), I'm going to write them with single identifiers like "f", and refer
+to their return types using application syntax.  Thus
+    
+    a -> b, a, b
+
+becomes
+
+    f, a, f a
+
+Second, I'm going to use uppercase identifiers to describe the type function correponding to
+a lowercase value function.  For example,
+
+    fold :: Fold
+
+Now we can continue.  The conventional type of fold is
+
+    fold :: (a -> b -> a) -> a -> List b -> a
+
+The inferred type of fold looks like
+
+    Fold = f -> a -> List b -> Unify a (Fold f (f a b) (List b))
+         = \f -> \a -> \List b -> Unify a (Fold f (f a b) (List b))
+         = \f a (List b) -> Unify a (Fold f (f a b) (List b))
+
+SYNTAX NOTE: The '\' characters in there are rather distracting.  It's likely I'd be able
+to get used to them, but another alternative might be to go the other way and remove the
+'\' from lambda syntax.  This may be a terrible idea -- it definitely produces a non-LALR(1)
+grammar -- but it's worth more consideration.
+
+
