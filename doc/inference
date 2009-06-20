@@ -1,0 +1,58 @@
+Notes on type inference:
+
+1.  The goal of type inference is to check that every overload resolution that
+    can possibly occur during the execution of the program succeeds.
+
+2.  The worst case time complexity will be proportional to the total number of
+    types that can occur at each program point.  Unfortunately, this isn't
+    necessarily quite right: it is really more like the total number of type
+    _environments_ that can pass through each program point, where type
+    environments refers to the full set of types of in-scope variables in
+    functions.
+
+3.  There are two main conceptual and algorithmic difficulties to deal with:
+    recursion and partial function types.  As mentioned elsewhere, recursion
+    is dealt with via fixed point iteration; we initially assume that values
+    have type Void, and iterate type judgements until they converge.  The
+    other difficulty is how to efficiency memorize judgements that depend on
+    function types.  For example, consider passing an overloaded function f
+    to map.  Say we infer
+
+        F Int = Int
+        Map F [Int] = [Int]
+
+    If we have another function g with G Int = Int, it would be nice to reuse
+    this type judgement to establish
+
+        Map G [Int] = [Int]
+
+    Therefore, what we'd really like to infer is the general statement
+
+        Map (Int -> Int) [Int] = [Int]
+
+    I think this is doable but somewhat delicate.  Therefore, I'm going to
+    ignore it for the first pass, and go for an inference algorithm that
+    is still sound but fails to terminate for many reasonable programs.
+
+4.  Setting this "partial memoization" issue aside, we're left with how to
+    structure the type inference algorithm.
+
+    The state of the type inference algorithm is
+
+    1.  A set of "function type primitives" corresponding to particular
+        function declarations.  For example, a toplevel function f will
+        have type F, where F is a new primitive.  If f declares a nested
+        function g, this g will have one distinct primitive type for each
+        separate set of arguments to f.
+    2.  A map from variables to (possibly primitive) types.
+    3.  For each primitive function type, a map from types to types showing
+        the result of function application.
+
+    Notes:
+
+    1.  For now, the unique function type primitives will be generated using a
+        monad.
+    2.  Ideally, (1) and (3) should be garbage collected once they are no
+        longer referenced in (2).  This happens when nested functions disappear
+        from scope, for example.  I'll ignore this in the very first pass, and
+        come back to it later.
