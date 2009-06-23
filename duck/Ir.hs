@@ -26,8 +26,8 @@ import GHC.Exts
 
 data Decl
   = LetD Var Exp
-  | LetMD [Var] Exp
-  | OverD Var Type Exp
+  | LetM [Var] Exp
+  | Over Var Type Exp
   | Data CVar [Var] [(CVar, [Type])]
   deriving Show
 
@@ -82,13 +82,13 @@ prog decls = catMaybes $ map (decl (prog_vars decls)) decls
 
 decl :: InScopeSet -> Ast.Decl -> Maybe Decl
 decl s (Ast.DefD f Nothing args body) = Just $ LetD f (expr s (Ast.Lambda args body))
-decl s (Ast.DefD f (Just t) args body) = Just $ OverD f t (expr s (Ast.Lambda args body))
+decl s (Ast.DefD f (Just t) args body) = Just $ Over f t (expr s (Ast.Lambda args body))
 decl s (Ast.LetD Ast.PatAny e) = Just $ LetD ignored (expr s e)
 decl s (Ast.LetD (Ast.PatVar v) e) = Just $ LetD v (expr s e)
 decl s (Ast.LetD p e) = Just d where
   d = case vars of
     [v] -> LetD v (m (expr s e) (Var v))
-    vl -> LetMD vl (m (expr s e) (Cons (tuple vars) (map Var vars)))
+    vl -> LetM vl (m (expr s e) (Cons (tuple vars) (map Var vars)))
   vars = Set.toList (pattern_vars Set.empty p)
   (_,_,m) = match s p
 decl _ (Ast.Data t args cons) = Just $ Data t args cons
@@ -186,9 +186,9 @@ cases s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where
 instance Pretty Decl where
   pretty (LetD v e) =
     text "let" <+> pretty v <+> equals <+> nest 2 (pretty e)
-  pretty (LetMD vl e) =
+  pretty (LetM vl e) =
     text "let" <+> hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
-  pretty (OverD v t e) =
+  pretty (Over v t e) =
     text "over" <+> pretty t $$
     text "let" <+> pretty v <+> equals <+> nest 2 (pretty e)
   pretty (Data t args cons) =

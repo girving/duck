@@ -33,7 +33,7 @@ prelude = decTuples ++ binops ++ io where
   [a,b] = take 2 standardVars
   ty = TyFun TyInt (TyFun TyInt (TyVar a))
   binops = map binop [IntAddOp, IntSubOp, IntMulOp, IntDivOp, IntEqOp, IntLessOp]
-  binop op = OverD (V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
+  binop op = Over (V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
 
   decTuples = map decTuple (0 : [2..5])
   decTuple i = Data c vars [(c, map TyVar vars)] where
@@ -44,11 +44,11 @@ io :: [Decl]
 io = [map',join,exitFailure,testAll,returnIO] where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TyVar [a,b]
-  map' = OverD (V "map") (TyFun (TyFun ta tb) (TyFun (TyIO ta) (TyIO tb)))
+  map' = Over (V "map") (TyFun (TyFun ta tb) (TyFun (TyIO ta) (TyIO tb)))
     (Lambda f (Lambda c
       (Bind x (Var c)
       (Return (Apply (Var f) (Var x))))))
-  join = OverD (V "join") (TyFun (TyIO (TyIO ta)) (TyIO ta))
+  join = Over (V "join") (TyFun (TyIO (TyIO ta)) (TyIO ta))
     (Lambda c
       (Bind x (Var c)
       (Var x)))

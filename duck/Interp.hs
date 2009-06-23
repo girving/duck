@@ -75,13 +75,13 @@ prog decls = foldM decl emptyGlobalEnv (Prims.prelude ++ decls)
 -- and isn't defined until after decl completes
 decl :: GlobalEnv -> Ir.Decl -> Exec GlobalEnv
 decl global (Ir.LetD v e) = addOverload global v (bareOverload e)
-decl global (Ir.LetMD vl e) = do
+decl global (Ir.LetM vl e) = do
   d <- expr global Map.empty e
   dl <- case d of
            ValCons c dl | istuple c, length vl == length dl -> return dl
            d -> execError ("expected "++show (length vl)++"-tuple, got "++show (pretty d))
   return $ foldl (\g (v,d) -> addGlobal g v d) global (zip vl dl)
-decl global (Ir.OverD v t e) = addOverload global v (overload t e)
+decl global (Ir.Over v t e) = addOverload global v (overload t e)
 decl global (Ir.Data tc tvl cases) = return $ foldl f global cases where
   f :: GlobalEnv -> (CVar, [Type]) -> GlobalEnv
   f global (c,args) = global'' where
