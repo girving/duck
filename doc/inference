@@ -56,3 +56,8 @@ Notes on type inference:
         longer referenced in (2).  This happens when nested functions disappear
         from scope, for example.  I'll ignore this in the very first pass, and
         come back to it later.
+
+5.  After further thought, I've decided that it's futile to try to separate
+    type inference from polyinstantiation.  Therefore, the "type inference"
+    algorithm will now expand to generate type specialized IR with all types
+    concrete and all overload resolution precomputed.
