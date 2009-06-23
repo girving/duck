@@ -1,0 +1,78 @@
+Notes on Duck semantics:
+
+1.  I realized that I was a bit confused about the semantics of duck.  I'd
+    been imagining that the interpreter was already close to correct, and
+    that type inference would merely prove that the interpreter would never
+    hit a type error.  However, the interpreter is passing around values,
+    and it is not possible in duck to recover types from values.  For example,
+    the value [] could have any element type, and the element type determines
+    future execution since it influences overloading.  I already knew this,
+    but it turns out to be more pervasive and important than I was imagining.
+
+    So, before working out type inference in more detail, I think it's worth
+    clarifying the execution semantics further.  I don't think it'll be
+    possible to fix the interpreter without writing the full type inference
+    algorithm, but it might avoid the need to annotate _every_ statement
+    with a type.  In other words, it will avoid the need to annotate straight
+    line code.
+
+2.  The duck interpreter operates on type/value pairs of the form (t,v), where
+    v :: t.  Critically, these pairs are not recursive: the v part contains no
+    additional type information.  The semantics of each operation is defined
+    in terms of these pairs; the result type depends only on the input types,
+    but the result value depends on _both_ input types and input values.
+
+    Importantly, the types in these pairs do not include function argument or
+    result information.  A function pair looks like (Fun, f) where Fun has no
+    arguments.  This reflects the fact that operations can be overloaded
+    on whether something is a function or not, but not the input or output
+    types of the function.
+
+    Here's the current duck intermediate representation:
+
+        data Decl = ...
+
+        data Exp
+          = Int Int
+          | Var Var
+          | Lambda Var Exp
+          | Apply Exp Exp
+          | Let Var Exp Exp
+          | Cons CVar [Exp]
+          | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
+          | Binop Binop Exp Exp
+            -- Monadic IO
+          | Bind Var Exp Exp
+          | Return Exp
+          | PrimIO PrimIO [Exp]
+          deriving Show
+
+        data Binop = ...
+        data PrimIO = ...
+
+    The semantics of each Exp constructor are as follows:
+
+    1.  Int i -> (Int, i)
+    2.  Var s -> looked up in the environment of (t,v) pairs
+    3.  Lambda ... -> (Fun, ...)
+    4.  Apply (Fun, f) (t, v) -> (F t, f v)
+        BAD: F was derived from f, which is inconsistent.
+    5.  Let s (t, v) -> add (s, (t,v)) to the environment
+    6.  Cons C (t,v) -> (Type C t, C v)
+    7.  Case (t,v) ... -> lookup set of constructors based on t
+        and use it to choose the appropriate branch, fill it the
+        component types and values, and execute the branch expression.
+        HARD: Then join based on what the type would have been down the
+        other branches.
+    8.  Binop op (t1,v1) (t2,v2) -> (Op t1 t2, op v1 v2)
+    ...
+
+    The function rule is very bad, since it breaks the invariant that
+    types depend only on types.  Clearly, part of the function has to
+    show up in the type.  More thought is required.
+
+3.  After further thought, I've decided that trying to separate type
+    inference and polyinstantiations from execution semantics is futile.
+    The best path is to go ahead and implement combined type inference
+    and polyinstantiation.  The result of this pass with be a closed set
+    of instantiated functions, with all overloaded calls resolved.
