@@ -48,8 +48,8 @@ options :: [Option]
 options =
   [ enumOption ['d'] ["dump"] "PHASE" (undefined :: Phase) (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
   , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main"
-  , Option [] ["help"] (NoArg $ \_ -> putStrLn usage >> exitSuccess) "show this help" ]
-usage = usageInfo "" options
+  , Option ['h'] ["help"] (NoArg $ \_ -> putStr usage >> exitSuccess) "show this help" ]
+usage = usageInfo "duck [options] [files...]" options
 
 defaults = Flags
   { phases = Set.empty
@@ -59,7 +59,7 @@ main = do
   (options, args, errors) <- getOpt Permute options =<<. getArgs
   case errors of
     [] -> return ()
-    _ -> mapM_ (hPutStrLn stderr) errors >> hPutStrLn stderr usage >> exitFailure
+    _ -> mapM_ (hPutStr stderr) errors >> hPutStr stderr usage >> exitFailure
   flags <- foldM (\t s -> s t) defaults options
 
   (file,code) <- case args of
