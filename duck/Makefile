@@ -17,6 +17,8 @@ others: Parse.hs Lex.hs
 
 test: duck test/a.dk
 	duck test/a.dk
+	duck -c test/prelude.dk
+	duck -c test/ops.dk
 
 %.hs: %.y
 	$(HAPPY) $(HAPPYFLAGS) $< -o $@

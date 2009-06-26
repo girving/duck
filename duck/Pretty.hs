@@ -1,4 +1,4 @@
-{-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleInstances, OverlappingInstances #-}
 -- Pretty printing typeclass
 
 module Pretty 

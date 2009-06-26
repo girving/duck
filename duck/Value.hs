@@ -13,7 +13,7 @@ import Data.List hiding (lookup)
 import Var
 import Pretty
 import Text.PrettyPrint
-import qualified Ir
+import qualified Lir
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -22,12 +22,11 @@ type Env = Map Var Value
 data Value
   = ValInt Int
   | ValCons Var [Value]
-  | ValFun Env [Var] Ir.Exp
   | ValClosure Var [Value]
     -- Monadic IO
   | ValLiftIO Value
-  | ValPrimIO Ir.PrimIO [Value]
-  | ValBindIO Var Value Ir.Exp
+  | ValPrimIO Lir.PrimIO [Value]
+  | ValBindIO Var Value Lir.Exp
   deriving Show
 
 -- Pretty printing
@@ -44,8 +43,8 @@ instance Pretty Value where
     extract (ValCons (V ":") [h,t]) = h : extract t
     extract e = error ("invalid tail "++show (pretty e)++" in list")
   pretty' (ValCons c fields) = (2, pretty c <+> sep (map (guard 3) fields))
-  pretty' (ValFun _ vl e) = -- conveniently ignore env
-    (0, text "\\" <> hsep (map pretty vl) <> text " -> " <> pretty e)
+  -- pretty' (ValFun _ vl e) = -- conveniently ignore env
+  --  (0, text "\\" <> hsep (map pretty vl) <> text " -> " <> pretty e)
   pretty' (ValClosure v args) = (2, pretty v <+> sep (map (guard 3) args))
   pretty' (ValLiftIO v) = (2, text "return" <+> guard 3 v)
   pretty' (ValPrimIO p []) = pretty' p

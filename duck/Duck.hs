@@ -7,20 +7,62 @@ import ParseMonad
 import Pretty
 import System.Environment
 import System.FilePath
+import System.Console.GetOpt
+import System.IO
+import System.Exit
 import qualified Ir
+import qualified Lir
 import qualified Interp
 import ExecMonad
 import Control.Monad
+import qualified Data.Set as Set
+import Data.Set (Set)
+import Data.List
+import Util
 
-header = "Duck interactive mode"
+-- Options
 
-newline = putStrLn ""
+data Phase = PAst | PIr | PLir | PEnv deriving (Enum, Bounded, Ord, Eq)
+instance Pretty Phase where
+  pretty = pretty . f where
+    f PAst = "ast"
+    f PIr = "ir"
+    f PLir = "lir"
+    f PEnv = "env"
+
+data Flags = Flags
+  { phases :: Set Phase
+  , compileOnly :: Bool }
+type Option = OptDescr (Flags -> IO Flags)
+
+enumOption :: (Pretty e, Enum e, Bounded e) => [Char] -> [String] -> String -> e -> (e -> Flags -> Flags) -> String -> Option
+enumOption short long name _ f help = Option short long (ReqArg process name) help' where
+  help' = help ++ "(one of " ++ concat (intersperse ", " (map (show . pretty) values)) ++ ")"
+  values = enumFrom minBound
+  process :: String -> Flags -> IO Flags
+  process s flags = case lookup s [(show (pretty x),x) | x <- values] of
+    Nothing -> die ("invalid argument "++s++" to --"++head long)
+    Just x -> return (f x flags)
+
+options :: [Option]
+options =
+  [ enumOption ['d'] ["dump"] "PHASE" (undefined :: Phase) (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
+  , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main" ]
+
+defaults = Flags
+  { phases = Set.empty
+  , compileOnly = False }
 
 main = do
-  args <- getArgs
+  (options, args, errors) <- getOpt Permute options =<<. getArgs
+  case errors of
+    [] -> return ()
+    _ -> mapM_ (hPutStrLn stderr) errors >> exitFailure
+  flags <- foldM (\t s -> s t) defaults options
+
   (file,code) <- case args of
     [] -> do
-      putStrLn header
+      putStrLn "Duck interactive mode"
       c <- getContents
       return ("<stdin>",c)
     [file] -> do
@@ -28,22 +70,21 @@ main = do
       return (dropExtension file, c)
     _ -> error "expected zero or one arguments"
 
-  let ifv = when False
+  let ifv p = when (Set.member p (phases flags))
+  let phase p io = do
+        ifv p $ putStr ("\n-- "++show (pretty p)++" --\n")
+        r <- io
+        ifv p $ pprint r
+        return r
 
-  ifv $ putStr "\n-- AST --\n"
-  ast <- runP parse file code
-  ifv $ pprint ast
+  ast <- phase PAst (runP parse file code)
+  ir <- phase PIr (return $ Ir.prog ast)
+  lir <- phase PLir (return $ Lir.prog ir)
+  env <- phase PEnv (runExec $ Interp.prog lir)
 
-  ifv $ putStr "\n-- IR --\n"
-  let ir = Ir.prog ast
-  ifv $ pprint ir
-
-  ifv $ putStr "\n-- Environment --\n"
-  env <- runExec (Interp.prog ir)
-  ifv $ pprint env
-
-  ifv $ putStr "\n-- Main --\n"
-  Interp.main env
+  unless (compileOnly flags) $ do
+    unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
+    Interp.main env
 
 -- for ghci use
 run :: String -> IO ()

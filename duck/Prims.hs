@@ -12,6 +12,7 @@ import Type
 import Value
 import Pretty
 import Ir
+import qualified Lir
 import ExecMonad
 import Text.PrettyPrint
 
@@ -28,14 +29,14 @@ primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError "exit failure"
 primIO p args = execError ("invalid arguments "++show (hsep (map pretty args))++" to "++show p)
 
-prelude :: [Decl]
-prelude = decTuples ++ binops ++ io where
+prelude :: Lir.Prog
+prelude = Lir.prog $ decTuples ++ binops ++ io where
   [a,b] = take 2 standardVars
   ty = TyFun TyInt (TyFun TyInt (TyVar a))
   binops = map binop [IntAddOp, IntSubOp, IntMulOp, IntDivOp, IntEqOp, IntLessOp]
-  binop op = Over (V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
+  binop op = Ir.Over (V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
 
-  decTuples = map decTuple (0 : [2..5])
+  decTuples = map decTuple [2..5]
   decTuple i = Data c vars [(c, map TyVar vars)] where
     c = tuple vars
     vars = take i standardVars

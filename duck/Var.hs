@@ -9,6 +9,7 @@ module Var
   , PrecFix
   , InScopeSet
   , fresh
+  , freshen
   , freshVars
   , standardVars
   , ignored
