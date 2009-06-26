@@ -37,7 +37,7 @@ type Option = OptDescr (Flags -> IO Flags)
 
 enumOption :: (Pretty e, Enum e, Bounded e) => [Char] -> [String] -> String -> e -> (e -> Flags -> Flags) -> String -> Option
 enumOption short long name _ f help = Option short long (ReqArg process name) help' where
-  help' = help ++ "(one of " ++ concat (intersperse ", " (map (show . pretty) values)) ++ ")"
+  help' = help ++ " (one of " ++ concat (intersperse ", " (map (show . pretty) values)) ++ ")"
   values = enumFrom minBound
   process :: String -> Flags -> IO Flags
   process s flags = case lookup s [(show (pretty x),x) | x <- values] of
@@ -47,7 +47,9 @@ enumOption short long name _ f help = Option short long (ReqArg process name) he
 options :: [Option]
 options =
   [ enumOption ['d'] ["dump"] "PHASE" (undefined :: Phase) (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
-  , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main" ]
+  , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main"
+  , Option [] ["help"] (NoArg $ \_ -> putStrLn usage >> exitSuccess) "show this help" ]
+usage = usageInfo "" options
 
 defaults = Flags
   { phases = Set.empty
@@ -57,7 +59,7 @@ main = do
   (options, args, errors) <- getOpt Permute options =<<. getArgs
   case errors of
     [] -> return ()
-    _ -> mapM_ (hPutStrLn stderr) errors >> exitFailure
+    _ -> mapM_ (hPutStrLn stderr) errors >> hPutStrLn stderr usage >> exitFailure
   flags <- foldM (\t s -> s t) defaults options
 
   (file,code) <- case args of

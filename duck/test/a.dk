@@ -40,10 +40,10 @@ let test_map2 = assert $ (map negate (Just 5)) == (Just $ -5)
 let test_join1 = assert $ join [[]] == []
 let test_join2 = assert $ join [[1,2],[3,4]] == [1,2,3,4]
 
-let test_monad = assert $ [11,101,21,201] == (
+let test_monad = assert $ [11,101,22,202] == (
   [1,2] >>= \a ->
   [10 * a, 100 * a] >>= \b ->
-  b + 1)
+  b + a)
 
 -- toplevel
 
