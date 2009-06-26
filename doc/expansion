@@ -1,0 +1,19 @@
+Notes on expansion:
+
+Expansion is what I'm going to call combined type inference, polyinstantiation
+for now, mostly since the word "expand" is nice and short.  Here are notes:
+
+1.  The first question to answer is what expanded code looks like.  The main
+    property of expanded code is that all the types are filled in with fully
+    concrete values (the concreteness requirement may be relaxed later).  Thus,
+    whenever we go to perform an overload resolution, the required types are
+    all available.
+
+    When I first imagined this phase, I thought this meant that all overload
+    resolution steps were already performed.  However, that doesn't actually
+    work: most functions are passed around via closure, and closures can be
+    intrinsically polymorphic.  Therefore, all we can require is that expansion
+    fills in the necessary types.
+
+2.  I spoke too soon: I will need expansion, but since it's really just type
+    inference, I can and should implement that first.
