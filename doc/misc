@@ -288,3 +288,9 @@ A place for miscellaneous notes:
         = True
 
     It's not clear whether this is a good idea or not, though.
+
+9.  One way to handle records would be to make fields a datatype containing
+    two functions, set and get.  Application would be overloaded to use get
+    automatically, and a different function would be available to extract
+    the set function.  This would allow fields to be passed around as first
+    class values with no extra language features.
