@@ -10,7 +10,7 @@ Category:	Compilers/Interpreters
 Build-Type:	Simple
 Cabal-Version:	>= 1.2
 tested-with:    GHC == 6.10.3
-extra-source-files: README, duck/test/*.dk
+extra-source-files: README, duck/test/*.duck
 
 Flag debug
     Description: Enable debug support
@@ -19,7 +19,7 @@ Flag debug
 Executable duck
     Main-is:		Duck.hs
     Build-Depends:	base, containers, pretty, array, mtl, filepath
-    other-modules:	Util, Var, Pretty, Type, ParseMonad, Parse, Lex, Ast, Ir, Interp, ExecMonad, ParseOps, Value, Prims
+    other-modules:	Util, Var, Pretty, Type, ParseMonad, Parse, Lex, Ast, Ir, Lir, Interp, ExecMonad, ParseOps, Value, Prims
     hs-source-dirs:	duck
     if flag(debug)
         ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing

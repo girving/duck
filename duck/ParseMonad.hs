@@ -80,7 +80,7 @@ parseFile parse file = do
   s <- get
   let SrcLoc current _ _ = ps_loc s
       dir = dropFileName current
-  input <- liftIO $ readFile (dir </> file++".dk")
+  input <- liftIO $ readFile (dir </> file++".duck")
   parseString parse file input
  
 runP :: P a -> String -> String -> IO a
