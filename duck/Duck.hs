@@ -13,6 +13,7 @@ import System.Exit
 import qualified Ir
 import qualified Lir
 import qualified Interp
+import qualified Prims
 import ExecMonad
 import Control.Monad
 import qualified Data.Set as Set
@@ -22,12 +23,13 @@ import Util
 
 -- Options
 
-data Phase = PAst | PIr | PLir | PEnv deriving (Enum, Bounded, Ord, Eq)
+data Phase = PAst | PIr | PLir | PLink | PEnv deriving (Enum, Bounded, Ord, Eq)
 instance Pretty Phase where
   pretty = pretty . f where
     f PAst = "ast"
     f PIr = "ir"
     f PLir = "lir"
+    f PLink = "link"
     f PEnv = "env"
 
 data Flags = Flags
@@ -82,11 +84,12 @@ main = do
   ast <- phase PAst (runP parse file code)
   ir <- phase PIr (return $ Ir.prog ast)
   lir <- phase PLir (return $ Lir.prog ir)
+  lir <- phase PLink (return $ Lir.union Prims.prelude lir)
   env <- phase PEnv (runExec $ Interp.prog lir)
 
   unless (compileOnly flags) $ do
     unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
-    Interp.main env
+    Interp.main lir env
 
 -- for ghci use
 run :: String -> IO ()
