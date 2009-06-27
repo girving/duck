@@ -20,7 +20,7 @@ data Type
   | TyIO Type
   | TyInt
   | TyVoid
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 type TypeEnv = Map Var Type
 

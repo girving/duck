@@ -1,0 +1,8 @@
+Some things that need to be done:
+
+1.  Figure out how to get clean stacktraces out of monadic code.
+
+2.  Implement whitespace dependent syntax, and improve the syntax for overload
+    declarations.
+
+3.  Work out the details for macros and short circuiting application.
