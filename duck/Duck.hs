@@ -14,6 +14,7 @@ import qualified Ir
 import qualified Lir
 import qualified Interp
 import qualified Prims
+import qualified Infer()
 import ExecMonad
 import Control.Monad
 import qualified Data.Set as Set

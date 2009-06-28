@@ -12,6 +12,7 @@ module Util
   , nop
   , (>.), (>.=), (>=.)
   , (=.<), (.=<)
+  , foldM1
   ) where
 
 import System.IO
@@ -85,3 +86,6 @@ infixr 1 =.<, .=<
 nop :: Monad m => m ()
 nop = return ()
 
+foldM1 :: Monad m => (a -> a -> m a) -> [a] -> m a
+foldM1 f (h:t) = foldM f h t
+foldM1 _ [] = error "foldM1 applied to an empty list"

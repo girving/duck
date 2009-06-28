@@ -41,8 +41,8 @@ lookup prog global env v
 lookupOverloads :: Prog -> Var -> [Overload]
 lookupOverloads prog v = Map.findWithDefault [] v (Lir.functions prog)
 
-lookupConsType :: Prog -> Var -> Exec (CVar, [Var], [Type])
-lookupConsType prog c
+lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [Type])
+lookupConstructor prog c
   | Just tc <- Map.lookup c (Lir.conses prog)
   , Just (vl,cases) <- Map.lookup tc (Lir.datatypes prog)
   , Just tl <- Data.List.lookup c cases = return (tc,vl,tl)
@@ -129,7 +129,7 @@ typeof :: Prog -> Value -> Exec Type
 typeof _ (ValInt _) = return TyInt
 typeof prog (ValCons c args) = do
   tl <- mapM (typeof prog) args
-  (tv, vl, tl') <- lookupConsType prog c
+  (tv, vl, tl') <- lookupConstructor prog c
   case unifyList tl' tl of
     Just tenv -> return $ TyApply tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl

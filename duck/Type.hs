@@ -2,7 +2,10 @@
 
 module Type 
   ( Type(..)
+  , TypeEnv
   , unifyList
+  , unifyS
+  , subst
   ) where
 
 import Var
@@ -90,6 +93,15 @@ unifyList' env (t:tl) (t':tl') = do
   env' <- unify' env t t'
   unifyList' env' tl tl'
 unifyList' _ _ _ = Nothing
+
+-- Type environment substitution
+subst :: TypeEnv -> Type -> Type
+subst env t@(TyVar v) = Map.findWithDefault t v env
+subst env (TyApply c tl) = TyApply c (map (subst env) tl)
+subst env (TyFun t1 t2) = TyFun (subst env t1) (subst env t2)
+subst env (TyIO t) = TyIO (subst env t)
+subst _ TyInt = TyInt
+subst _ TyVoid = TyVoid
 
 -- Pretty printing
 

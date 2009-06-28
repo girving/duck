@@ -3,8 +3,10 @@
 
 module Prims 
   ( prim
+  , primType
   , prelude
   , primIO
+  , primIOType
   ) where
 
 import Var
@@ -14,6 +16,7 @@ import Pretty
 import Ir
 import qualified Lir
 import ExecMonad
+import InferMonad
 import Text.PrettyPrint
 
 prim :: Binop -> Value -> Value -> Exec Value
@@ -25,9 +28,22 @@ prim IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True" 
 prim IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
 prim op v1 v2 = execError ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
 
+primType :: Binop -> Type -> Type -> Infer Type
+primType IntAddOp TyInt TyInt = return TyInt
+primType IntSubOp TyInt TyInt = return TyInt
+primType IntMulOp TyInt TyInt = return TyInt
+primType IntDivOp TyInt TyInt = return TyInt
+primType IntEqOp TyInt TyInt = return $ TyApply (V "Bool") []
+primType IntLessOp TyInt TyInt = return $ TyApply (V "Bool") []
+primType op t1 t2 = typeError ("invalid arguments "++show (pretty t1)++", "++show (pretty t2)++" to "++show op)
+
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError "exit failure"
 primIO p args = execError ("invalid arguments "++show (hsep (map pretty args))++" to "++show p)
+
+primIOType :: PrimIO -> [Type] -> Infer Type
+primIOType ExitFailure [] = return $ TyApply (V "()") []
+primIOType p args = typeError ("invalid arguments"++show (hsep (map pretty args))++" to "++show p)
 
 prelude :: Lir.Prog
 prelude = Lir.prog $ decTuples ++ binops ++ io where
