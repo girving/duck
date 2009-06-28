@@ -33,8 +33,8 @@ primType IntAddOp TyInt TyInt = return TyInt
 primType IntSubOp TyInt TyInt = return TyInt
 primType IntMulOp TyInt TyInt = return TyInt
 primType IntDivOp TyInt TyInt = return TyInt
-primType IntEqOp TyInt TyInt = return $ TyApply (V "Bool") []
-primType IntLessOp TyInt TyInt = return $ TyApply (V "Bool") []
+primType IntEqOp TyInt TyInt = return $ TyCons (V "Bool") []
+primType IntLessOp TyInt TyInt = return $ TyCons (V "Bool") []
 primType op t1 t2 = typeError ("invalid arguments "++show (pretty t1)++", "++show (pretty t2)++" to "++show op)
 
 primIO :: PrimIO -> [Value] -> Exec Value
@@ -42,7 +42,8 @@ primIO ExitFailure [] = execError "exit failure"
 primIO p args = execError ("invalid arguments "++show (hsep (map pretty args))++" to "++show p)
 
 primIOType :: PrimIO -> [Type] -> Infer Type
-primIOType ExitFailure [] = return $ TyApply (V "()") []
+primIOType ExitFailure [] = return $ TyCons (V "()") []
+primIOType TestAll [] = return $ TyCons (V "()") []
 primIOType p args = typeError ("invalid arguments"++show (hsep (map pretty args))++" to "++show p)
 
 prelude :: Lir.Prog

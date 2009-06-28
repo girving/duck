@@ -18,7 +18,8 @@ import Util
 
 data Type
   = TyVar Var
-  | TyApply CVar [Type]
+  | TyCons CVar [Type]
+  | TyClosure Var [Type]
   | TyFun Type Type
   | TyIO Type
   | TyInt
@@ -33,9 +34,12 @@ type TypeEnv = Map Var Type
 -- As with unify below, unifyS treats all function types as the same.
 unifyS :: Type -> Type -> Maybe Type
 unifyS t@(TyVar v) (TyVar v') | v == v' = Just t
-unifyS (TyApply c tl) (TyApply c' tl') | c == c' = TyApply c =.< unifySList tl tl'
+unifyS (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< unifySList tl tl'
 unifyS t@(TyFun _ _) (TyFun _ _) = Just t
-unifyS t@(TyIO _) (TyIO _) = Just t
+unifyS t@(TyFun _ _) (TyClosure _ _) = Just t
+unifyS t@(TyClosure _ _) (TyFun _ _) = Just t
+unifyS t@(TyClosure _ _) (TyClosure _ _) = Just t
+unifyS (TyIO t) (TyIO t') = TyIO =.< unifyS t t'
 unifyS TyInt TyInt = Just TyInt
 unifyS TyVoid t = Just t
 unifyS t TyVoid = Just t
@@ -58,8 +62,6 @@ unifySList _ _ = Nothing
 --   2. unify treats all function types as the same, since my first use of this
 --      is for overload resolution, and you can't overload on a function type.
 --      Again, I'll probably have to fix this later.
---   3. IO types are similarly collapsed: you can't overload based on what
---      inside IO either.
 --
 -- Operationally, unify x y answers the question "If a function takes an
 -- argument of type x, can we pass it a y?"  As an example, unify x Void always
@@ -73,9 +75,12 @@ unify' env (TyVar v) t =
   case Map.lookup v env of
     Nothing -> Just (Map.insert v t env)
     Just t' -> unifyS t t' >.= \t'' -> Map.insert v t'' env
-unify' env (TyApply c tl) (TyApply c' tl') | c == c' = unifyList' env tl tl'
+unify' env (TyCons c tl) (TyCons c' tl') | c == c' = unifyList' env tl tl'
 unify' env (TyFun _ _) (TyFun _ _) = Just env
-unify' env (TyIO _) (TyIO _) = Just env
+unify' env (TyFun _ _) (TyClosure _ _) = Just env
+unify' env (TyClosure _ _) (TyFun _ _) = Just env
+unify' env (TyClosure _ _) (TyClosure _ _) = Just env
+unify' env (TyIO t) (TyIO t') = unify' env t t'
 unify' env TyInt TyInt = Just env
 unify' env _ TyVoid = Just env
 unify' _ _ _ = Nothing
@@ -97,7 +102,8 @@ unifyList' _ _ _ = Nothing
 -- Type environment substitution
 subst :: TypeEnv -> Type -> Type
 subst env t@(TyVar v) = Map.findWithDefault t v env
-subst env (TyApply c tl) = TyApply c (map (subst env) tl)
+subst env (TyCons c tl) = TyCons c (map (subst env) tl)
+subst env (TyClosure c tl) = TyClosure c (map (subst env) tl)
 subst env (TyFun t1 t2) = TyFun (subst env t1) (subst env t2)
 subst env (TyIO t) = TyIO (subst env t)
 subst _ TyInt = TyInt
@@ -107,9 +113,12 @@ subst _ TyVoid = TyVoid
 
 instance Pretty Type where
   pretty' (TyVar v) = pretty' v
-  pretty' (TyApply t tl) | istuple t = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
-  pretty' (TyApply (V "[]") [t]) = (100, brackets (pretty t))
-  pretty' (TyApply t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
+  pretty' (TyCons t []) = pretty' t
+  pretty' (TyClosure t []) = pretty' t
+  pretty' (TyCons t tl) | istuple t = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
+  pretty' (TyCons (V "[]") [t]) = (100, brackets (pretty t))
+  pretty' (TyCons t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
+  pretty' (TyClosure t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
   pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
   pretty' (TyIO t) = (1, text "IO" <+> guard 2 t)
   pretty' TyInt = (100, text "Int")

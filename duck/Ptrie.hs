@@ -21,6 +21,8 @@ module Ptrie
   , insert'
   , insert''
   , lookup
+  , toList
+  , toList'
   ) where
 
 import Prelude hiding (lookup)
@@ -81,3 +83,10 @@ lookup' :: Ord k => [k] -> Ptrie' k v -> Ptrie k v
 lookup' [] t = Just t
 lookup' (_:_) (Leaf _) = Nothing
 lookup' (x:k) (Node t) = lookup k (Map.lookup x t)
+
+toList :: Ptrie k v -> [([k],v)]
+toList = maybe [] toList'
+
+toList' :: Ptrie' k v -> [([k],v)]
+toList' (Leaf v) = [([],v)]
+toList' (Node t) = [(x:k,v) | (x,p) <- Map.toList t, (k,v) <- toList' p]

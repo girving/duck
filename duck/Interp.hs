@@ -131,7 +131,7 @@ typeof prog (ValCons c args) = do
   tl <- mapM (typeof prog) args
   (tv, vl, tl') <- lookupConstructor prog c
   case unifyList tl' tl of
-    Just tenv -> return $ TyApply tv targs where
+    Just tenv -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
     Nothing -> execError ("failed to unify types "++showlist tl++" with "++showlist tl') where
       showlist = unwords . (map (show . guard 51))

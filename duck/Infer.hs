@@ -15,7 +15,7 @@ import qualified Data.Map as Map
 import Data.List hiding (lookup)
 import qualified Data.List
 import Control.Monad hiding (guard)
-import InferMonad hiding (lookup)
+import InferMonad
 import Prelude hiding (lookup)
 import qualified Prims
 import Data.Maybe
@@ -40,7 +40,7 @@ lookup :: Prog -> Globals -> Locals -> Var -> Infer Type
 lookup prog global env v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
-  | Just _ <- Map.lookup v (Lir.functions prog) = return $ TyApply v [] -- if we find overloads, make a new closure
+  | Just _ <- Map.lookup v (Lir.functions prog) = return $ TyClosure v [] -- if we find overloads, make a new closure
   | otherwise = typeError ("unbound variable " ++ show v)
 
 lookupDatatype :: Prog -> CVar -> Infer Datatype
@@ -72,7 +72,7 @@ statement prog env (vl,e) = do
   t <- expr prog env Map.empty e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
-          (_, TyApply c tl) | istuple c, length vl == length tl -> return tl
+          (_, TyCons c tl) | istuple c, length vl == length tl -> return tl
           _ -> typeError ("expected "++show (length vl)++"-tuple, got "++show (pretty t))
   return $ foldl (\g (v,t) -> Map.insert v t g) env (zip vl tl)
 
@@ -84,7 +84,7 @@ expr prog global env = exp where
     t1 <- exp e1
     t2 <- exp e2
     case t1 of
-      TyApply f args -> apply prog global f (args ++ [t2])
+      TyClosure f args -> apply prog global f (args ++ [t2])
       _ -> typeError ("expected a -> b, got " ++ show (pretty t1))
   exp (Lir.Let v e body) = do
     t <- exp e
@@ -92,7 +92,7 @@ expr prog global env = exp where
   exp (Lir.Case e pl def) = do
     t <- exp e
     case t of
-      TyApply tv types -> do
+      TyCons tv types -> do
         (tvl, cases) <- lookupDatatype prog tv
         let tenv = Map.fromList (zip tvl types)
             caseType (c,vl,e')
@@ -117,7 +117,7 @@ expr prog global env = exp where
     case unifyList tl args of
       Nothing -> typeError (show (pretty c)++" expected arguments "++showlist tl++", got "++showlist args) where
         showlist = unwords . map (show . guard 51)
-      Just tenv -> return $ TyApply tv targs where
+      Just tenv -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
   exp (Lir.Binop op e1 e2) = do
     t1 <- exp e1
@@ -145,7 +145,7 @@ apply prog global f args = do
   case filter isMinimal overloads of -- prune away overloads which are more general than some other overload
     [] -> typeError (call++" doesn't match any overload, possibilities are"++options rawOverloads)
     os -> case partition (\ (_,_,l,_) -> length l == length args) os of
-      ([],_) -> return $ TyApply f args -- all overloads are still partially applied
+      ([],_) -> return $ TyClosure f args -- all overloads are still partially applied
       ([(_,_,vl,e)],[]) -> withFrame f args $ -- exactly one fully applied option
         expr prog global (foldl (\env (v,t) -> Map.insert v t env) Map.empty (zip vl args)) e
       (fully@(_:_),partially@(_:_)) -> typeError (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)

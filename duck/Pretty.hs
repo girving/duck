@@ -28,7 +28,10 @@ guard prec x
   where (inner, doc) = pretty' x
 
 instance Pretty t => Pretty [t] where
-  pretty = vcat . map (guard 0)
+  pretty = vcat . map pretty
+
+instance (Pretty s, Pretty t) => Pretty (s,t) where
+  pretty (s,t) = pretty s $$ pretty t
 
 instance Pretty Int where
   pretty' i = (100, int i)

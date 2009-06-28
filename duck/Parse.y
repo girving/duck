@@ -221,7 +221,7 @@ pattuple :: { [Pattern] }
 
 ty :: { Type }
   : ty1 { $1 }
-  | tytuple { TyApply (tuple $1) (reverse $1) }
+  | tytuple { TyCons (tuple $1) (reverse $1) }
 
 ty1 :: { Type }
   : ty2 { $1 }
@@ -229,12 +229,12 @@ ty1 :: { Type }
 
 ty2 :: { Type }
   : ty3 { $1 }
-  | cvar ty3s { tyapply $1 (reverse $2) }
+  | cvar ty3s { tycons $1 (reverse $2) }
 
 ty3 :: { Type }
   : var { TyVar $1 }
   | '(' ty ')' { $2 }
-  | '[' ty ']' { TyApply (V "[]") [$2] }
+  | '[' ty ']' { TyCons (V "[]") [$2] }
 
 tytuple :: { [Type] }
   : ty1 ',' ty1 { [$3,$1] }
@@ -254,10 +254,10 @@ parserError t = fail ("syntax error at '" ++ show t ++ "'")
 binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
 
-tyapply :: CVar -> [Type] -> Type
-tyapply (V "IO") [t] = TyIO t
-tyapply (V "Int") [] = TyInt
-tyapply (V "Void") [] = TyVoid
-tyapply c args = TyApply c args
+tycons :: CVar -> [Type] -> Type
+tycons (V "IO") [t] = TyIO t
+tycons (V "Int") [] = TyInt
+tycons (V "Void") [] = TyVoid
+tycons c args = TyCons c args
 
 }

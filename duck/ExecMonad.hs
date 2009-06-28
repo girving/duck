@@ -34,12 +34,12 @@ handleE h e = Exec (do
 withFrame :: Var -> [Value] -> Exec a -> Exec a
 withFrame f args e =
   handleE (\ (e :: AsyncException) -> execError (show e))
-  (Exec (do
+  (Exec $ do
     s <- get
     put ((f,args) : s)
     r <- unExec e
     put s
-    return r))
+    return r)
 
 runExec :: Exec a -> IO a
 runExec e = evalStateT (unExec e) []
