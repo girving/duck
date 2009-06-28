@@ -302,3 +302,5 @@ A place for miscellaneous notes:
     is explicit in types, this would involve adjusting the internal data
     structures used.  The analogous strictness transform would also work, but
     that isn't as useful when strictness is the default.
+
+11. The duck type system can be considered a form of model checking.
