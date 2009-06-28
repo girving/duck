@@ -16,7 +16,6 @@ import Prelude hiding (catch)
 import Var
 import Value
 import Pretty
-import Text.PrettyPrint
 import Control.Monad.State hiding (guard)
 import Control.Exception
 import Util
@@ -47,7 +46,7 @@ runExec e = evalStateT (unExec e) []
 showStack :: Callstack -> String
 showStack s = unlines (h : reverse (map p s)) where
   h = "Traceback (most recent call last):"
-  p (f,args) = "  in "++show (pretty f)++' ' : show (hsep (map (guard 2) args))
+  p (f,args) = "  in "++show (pretty f)++' ' : show (prettylist args)
 
 execError :: String -> Exec a
 execError msg = Exec $ get >>= \s ->

@@ -20,6 +20,7 @@ import Prelude hiding (lookup)
 import qualified Prims
 import Data.Maybe
 import qualified Data.List as List
+import Text.PrettyPrint
 
 ---- Algorithm discussion:
 
@@ -83,15 +84,15 @@ expr prog global env = exp where
   exp (Lir.Apply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
-    case t1 of
-      TyClosure f args -> apply prog global f (args ++ [t2])
-      _ -> typeError ("expected a -> b, got " ++ show (pretty t1))
+    unless (isConcrete t2) $ typeError (show (pretty e2)++" has nonconcrete type "++show (pretty t2))
+    applyType prog global t1 t2
   exp (Lir.Let v e body) = do
     t <- exp e
     expr prog global (Map.insert v t env) body
   exp (Lir.Case e pl def) = do
     t <- exp e
     case t of
+      TyVoid -> return TyVoid
       TyCons tv types -> do
         (tvl, cases) <- lookupDatatype prog tv
         let tenv = Map.fromList (zip tvl types)
@@ -105,7 +106,7 @@ expr prog global env = exp where
               | otherwise = typeError ("datatype "++show (pretty tv)++" has no constructor "++show (pretty c))
             defaultType Nothing = return []
             defaultType (Just (v,e')) = expr prog global (Map.insert v t env) e' >.= \t -> [t]
-            join t1 t2 | Just t <- unifyS t1 t2 = return t
+            join t1 t2 | Just (_,t) <- unifyS t1 t2 = return t
                        | otherwise = typeError ("failed to unify types "++show (pretty t1)++" and "++show (pretty t2)++" from different case branches")
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
@@ -130,6 +131,19 @@ expr prog global env = exp where
   exp (Lir.Return e) = exp e >.= TyIO
   exp (Lir.PrimIO p el) = mapM exp el >>= Prims.primIOType p >.= TyIO
 
+applyType :: Prog -> Globals -> Type -> Type -> Infer Type
+applyType _ _ TyVoid _ = return TyVoid
+applyType _ _ _ TyVoid = return TyVoid
+applyType prog global (TyClosure f args) t2 = do
+  r <- lookupInfo f args'
+  case r of
+    Just t -> return t
+    Nothing -> apply prog global f args'
+  where args' = args ++ [t2]
+applyType _ _ (TyFun a r) t2 | Just tenv <- unify a t2 = return (subst tenv r)
+applyType _ _ t1@(TyFun _ _) t2 = typeError ("cannot apply "++show (pretty t1)++" to "++show (pretty t2))
+applyType _ _ t1 _ = typeError ("expected a -> b, got " ++ show (pretty t1))
+
 -- Overloaded function application
 apply :: Prog -> Globals -> Var -> [Type] -> Infer Type
 apply prog global f args = do
@@ -146,10 +160,32 @@ apply prog global f args = do
     [] -> typeError (call++" doesn't match any overload, possibilities are"++options rawOverloads)
     os -> case partition (\ (_,_,l,_) -> length l == length args) os of
       ([],_) -> return $ TyClosure f args -- all overloads are still partially applied
-      ([(_,_,vl,e)],[]) -> withFrame f args $ -- exactly one fully applied option
-        expr prog global (foldl (\env (v,t) -> Map.insert v t env) Map.empty (zip vl args)) e
+      ([o],[]) -> cache prog global f args o -- exactly one fully applied option
       (fully@(_:_),partially@(_:_)) -> typeError (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
       (fully@(_:_:_),[]) -> typeError (call++" is ambiguous, possibilities are"++options fully)
+
+-- Type infer a function call and cache the results
+-- The overload is assumed to match, since this is handled by apply.
+-- TODO: cache currently infers every nonvoid function call at least twice, regardless of recursion.  Fix this.
+cache :: Prog -> Globals -> Var -> [Type] -> Overload -> Infer Type
+cache prog global f args (types,r,vl,e) = do
+  insertInfo f tl TyVoid -- recursive function calls are initially assumed to be void
+  fix TyVoid
+  where
+  Just tenv = unifyList types args
+  tl = map (subst tenv) types
+  rs = subst tenv r
+  fix prev = do
+    unless (all isConcrete tl) $ typeError ("nonconcrete call "++show (pretty f <+> prettylist tl)++", arguments were "++show (prettylist args))
+    r' <- withFrame f tl (expr prog global (Map.fromList (zip vl tl)) e)
+    result <- case unifyS r' rs of
+      Nothing -> typeError ("in call "++show (pretty f <+> prettylist args)++", failed to unify result "++show (pretty r')++" with return signature "++show (pretty rs))
+      Just (_,r) -> do
+        unless (isConcrete r) $ typeError ("nonconcrete result "++show (pretty f <+> prettylist tl)++" = "++show (pretty r))
+        return r
+    if prev == result
+      then return result
+      else fix result
 
 -- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type

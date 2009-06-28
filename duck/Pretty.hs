@@ -14,9 +14,11 @@ import qualified Data.Map as Map
 class Pretty t where
   pretty :: t -> Doc
   pretty' :: t -> (Int, Doc)
+  prettylist :: [t] -> Doc
 
   pretty = snd . pretty'
   pretty' t = (0, pretty t)
+  prettylist = hsep . map (guard 99)
 
 pprint :: Pretty t => t -> IO ()
 pprint = print . pretty

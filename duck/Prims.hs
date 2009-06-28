@@ -17,7 +17,6 @@ import Ir
 import qualified Lir
 import ExecMonad
 import InferMonad
-import Text.PrettyPrint
 
 prim :: Binop -> Value -> Value -> Exec Value
 prim IntAddOp (ValInt i) (ValInt j) = return $ ValInt (i+j)
@@ -39,12 +38,12 @@ primType op t1 t2 = typeError ("invalid arguments "++show (pretty t1)++", "++sho
 
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError "exit failure"
-primIO p args = execError ("invalid arguments "++show (hsep (map pretty args))++" to "++show p)
+primIO p args = execError ("invalid arguments "++show (prettylist args)++" to "++show p)
 
 primIOType :: PrimIO -> [Type] -> Infer Type
 primIOType ExitFailure [] = return $ TyCons (V "()") []
 primIOType TestAll [] = return $ TyCons (V "()") []
-primIOType p args = typeError ("invalid arguments"++show (hsep (map pretty args))++" to "++show p)
+primIOType p args = typeError ("invalid arguments"++show (prettylist args)++" to "++show p)
 
 prelude :: Lir.Prog
 prelude = Lir.prog $ decTuples ++ binops ++ io where

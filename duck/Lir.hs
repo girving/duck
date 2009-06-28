@@ -143,7 +143,7 @@ expr locals e@(Ir.Lambda _ _) = lambda locals (V "f") e
 expr _ (Ir.Int i) = return $ Int i
 expr _ (Ir.Var v) = return $ Var v
 expr locals (Ir.Apply e1 e2) = do
-  e1 <- expr locals e1 
+  e1 <- expr locals e1
   e2 <- expr locals e2
   return $ Apply e1 e2
 expr locals (Ir.Let v e rest) = do
@@ -173,7 +173,7 @@ expr locals (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals) el
 lambda :: Set Var -> Var -> Ir.Exp -> State Prog Exp
 lambda locals v e = do
   f <- freshenM v -- use the suggested function name
-  let (vl,e') = unwrapLambda e     
+  let (vl,e') = unwrapLambda e
   e <- expr (foldl (flip Set.insert) locals vl) e'
   let vs = free locals e
   function f (vs ++ vl) e
@@ -227,7 +227,7 @@ instance Pretty Prog where
     function :: Var -> [Type] -> Type -> [Var] -> Exp -> Doc
     function v tl r vl e =
       text "over" <+> pretty (foldr TyFun r tl) $$
-      text "let" <+> hsep (map pretty (v : vl)) <+> equals <+> nest 2 (pretty e) 
+      text "let" <+> prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
     statement (vl,e) =
       text "let" <+> hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
 

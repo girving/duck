@@ -1,7 +1,7 @@
 {-# LANGUAGE PatternGuards #-}
 -- Duck Abstract Syntax Tree
 
-module Ast 
+module Ast
   ( Prog
   , Decl(..)
   , Exp(..)
@@ -69,17 +69,17 @@ instance Pretty Decl where
     text "let" <+> pretty p <+> equals <+> pretty e
   pretty (DefD f mt args e) =
     maybe empty (\t -> text "over" <+> pretty t) mt $$
-    text "let" <+> pretty f <+> hsep (map (guard 2) args) <+> equals
+    text "let" <+> pretty f <+> prettylist args <+> equals
       $$ nest 2 (guard 0 e)
   pretty (Data t args []) =
-    text "data" <+> pretty t <+> hsep (map pretty args)
+    text "data" <+> pretty t <+> prettylist args
   pretty (Data t args (hd:tl)) =
-    text "data" <+> pretty t <+> hsep (map pretty args) $$ nest 2 (vcat (
+    text "data" <+> pretty t <+> prettylist args $$ nest 2 (vcat (
       (equals <+> f hd) : map (\x -> text "|" <+> f x) tl))
-    where f (c,args) = hsep (pretty c : map (guard 60) args)
+    where f (c,args) = pretty c <+> prettylist args
   pretty (Infix (p,d) syms) =
     text s <+> int p <+> hcat (intersperse (text ", ") (map (\ (V s) -> text s) syms))
-    where 
+    where
     s = case d of
       LeftFix -> "infixl"
       RightFix -> "infixr"
@@ -90,16 +90,16 @@ instance Pretty Exp where
     text "let" <+> pretty p <+> equals <+> guard 0 e <+> text "in"
       $$ (guard 0 body))
   pretty' (Def f args e body) = (0,
-    text "let" <+> pretty f <+> hsep (map (guard 2) args) <+> equals
+    text "let" <+> pretty f <+> prettylist args <+> equals
       $$ nest 2 (guard 0 e) <+> text "in" $$ (guard 0 body))
   pretty' (Lambda args e) = (5,
-    text "\\" <> hsep (map (guard 2) args) <+> text "->" <+> guard 5 e)
+    text "\\" <> prettylist args <+> text "->" <+> guard 5 e)
   pretty' (Apply (Var v) [e1, e2]) | Just prec <- precedence v =
     let V s = v in
     (prec, (guard prec e1) <+> text s <+> (guard (prec+1) e2) )
   pretty' (Apply (Var c) el) | Just n <- tuplelen c, n == length el = (1,
     hcat $ intersperse (text ", ") $ map (guard 2) el)
-  pretty' (Apply e el) = (50, guard 51 e <+> hsep (map (guard 51) el))
+  pretty' (Apply e el) = (50, guard 51 e <+> prettylist el)
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
   pretty' (List el) = (100,
@@ -118,6 +118,6 @@ instance Pretty Pattern where
   pretty' (PatVar v) = pretty' v
   pretty' (PatCons c []) = pretty' c
   pretty' (PatCons c pl) | istuple c = (1, hcat $ intersperse (text ", ") $ map (guard 2) pl)
-  pretty' (PatCons c pl) = (3, pretty c <+> sep (map (guard 4) pl))
+  pretty' (PatCons c pl) = (3, pretty c <+> prettylist pl)
   pretty' (PatOps o) = pretty' o
   pretty' (PatType p t) = (2, guard 2 p <+> text "::" <+> guard 0 t)

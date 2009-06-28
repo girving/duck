@@ -1,11 +1,15 @@
+{-# LANGUAGE PatternGuards #-}
 -- Duck Types
 
-module Type 
+module Type
   ( Type(..)
   , TypeEnv
+  , unify
   , unifyList
   , unifyS
+  , unifySList
   , subst
+  , isConcrete
   ) where
 
 import Var
@@ -14,6 +18,7 @@ import Text.PrettyPrint
 import Data.List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Control.Arrow hiding ((<+>))
 import Util
 
 data Type
@@ -32,27 +37,37 @@ type TypeEnv = Map Var Type
 -- can be safely viewed as having type z.
 --
 -- As with unify below, unifyS treats all function types as the same.
-unifyS :: Type -> Type -> Maybe Type
-unifyS t@(TyVar v) (TyVar v') | v == v' = Just t
-unifyS (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< unifySList tl tl'
-unifyS t@(TyFun _ _) (TyFun _ _) = Just t
-unifyS t@(TyFun _ _) (TyClosure _ _) = Just t
-unifyS t@(TyClosure _ _) (TyFun _ _) = Just t
-unifyS t@(TyClosure _ _) (TyClosure _ _) = Just t
-unifyS (TyIO t) (TyIO t') = TyIO =.< unifyS t t'
-unifyS TyInt TyInt = Just TyInt
-unifyS TyVoid t = Just t
-unifyS t TyVoid = Just t
-unifyS _ _ = Nothing
+unifyS :: Type -> Type -> Maybe (TypeEnv, Type)
+unifyS = unifyS' Map.empty
+
+unifyS' :: TypeEnv -> Type -> Type -> Maybe (TypeEnv, Type)
+unifyS' env (TyVar v) t' | Just t <- Map.lookup v env = unifyS' env t t'
+unifyS' env t' (TyVar v) | Just t <- Map.lookup v env = unifyS' env t' t
+unifyS' env t@(TyVar v) (TyVar v') | v == v' = Just (env,t)
+unifyS' env (TyVar v) t | not (occurs env v t) = Just (Map.insert v t env, t)
+unifyS' env t (TyVar v) | not (occurs env v t) = Just (Map.insert v t env, t)
+unifyS' env (TyCons c tl) (TyCons c' tl') | c == c' = second (TyCons c) =.< unifySList' env tl tl'
+unifyS' env t@(TyFun _ _) (TyFun _ _) = Just (env,t)
+unifyS' env t@(TyFun _ _) (TyClosure _ _) = Just (env,t)
+unifyS' env t@(TyClosure _ _) (TyFun _ _) = Just (env,t)
+unifyS' env t@(TyClosure _ _) (TyClosure _ _) = Just (env,t)
+unifyS' env (TyIO t) (TyIO t') = second TyIO =.< unifyS' env t t'
+unifyS' env TyInt TyInt = Just (env,TyInt)
+unifyS' env TyVoid t = Just (env,t)
+unifyS' env t TyVoid = Just (env,t)
+unifyS' _ _ _ = Nothing
 
 -- The equivalent of unifyS for lists.  The two lists must have the same size.
-unifySList :: [Type] -> [Type] -> Maybe [Type]
-unifySList [] [] = Just []
-unifySList (t:tl) (t':tl') = do
-  t'' <- unifyS t t'
-  tl'' <- unifySList tl tl'
-  return $ t'' : tl''
-unifySList _ _ = Nothing
+unifySList :: [Type] -> [Type] -> Maybe (TypeEnv, [Type])
+unifySList = unifySList' Map.empty
+
+unifySList' :: TypeEnv -> [Type] -> [Type] -> Maybe (TypeEnv, [Type])
+unifySList' env [] [] = Just (env,[])
+unifySList' env (t:tl) (t':tl') = do
+  (env,t'') <- unifyS' env t t'
+  (env,tl'') <- unifySList' env tl tl'
+  return (env, t'' : tl'')
+unifySList' _ _ _ = Nothing
 
 -- Directed unify: unify s t tries to turn s into t via variable substitutions,
 -- but not the other way round.  Notes:
@@ -67,14 +82,14 @@ unifySList _ _ = Nothing
 -- argument of type x, can we pass it a y?"  As an example, unify x Void always
 -- succeeds since the hypothesis is vacuously true: there are no values of
 -- type Void.
-_unify :: Type -> Type -> Maybe TypeEnv
-_unify = unify' Map.empty
+unify :: Type -> Type -> Maybe TypeEnv
+unify = unify' Map.empty
 
 unify' :: TypeEnv -> Type -> Type -> Maybe TypeEnv
-unify' env (TyVar v) t = 
+unify' env (TyVar v) t =
   case Map.lookup v env of
     Nothing -> Just (Map.insert v t env)
-    Just t' -> unifyS t t' >.= \t'' -> Map.insert v t'' env
+    Just t' -> unifyS t t' >.= \ (_,t'') -> Map.insert v t'' env
 unify' env (TyCons c tl) (TyCons c' tl') | c == c' = unifyList' env tl tl'
 unify' env (TyFun _ _) (TyFun _ _) = Just env
 unify' env (TyFun _ _) (TyClosure _ _) = Just env
@@ -109,6 +124,28 @@ subst env (TyIO t) = TyIO (subst env t)
 subst _ TyInt = TyInt
 subst _ TyVoid = TyVoid
 
+-- Occurs check
+occurs :: TypeEnv -> Var -> Type -> Bool
+occurs env v (TyVar v') | Just t <- Map.lookup v' env = occurs env v t
+occurs _ v (TyVar v') = v == v'
+occurs env v (TyCons _ tl) = any (occurs env v) tl
+occurs env v (TyClosure _ tl) = any (occurs env v) tl
+occurs env v (TyFun t1 t2) = occurs env v t1 || occurs env v t2
+occurs env v (TyIO t) = occurs env v t
+occurs _ _ TyInt = False
+occurs _ _ TyVoid = False
+
+-- Check if a type contains any variables
+-- For now, this doesn't recurse into function types
+isConcrete :: Type -> Bool
+isConcrete (TyVar _) = False
+isConcrete (TyCons _ tl) = all isConcrete tl
+isConcrete (TyClosure _ tl) = all isConcrete tl
+isConcrete (TyFun _ _) = True
+isConcrete (TyIO t) = isConcrete t
+isConcrete TyInt = True
+isConcrete TyVoid = True
+
 -- Pretty printing
 
 instance Pretty Type where
@@ -117,8 +154,8 @@ instance Pretty Type where
   pretty' (TyClosure t []) = pretty' t
   pretty' (TyCons t tl) | istuple t = (2, hcat $ intersperse (text ", ") $ map (guard 3) tl)
   pretty' (TyCons (V "[]") [t]) = (100, brackets (pretty t))
-  pretty' (TyCons t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
-  pretty' (TyClosure t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
+  pretty' (TyCons t tl) = (50, guard 50 t <+> prettylist tl)
+  pretty' (TyClosure t tl) = (50, guard 50 t <+> prettylist tl)
   pretty' (TyFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
   pretty' (TyIO t) = (1, text "IO" <+> guard 2 t)
   pretty' TyInt = (100, text "Int")

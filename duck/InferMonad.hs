@@ -29,10 +29,12 @@ type Callstack = [(Var, [Type])]
 type FunctionInfo = Map Var (Ptrie' Type Type)
 
 newtype Infer a = Infer { unInfer :: (StateT (Callstack, FunctionInfo) IO a) }
-  deriving Monad
+  deriving (Monad, MonadIO)
 
 insertInfo :: Var -> [Type] -> Type -> Infer ()
-insertInfo f tl r = (Infer . modify) (second (Map.alter (Ptrie.insert tl r) f))
+insertInfo f tl r = do
+  -- liftIO (putStrLn ("recorded "++show (pretty f)++" "++show (prettylist tl)++" = "++show (pretty r)))
+  (Infer . modify) (second (Map.alter (Ptrie.insert tl r) f))
 
 lookupInfo :: Var -> [Type] -> Infer (Maybe Type)
 lookupInfo f tl = Infer get >.= \ (_,info) ->
@@ -44,7 +46,7 @@ lookupInfo f tl = Infer get >.= \ (_,info) ->
 showStack :: Callstack -> String
 showStack s = unlines (h : reverse (map p s)) where
   h = "Traceback (most recent call last):"
-  p (f,args) = "  in "++show (pretty f)++' ' : show (hsep (map (guard 2) args))
+  p (f,args) = "  in "++show (pretty f)++' ' : show (prettylist args)
 
 typeError :: String -> Infer a
 typeError msg = Infer $ get >>= \ (s,_) ->
@@ -60,6 +62,7 @@ withFrame f args e =
   handleE (\ (e :: AsyncException) -> typeError (show e))
     (Infer $ do
       (s,_) <- get
+      when (length s > 10) (unInfer $ typeError "stack overflow")
       modify (first ((f,args):))
       r <- unInfer e
       modify (first (const s))
@@ -72,4 +75,4 @@ runInfer e = runStateT (unInfer e) ([], Map.empty) >.= \ (x,(_,i)) -> (x,i)
 
 instance Pretty FunctionInfo where
   pretty info = vcat [pr f tl r | (f,p) <- Map.toList info, (tl,r) <- Ptrie.toList' p] where
-    pr f tl r = pretty f <+> hsep (map (guard 51) tl) <+> equals <+> pretty r
+    pr f tl r = pretty f <+> prettylist tl <+> equals <+> pretty r

@@ -121,7 +121,7 @@ apply prog global f args = do
     os -> case partition (\ (_,_,l,_) -> length l == length args) os of
       ([],_) -> return $ ValClosure f args -- all overloads are still partially applied
       ([(_,_,vl,e)],[]) -> withFrame f args $ -- exactly one fully applied option
-        expr prog global (foldl (\env (v,d) -> Map.insert v d env) Map.empty (zip vl args)) e
+        expr prog global (Map.fromList (zip vl args)) e
       (fully@(_:_),partially@(_:_)) -> execError (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
       (fully@(_:_:_),[]) -> execError (call++" is ambiguous, possibilities are"++options fully)
 
