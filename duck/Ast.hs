@@ -6,11 +6,16 @@ module Ast
   , Decl(..)
   , Exp(..)
   , Pattern(..)
+  , opsExp
+  , opsPattern
   ) where
 
 import Var
 import Type
+import SrcLoc
+import ParseOps
 import Pretty
+import ParseMonad
 import Text.PrettyPrint
 import Data.List
 
@@ -20,7 +25,7 @@ data Decl
   = DefD Var (Maybe Type) [Pattern] Exp
   | LetD Pattern Exp
   | Data CVar [Var] [(CVar,[Type])]
-  | Infix Int Fixity [Var]
+  | Infix PrecFix [Var]
   deriving Show
 
 data Exp
@@ -31,19 +36,33 @@ data Exp
   | Var Var
   | Int Int
   | List [Exp]
+  | Ops (Ops Exp)
   | TypeCheck Exp Type
   | Case Exp [(Pattern,Exp)]
   | If Exp Exp Exp
+  | ExpLoc SrcLoc Exp
   deriving Show
 
 data Pattern
   = PatAny
   | PatVar Var
   | PatCons CVar [Pattern]
+  | PatOps (Ops Pattern)
   | PatType Pattern Type
   deriving Show
 
 -- Pretty printing
+
+opsExp :: Ops Exp -> Exp
+opsExp (OpAtom a) = a
+opsExp (OpUn (V "-") a) = Apply (Var (V "negate")) [opsExp a]
+opsExp (OpUn op _) = parseError (show (pretty op)++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
+opsExp (OpBin o l r) = Apply (Var o) [opsExp l, opsExp r]
+
+opsPattern :: Ops Pattern -> Pattern
+opsPattern (OpAtom a) = a
+opsPattern (OpUn _ _) = parseError "unary operator in pattern"
+opsPattern (OpBin o l r) = PatCons o [opsPattern l, opsPattern r]
 
 instance Pretty Decl where
   pretty (LetD p e) =
@@ -58,13 +77,13 @@ instance Pretty Decl where
     text "data" <+> pretty t <+> hsep (map pretty args) $$ nest 2 (vcat (
       (equals <+> f hd) : map (\x -> text "|" <+> f x) tl))
     where f (c,args) = hsep (pretty c : map (guard 60) args)
-  pretty (Infix p d syms) =
+  pretty (Infix (p,d) syms) =
     text s <+> int p <+> hcat (intersperse (text ", ") (map (\ (V s) -> text s) syms))
     where 
     s = case d of
-      Leftfix -> "infixl"
-      Rightfix -> "infixr"
-      Nonfix -> "infix"
+      LeftFix -> "infixl"
+      RightFix -> "infixr"
+      NonFix -> "infix"
 
 instance Pretty Exp where
   pretty' (Let p e body) = (0,
@@ -85,12 +104,14 @@ instance Pretty Exp where
   pretty' (Int i) = pretty' i
   pretty' (List el) = (100,
     lbrack <> hcat (intersperse (text ", ") $ map (guard 2) el) <> rbrack)
+  pretty' (Ops o) = pretty' o
   pretty' (Case e cases) = (0,
     text "case" <+> pretty e <+> text "of" $$ nest 2 (
       vjoin '|' (map (\ (p,e) -> pretty p <+> text "->" <+> pretty e) cases)))
   pretty' (TypeCheck e t) = (2, guard 2 e <+> text "::" <+> guard 60 t)
   pretty' (If c e1 e2) = (0,
     text "if" <+> pretty c <+> text "then" <+> pretty e1 <+> text "else" <+> pretty e2)
+  pretty' (ExpLoc _ e) = pretty' e
 
 instance Pretty Pattern where
   pretty' (PatAny) = pretty' '_'
@@ -98,4 +119,5 @@ instance Pretty Pattern where
   pretty' (PatCons c []) = pretty' c
   pretty' (PatCons c pl) | istuple c = (1, hcat $ intersperse (text ", ") $ map (guard 2) pl)
   pretty' (PatCons c pl) = (3, pretty c <+> sep (map (guard 4) pl))
-  pretty' (PatType p t) = (2, guard 2 p <+> colon <+> guard 0 t)
+  pretty' (PatOps o) = pretty' o
+  pretty' (PatType p t) = (2, guard 2 p <+> text "::" <+> guard 0 t)

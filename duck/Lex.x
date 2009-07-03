@@ -6,6 +6,7 @@
 module Lex where
 
 import Var
+import SrcLoc
 import ParseMonad
 }
 
@@ -21,9 +22,9 @@ tokens :-
   $white+ ;
   \-\-.*  ;
   import  { c TokImport }
-  infixl  { c (TokInfix Leftfix) }
-  infixr  { c (TokInfix Rightfix) }
-  infix   { c (TokInfix Nonfix) }
+  infixl  { c (TokInfix LeftFix) }
+  infixr  { c (TokInfix RightFix) }
+  infix   { c (TokInfix NonFix) }
   def     { c TokDef }
   data    { c TokData }
   over    { c TokOver }
@@ -69,36 +70,36 @@ sym s = TokSym (V s)
 -- Each action has type :: String -> Token
 
 data Token
-  = TokVar Var SrcLoc
-  | TokCVar Var SrcLoc
-  | TokSym Var SrcLoc
-  | TokCSym Var SrcLoc
-  | TokInt Int SrcLoc
-  | TokEq SrcLoc
-  | TokLP SrcLoc
-  | TokRP SrcLoc
-  | TokLB SrcLoc
-  | TokRB SrcLoc
-  | TokSep SrcLoc
-  | TokDColon SrcLoc
-  | TokComma SrcLoc
-  | TokDef SrcLoc
-  | TokLet SrcLoc
-  | TokOver SrcLoc
-  | TokData SrcLoc
-  | TokIn SrcLoc
-  | TokCase SrcLoc
-  | TokOf SrcLoc
-  | TokIf SrcLoc
-  | TokThen SrcLoc
-  | TokElse SrcLoc
-  | TokAny SrcLoc
-  | TokLambda SrcLoc
-  | TokArrow SrcLoc
-  | TokOr SrcLoc
-  | TokMinus SrcLoc
-  | TokImport SrcLoc
-  | TokInfix Fixity SrcLoc
+  = TokVar { tokVar :: Var, tokLoc :: SrcLoc }
+  | TokCVar { tokCVar :: Var, tokLoc :: SrcLoc }
+  | TokSym { tokSym :: Var, tokLok :: SrcLoc }
+  | TokCSym { tokCSym :: Var, tokLok :: SrcLoc }
+  | TokInt { tokInt :: Int, tokLok :: SrcLoc }
+  | TokEq { tokLok :: SrcLoc }
+  | TokLP { tokLok :: SrcLoc }
+  | TokRP { tokLok :: SrcLoc }
+  | TokLB { tokLok :: SrcLoc }
+  | TokRB { tokLok :: SrcLoc }
+  | TokSep { tokLok :: SrcLoc }
+  | TokDColon { tokLok :: SrcLoc }
+  | TokComma { tokLok :: SrcLoc }
+  | TokDef { tokLok :: SrcLoc }
+  | TokLet { tokLok :: SrcLoc }
+  | TokOver { tokLok :: SrcLoc }
+  | TokData { tokLok :: SrcLoc }
+  | TokIn { tokLok :: SrcLoc }
+  | TokCase { tokLok :: SrcLoc }
+  | TokOf { tokLok :: SrcLoc }
+  | TokIf { tokLok :: SrcLoc }
+  | TokThen { tokLok :: SrcLoc }
+  | TokElse { tokLok :: SrcLoc }
+  | TokAny { tokLok :: SrcLoc }
+  | TokLambda { tokLok :: SrcLoc }
+  | TokArrow { tokLok :: SrcLoc }
+  | TokOr { tokLok :: SrcLoc }
+  | TokMinus { tokLok :: SrcLoc }
+  | TokImport { tokLok :: SrcLoc }
+  | TokInfix { tokFix :: Fixity, tokLok :: SrcLoc }
   | TokEOF
 
 instance Show Token where
@@ -119,9 +120,9 @@ instance Show Token where
     TokThen _ -> "then"
     TokElse _ -> "else"
     TokImport _ -> "import"
-    TokInfix Leftfix _ -> "infixl"
-    TokInfix Rightfix _ -> "infixr"
-    TokInfix Nonfix _ -> "infix"
+    TokInfix LeftFix _ -> "infixl"
+    TokInfix RightFix _ -> "infixr"
+    TokInfix NonFix _ -> "infix"
     TokEq _ -> "="
     TokLP _ -> "("
     TokRP _ -> ")"
@@ -146,10 +147,10 @@ alexGetChar :: AlexInput -> Maybe (Char,AlexInput)
 alexGetChar s = case ps_rest s of
   [] -> Nothing
   c:r -> Just (c, ParseState
-    { ps_loc = move (ps_loc s) c
+    { ps_loc = moveLoc (ps_loc s) c
     , ps_rest = r
     , ps_prev = c
-    , ps_prec = ps_prec s } )
+    } )
 
 lexer :: P Token
 lexer = do

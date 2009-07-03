@@ -155,8 +155,8 @@ expr locals (Ir.Cons c el) = do
   return $ Cons c el
 expr locals (Ir.Case e pl def) = do
   e <- expr locals e
-  pl <- mapM (\ (c,vl,e) -> expr (foldl (flip Set.insert) locals vl) e >>=. \e -> (c,vl,e)) pl
-  def <- mapM (\ (v,e) -> expr (Set.insert v locals) e >>=. \e -> (v,e)) def
+  pl <- mapM (\ (c,vl,e) -> expr (foldl (flip Set.insert) locals vl) e >.= \e -> (c,vl,e)) pl
+  def <- mapM (\ (v,e) -> expr (Set.insert v locals) e >.= \e -> (v,e)) def
   return $ Case e pl def
 expr locals (Ir.Binop op e1 e2) = do
   e1 <- expr locals e1
@@ -166,8 +166,8 @@ expr locals (Ir.Bind v e rest) = do
   e <- expr locals e
   rest <- expr (Set.insert v locals) rest
   return $ Bind v e rest
-expr locals (Ir.Return e) = Return =<<. expr locals e
-expr locals (Ir.PrimIO p el) = PrimIO p =<<. mapM (expr locals) el
+expr locals (Ir.Return e) = Return =.< expr locals e
+expr locals (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals) el
 
 -- Lift a single lambda expression
 lambda :: Set Var -> Var -> Ir.Exp -> State Prog Exp

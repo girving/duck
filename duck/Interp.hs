@@ -92,7 +92,7 @@ expr prog global env = exp where
           Nothing -> execError ("pattern match failed: exp = " ++ show (pretty d) ++ ", cases = " ++ show pl)
           Just (v,e') -> expr prog global (Map.insert v d env) e' 
       _ -> execError ("expected block, got " ++ show (pretty d))
-  exp (Lir.Cons c el) = ValCons c =<<. mapM exp el
+  exp (Lir.Cons c el) = ValCons c =.< mapM exp el
   exp (Lir.Binop op e1 e2) = do
     d1 <- exp e1
     d2 <- exp e2
@@ -100,8 +100,8 @@ expr prog global env = exp where
   exp (Lir.Bind v e1 e2) = do
     d <- exp e1
     return (ValBindIO v d e2)
-  exp (Lir.Return e) = exp e >>=. ValLiftIO
-  exp (Lir.PrimIO p el) = mapM exp el >>=. ValPrimIO p
+  exp (Lir.Return e) = exp e >.= ValLiftIO
+  exp (Lir.PrimIO p el) = mapM exp el >.= ValPrimIO p
 
 -- Overloaded function application
 apply :: Prog -> Globals -> Var -> [Value] -> Exec Value

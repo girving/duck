@@ -45,6 +45,11 @@ let test_monad = assert $ [11,101,22,202] == (
   [10 * a, 100 * a] >>= \b ->
   b + a)
 
+-- test ops
+
+let test_ops1 = assert $ 1 + 2 * 3 == 7
+let test_ops2 = assert $ 5 == 1 * 2 + 3
+
 -- toplevel
 
 let main = testAll

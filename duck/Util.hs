@@ -2,13 +2,16 @@
 
 module Util
   ( debug
+  , debugVal
   , foldmap
   , groupPairs
   , die
   , Stack(..)
   , (++.)
   , splitStack
-  , (>>=.), (=<<.)
+  , nop
+  , (>.), (>.=), (>=.)
+  , (=.<), (.=<)
   ) where
 
 import System.IO
@@ -16,10 +19,14 @@ import System.Exit
 import System.IO.Unsafe
 import Data.Function
 import Data.List
+import Control.Monad
 
 debug :: Show a => a -> b -> b
 debug a b =
   unsafePerformIO (print a >> return b)
+
+debugVal :: Show a => a -> a
+debugVal a = unsafePerformIO (print a) `seq` a
 
 foldmap :: (a -> b -> (a,c)) -> a -> [b] -> (a,[c])
 foldmap _ x [] = (x,[])
@@ -61,11 +68,20 @@ splitStack (a :. s) = (a:l,b) where
 
 -- Some convenient extra monad operators
 
-infixl 1 >>=.
-infixr 1 =<<.
+infixl 1 >., >.=, >=.
+infixr 1 =.<, .=<
+(>.) :: Monad m => m a -> b -> m b
+(>.=) :: Monad m => m a -> (a -> b) -> m b
+(=.<) :: Monad m => (a -> b) -> m a -> m b
+(>=.) :: Monad m => (a -> m b) -> (b -> c) -> a -> m c
+(.=<) :: Monad m => (b -> c) -> (a -> m b) -> a -> m c
 
-(>>=.) :: Monad m => m a -> (a -> b) -> m b
-m >>=. f = m >>= return . f
+(>.) e r = e >> return r
+(>.=) e r = e >>= return . r
+(=.<) r e = return . r =<< e -- fmap, <$>, liftM
+(>=.) e r = e >=> return . r
+(.=<) r e = return . r <=< e
 
-(=<<.) :: Monad m => (a -> b) -> m a -> m b
-(=<<.) = flip (>>=.)
+nop :: Monad m => m ()
+nop = return ()
+

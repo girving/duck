@@ -58,7 +58,7 @@ defaults = Flags
   , compileOnly = False }
 
 main = do
-  (options, args, errors) <- getOpt Permute options =<<. getArgs
+  (options, args, errors) <- getOpt Permute options =.< getArgs
   case errors of
     [] -> return ()
     _ -> mapM_ (hPutStr stderr) errors >> hPutStr stderr usage >> exitFailure

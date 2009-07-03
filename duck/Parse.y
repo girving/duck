@@ -36,7 +36,7 @@ import qualified Data.Map as Map
 
 %monad { P }
 %lexer { lexwrap } { TokEOF }
-%error { parseError }
+%error { parserError }
 
 %token
   var  { TokVar $$ _ }
@@ -89,7 +89,7 @@ decl :: { [Decl] }
   | over ty let pattern2 sym pattern2 '=' exp { [DefD $5 (Just $2) [$4,$6] $8] }
   | let pattern '=' exp { [LetD $2 $4] }
   | import var {% let V file = $2 in parseFile parse file }
-  | infix int asyms {% setPrec $2 $1 $3 }
+  | infix int asyms { [Infix ($2,$1) (reverse $3)] }
   | data cvar vars maybeConstructors { [Data $2 (reverse $3) (reverse $4)] }
   | data '(' ')' maybeConstructors { [Data (V "()") [] (reverse $4)] } -- type ()
   | data '[' var ']' maybeConstructors { [Data (V "[]") [$3] (reverse $5)] } -- type [a]
@@ -144,15 +144,15 @@ exp0 :: { Exp }
   | exp1 '::' ty3 { TypeCheck $1 $3 }
 
 exp1 :: { Exp }
-  : ops {% parseExpOps $1 }
+  : ops { Ops $1 }
 
-ops :: { [Either Exp Var] }
-  : ops asym unops { $3 ++ (Right $2 : $1) }
+ops :: { Ops Exp }
+  : ops asym unops { OpBin $2 $1 $3 }
   | unops { $1 }
 
-unops :: { [Either Exp Var] }
-  : exp2 { [Left $1] }
-  | '-' unops { $2 ++ [Right (V "-")] }
+unops :: { Ops Exp }
+  : exp2 { OpAtom $1 }
+  | '-' unops { OpUn (V "-") $2 }
 
 asym :: { Var }
   : sym { $1 }
@@ -194,11 +194,11 @@ pattern :: { Pattern }
 
 pattern1 :: { Pattern }
   : pattern2 { $1 }
-  | patternops {% parsePatOps $1 }
+  | patternops { PatOps $1 }
 
-patternops :: { [Either Pattern Var] }
-  : patternops csym pattern2 { Left $3 : Right $2 : $1 }
-  | pattern2 csym pattern2 { [Left $3,Right $2,Left $1] }
+patternops :: { Ops Pattern }
+  : patternops csym pattern2 { OpBin $2 $1 (OpAtom $3) }
+  | pattern2 csym pattern2 { OpBin $2 (OpAtom $1) (OpAtom $3) }
 
 pattern2 :: { Pattern }
   : pattern3 { $1 }
@@ -248,8 +248,8 @@ ty3s :: { [Type] }
 
 parse :: P Prog
 
-parseError :: Token -> P a
-parseError t = fail ("syntax error at '" ++ show t ++ "'")
+parserError :: Token -> P a
+parserError t = fail ("syntax error at '" ++ show t ++ "'")
 
 binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
@@ -259,11 +259,5 @@ tyapply (V "IO") [t] = TyIO t
 tyapply (V "Int") [] = TyInt
 tyapply (V "Void") [] = TyVoid
 tyapply c args = TyApply c args
-
-setPrec :: Int -> Fixity -> [Var] -> P [Decl]
-setPrec p d syms = do
-  s <- get
-  put $ s { ps_prec = foldl (\f v -> Map.insert v (p,d) f) (ps_prec s) syms }
-  return $ [Infix p d (reverse syms)]
 
 }

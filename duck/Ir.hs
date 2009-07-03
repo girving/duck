@@ -15,13 +15,16 @@ import Type
 import Data.Maybe
 import qualified Ast
 import qualified Data.Set as Set
+import qualified Data.Map as Map
 
 import Util
 import Pretty
+import ParseOps
 import Text.PrettyPrint
 import Data.List
 import Data.Either
 import Data.Function
+import qualified Data.Foldable as Fold
 import GHC.Exts
 
 data Decl
@@ -62,65 +65,81 @@ data PrimIO
 
 -- Ast to IR conversion
 
-prog_vars :: [Ast.Decl] -> InScopeSet
-prog_vars = foldl decl_vars Set.empty
+data Env = Env 
+  { envPrecs :: PrecEnv
+  }
+
+prog_vars :: Ast.Prog -> InScopeSet
+prog_vars = foldl' decl_vars Set.empty
 
 decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
 decl_vars s (Ast.DefD v _ _ _) = Set.insert v s 
 decl_vars s (Ast.LetD p _) = pattern_vars s p
 decl_vars s (Ast.Data _ _ _) = s
-decl_vars s (Ast.Infix _ _ _) = s
+decl_vars s (Ast.Infix _ _) = s
 
 pattern_vars :: InScopeSet -> Ast.Pattern -> InScopeSet
 pattern_vars s Ast.PatAny = s
 pattern_vars s (Ast.PatVar v) = Set.insert v s
-pattern_vars s (Ast.PatCons _ pl) = foldl pattern_vars s pl
+pattern_vars s (Ast.PatCons _ pl) = foldl' pattern_vars s pl
+pattern_vars s (Ast.PatOps o) = Fold.foldl' pattern_vars s o
 pattern_vars s (Ast.PatType _ _) = s
 
+prog_precs :: Ast.Prog -> PrecEnv
+prog_precs = foldl' set_precs Map.empty where
+  -- TODO: error on duplicates
+  set_precs s (Ast.Infix p vl) = foldl' (\s v -> Map.insert v p s) s vl
+  set_precs s _ = s
+
 prog :: [Ast.Decl] -> [Decl]
-prog decls = catMaybes $ map (decl (prog_vars decls)) decls
+prog decls = catMaybes $ map (decl (Env precs) vars) decls where
+  vars = prog_vars decls
+  precs = prog_precs decls
 
-decl :: InScopeSet -> Ast.Decl -> Maybe Decl
-decl s (Ast.DefD f Nothing args body) = Just $ LetD f (expr s (Ast.Lambda args body))
-decl s (Ast.DefD f (Just t) args body) = Just $ Over f t (expr s (Ast.Lambda args body))
-decl s (Ast.LetD Ast.PatAny e) = Just $ LetD ignored (expr s e)
-decl s (Ast.LetD (Ast.PatVar v) e) = Just $ LetD v (expr s e)
-decl s (Ast.LetD p e) = Just d where
+decl :: Env -> InScopeSet -> Ast.Decl -> Maybe Decl
+decl env s (Ast.DefD f Nothing args body) = Just $ LetD f (expr env s (Ast.Lambda args body))
+decl env s (Ast.DefD f (Just t) args body) = Just $ Over f t (expr env s (Ast.Lambda args body))
+decl env s (Ast.LetD Ast.PatAny e) = Just $ LetD ignored (expr env s e)
+decl env s (Ast.LetD (Ast.PatVar v) e) = Just $ LetD v (expr env s e)
+decl env s (Ast.LetD p e) = Just d where
   d = case vars of
-    [v] -> LetD v (m (expr s e) (Var v))
-    vl -> LetM vl (m (expr s e) (Cons (tuple vars) (map Var vars)))
+    [v] -> LetD v (m (expr env s e) (Var v))
+    vl -> LetM vl (m (expr env s e) (Cons (tuple vars) (map Var vars)))
   vars = Set.toList (pattern_vars Set.empty p)
-  (_,_,m) = match s p
-decl _ (Ast.Data t args cons) = Just $ Data t args cons
-decl _ (Ast.Infix _ _ _) = Nothing
+  (_,_,m) = match env s p
+decl _ _ (Ast.Data t args cons) = Just $ Data t args cons
+decl _ _ (Ast.Infix _ _) = Nothing
 
-expr :: InScopeSet -> Ast.Exp -> Exp
-expr _ (Ast.Int i) = Int i
-expr _ (Ast.Var v) = Var v
-expr s (Ast.Lambda args e) = foldr Lambda (m (map Var vl) (expr s' e)) vl where
-  (vl, s', m) = matches s args
-expr s (Ast.Apply f args) = foldl Apply (expr s f) (map (expr s) args)
-expr s (Ast.Let p e c) = m (expr s e) (expr s' c) where
-  (_,s',m) = match s p
-expr s (Ast.Def f args body c) = Let f lambda (expr sc c) where
-  (vl, s', m) = matches s args
-  lambda = foldr Lambda (m (map Var vl) (expr s' body)) vl
+expr :: Env -> InScopeSet -> Ast.Exp -> Exp
+expr _ _ (Ast.Int i) = Int i
+expr _ _ (Ast.Var v) = Var v
+expr env s (Ast.Lambda args e) = foldr Lambda (m (map Var vl) (expr env s' e)) vl where
+  (vl, s', m) = matches env s args
+expr env s (Ast.Apply f args) = foldl' Apply (expr env s f) (map (expr env s) args)
+expr env s (Ast.Let p e c) = m (expr env s e) (expr env s' c) where
+  (_,s',m) = match env s p
+expr env s (Ast.Def f args body c) = Let f lambda (expr env sc c) where
+  (vl, s', m) = matches env s args
+  lambda = foldr Lambda (m (map Var vl) (expr env s' body)) vl
   sc = Set.insert f s
-expr s (Ast.Case e cl) = cases s (expr s e) cl
-expr s (Ast.TypeCheck e _) = expr s e
-expr s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) (map (expr s) el)
-expr s (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) (expr s c)) (expr s e1)) (expr s e2)
+expr env s (Ast.Case e cl) = cases env s (expr env s e) cl
+expr env s (Ast.Ops o) = expr env s $ Ast.opsExp $ sortOps (envPrecs env) o
+expr env s (Ast.TypeCheck e _) = expr env s e
+expr env s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) (map (expr env s) el)
+expr env s (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) (expr env s c)) (expr env s e1)) (expr env s e2)
+expr env s (Ast.ExpLoc _ e) = expr env s e
 
 -- match processes a single pattern into an input variable, a new in-scope set,
 -- and a transformer that converts an input expression and a result expression
 -- into new expression representing the match
-match :: InScopeSet -> Ast.Pattern -> (Var, InScopeSet, Exp -> Exp -> Exp)
-match s Ast.PatAny = (ignored, s, match_helper ignored)
-match s (Ast.PatVar v) = (v, Set.insert v s, match_helper v)
-match s (Ast.PatType p _) = match s p
-match s (Ast.PatCons c args) = (x, s', m) where
+match :: Env -> InScopeSet -> Ast.Pattern -> (Var, InScopeSet, Exp -> Exp -> Exp)
+match _ s Ast.PatAny = (ignored, s, match_helper ignored)
+match _ s (Ast.PatVar v) = (v, Set.insert v s, match_helper v)
+match env s (Ast.PatType p _) = match env s p
+match env s (Ast.PatOps o) = match env s $ Ast.opsPattern $ sortOps (envPrecs env) o
+match env s (Ast.PatCons c args) = (x, s', m) where
   x = fresh s
-  (vl, s', ms) = matches s args
+  (vl, s', ms) = matches env s args
   m em er = Case em [(c, vl, ms (map Var vl) er)] Nothing
 
 match_helper v em er = case em of
@@ -128,10 +147,10 @@ match_helper v em er = case em of
   _ -> Let v em er
 
 -- in spirit, matches = fold match
-matches :: InScopeSet -> [Ast.Pattern] -> ([Var], InScopeSet, [Exp] -> Exp -> Exp)
-matches s pl = foldr f ([],s,\[] -> id) pl where
+matches :: Env -> InScopeSet -> [Ast.Pattern] -> ([Var], InScopeSet, [Exp] -> Exp -> Exp)
+matches env s pl = foldr f ([],s,\[] -> id) pl where
   f p (vl,s,m) = (v:vl, s', \ (e:el) -> m' e . m el) where
-    (v,s',m') = match s p
+    (v,s',m') = match env s p
 
 -- cases turns a multilevel pattern match into iterated single level pattern match by
 --   (1) partitioning the cases by outer element,
@@ -139,14 +158,14 @@ matches s pl = foldr f ([],s,\[] -> id) pl where
 --   (3) iteratively matching the components returned in the outer match
 -- Part (3) is handled by building up a stack of unprocessed expressions and an associated
 -- set of pattern stacks, and then iteratively reducing the set of possibilities.
-cases :: InScopeSet -> Exp -> [(Ast.Pattern, Ast.Exp)] -> Exp
-cases s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where 
+cases :: Env -> InScopeSet -> Exp -> [(Ast.Pattern, Ast.Exp)] -> Exp
+cases env s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where 
 
   -- reduce takes n unmatched expressions and a list of n-tuples (lists) of patterns, and
   -- iteratively reduces the list of possibilities by matching each expression in turn.  This is
   -- used to process the stack of unmatched patterns that build up as we expand constructors.
   reduce :: InScopeSet -> [Exp] -> [Stack Ast.Pattern Ast.Exp] -> Exp
-  reduce s [] (Base e:_) = expr s e -- no more patterns to match, so just pick the first possibility
+  reduce s [] (Base e:_) = expr env s e -- no more patterns to match, so just pick the first possibility
   reduce _ [] _ = undefined -- there will always be at least one possibility, so this never happens
   reduce s (e:rest) alts = Case e (map cons groups) fallback where
 
@@ -160,9 +179,9 @@ cases s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where
     -- If only one alternative remains, we break out of the 'reduce' recursion and switch
     -- to 'matches', which avoids trivial matches of the form "case v of v -> ..."
     cons ((c,arity),alts') = case alts' of
-      [alt] -> (c,vl',m ex (expr s' e)) where -- single alternative, use matches
+      [alt] -> (c,vl',m ex (expr env s' e)) where -- single alternative, use matches
         (pl,e) = splitStack alt
-        (vl,s',m) = matches s pl
+        (vl,s',m) = matches env s pl
         vl' = take arity vl
         ex = (map Var vl') ++ rest
       _ -> (c,vl,ex) where -- many alernatives, use reduce
@@ -178,6 +197,7 @@ cases s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where
   separate (Ast.PatAny :. e) = Right (ignored,e)
   separate (Ast.PatVar v :. e) = Right (v,e)
   separate (Ast.PatType p _ :. e) = separate (p:.e)
+  separate (Ast.PatOps o :. e) = separate ((Ast.opsPattern $ sortOps (envPrecs env) o) :. e)
   separate (Ast.PatCons c pl :. e) = Left ((c, length pl), pl++.e)
   separate (Base _) = undefined -- will never happen, since here the stack is nonempty
 
@@ -214,7 +234,7 @@ instance Pretty Exp where
   pretty' (Cons (V ":") [h,t]) | Just t' <- extract t = (100,
     brackets (hcat (intersperse (text ", ") $ map (guard 2) (h : t')))) where
     extract (Cons (V "[]") []) = Just []
-    extract (Cons (V ":") [h,t]) = (h :) =<<. extract t
+    extract (Cons (V ":") [h,t]) = (h :) =.< extract t
     extract _ = Nothing
   pretty' (Cons c args) | istuple c = (1,
     hcat $ intersperse (text ", ") $ map (guard 2) args)

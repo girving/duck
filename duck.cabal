@@ -19,7 +19,7 @@ Flag debug
 Executable duck
     Main-is:		Duck.hs
     Build-Depends:	base, containers, pretty, array, mtl, filepath
-    other-modules:	Util, Var, Pretty, Type, ParseMonad, Parse, Ptrie, Lex, Ast, Ir, Lir, Interp, ExecMonad, ParseOps, Value, Prims
+    other-modules:	Util, Var, SrcLoc, Pretty, Type, ParseMonad, Parse, Ptrie, Lex, Ast, Ir, Lir, Interp, ExecMonad, ParseOps, Value, Prims
     hs-source-dirs:	duck
     if flag(debug)
         ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing

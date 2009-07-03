@@ -4,10 +4,11 @@
 module Var 
   ( Var(..)
   , CVar
+  , InScopeSet
   , Precedence
   , Fixity(..)
   , PrecFix
-  , InScopeSet
+  , PrecEnv
   , fresh
   , freshen
   , freshVars
@@ -26,13 +27,15 @@ import Data.List
 
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Map (Map)
 
 newtype Var = V String deriving (Eq, Ord)
 type CVar = Var
 
 type Precedence = Int
-data Fixity = Leftfix | Nonfix | Rightfix deriving (Eq, Show)
+data Fixity = LeftFix | NonFix | RightFix deriving (Eq, Show, Ord)
 type PrecFix = (Precedence, Fixity)
+type PrecEnv = Map Var PrecFix
 
 instance Show Var where
   show (V s) = show s
@@ -63,7 +66,7 @@ freshVars s n = (s', v : vl) where
 
 standardVars :: [Var]
 standardVars = letters ++ others where
-  letters = [V [x] | x <- "abcdefghijklmnopqrstuvwxyz"]
+  letters = [V [x] | x <- ['a'..'z']]
   others = [V ("t" ++ show i) | i <- [1..] :: [Int]]
 
 ignored = V "_"

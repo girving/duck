@@ -1,54 +1,68 @@
 -- Duck Operator Tree Parsing
 
 module ParseOps 
-  ( parseExpOps
-  , parsePatOps
+  ( Ops(..)
+  , sortOps
   ) where
 
 -- Since the precedence of operators is adjustable, we parse expressions
 -- involving operators in two passes.  This file contains the second pass.
--- Partially orrowed from http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs
+-- Partially borrowed from http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs
 
 import Var
-import Ast
 import ParseMonad
 import Pretty
-
+import Text.PrettyPrint
+import Data.Maybe
 import qualified Data.Map as Map
+import qualified Data.Foldable as Fold
 
-parseOps :: (a -> Var -> a -> a) -> (Var -> a -> P a) -> [Either a Var] -> P a
-parseOps binary prefix input = do
-  state <- get
-  let prec op = case Map.lookup op (ps_prec state) of
-        Nothing -> (maxBound, Leftfix)
-        Just f -> f
+data Ops a =
+    OpAtom a
+  | OpUn Var (Ops a)
+  | OpBin Var (Ops a) (Ops a)
+  deriving (Show)
 
-   -- parse :: Int -> Fixity -> [Either a Var] -> P (a, [Either a Var])
-      parse _ _ [Left e] = return (e, [])
-      parse p d (Left e : mid@(Right op : rest))
-        | p == p' && (d /= d' || d == Nonfix) = fail ("ambiguous infix expression at operator "++show (pretty op))
-        | p > p' || p == p' && (d == Leftfix || d' == Nonfix) = return (e, mid)
-        | otherwise = do
-          (e',rest') <- parse p' d' rest
-          parse p d (Left (binary e op e') : rest')
-        where (p', d') = prec op
-      parse p d (Right op : rest) = do -- handle unary operators
-        (e,rest') <- parse (max p' p) d rest
-        e' <- prefix op e
-        parse p d (Left e' : rest')
-        where (p', _) = prec op
-      parse _ _ _ = undefined
+minPrec, defaultPrec :: PrecFix
+minPrec = (minBound, NonFix)
+defaultPrec = (100, LeftFix)
 
-  (e,[]) <- parse (-1) Nonfix (reverse input)
-  return e
+orderPrec :: PrecFix -> PrecFix -> Fixity
+orderPrec (p1,d1) (p2,d2) = case compare p1 p2 of
+    LT -> RightFix
+    GT -> LeftFix
+    EQ -> if d1 == d2 then d1 else NonFix
 
-parseExpOps :: [Either Exp Var] -> P Exp
-parseExpOps = parseOps binary prefix where
-  binary x op y = Apply (Var op) [x,y]
-  prefix (V "-") x = return $ Apply (Var (V "negate")) [x]
-  prefix op _ = fail (show (pretty op)++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
+sortOps :: Show a => PrecEnv -> Ops a -> Ops a
+sortOps precs input = out where
+  (out, []) = parse minPrec Nothing toks
+  parse p Nothing (Left l : rest) = 
+    parse p (Just (OpAtom l)) rest
+  parse p (Just l) mid@(Right (o,p') : rest) =
+    case orderPrec p p' of
+        NonFix -> err o
+        LeftFix -> (l, mid)
+        RightFix -> parse p (Just $ OpBin o l r) rest' where
+          (r, rest') = parse p' Nothing rest
+  parse p Nothing (Right (o,p') : rest) =
+    parse p (Just (OpUn o r)) rest'
+    where
+      (r, rest') = parse (max p' p) Nothing rest
+  parse _ (Just l) [] = (l, [])
+  parse _ _ _ = error "parseOps"
+  toks = map (fmap (\o -> (o, prec o))) $ otoks input []
+  otoks (OpAtom a) t = Left a : t
+  otoks (OpUn o r) t = Right o : otoks r t
+  otoks (OpBin o l r) t = otoks l (Right o : otoks r t)
+  prec o = fromMaybe defaultPrec $ Map.lookup o precs
+  err o = parseError ("ambiguous operator expression involving " ++ show (pretty o)) 
 
-parsePatOps :: [Either Pattern Var] -> P Pattern
-parsePatOps = parseOps binary prefix where
-  binary x op y = PatCons op [x,y]
-  prefix = fail "unary operator in pattern" -- the parser should never let these through
+instance Pretty a => Pretty (Ops a) where
+  pretty' (OpAtom a) = pretty' a
+  pretty' (OpUn (V o) a) = (20, pretty o <+> pretty a)
+  pretty' (OpBin (V o) l r) = (20, guard 21 l <+> pretty o <+> guard 21 r)
+
+instance Fold.Foldable Ops where
+  foldr f z (OpAtom a) = f a z
+  foldr f z (OpUn _ r) = Fold.foldr f z r
+  foldr f z (OpBin _ l r) = Fold.foldr f (Fold.foldr f z r) l

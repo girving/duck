@@ -30,7 +30,7 @@ type TypeEnv = Map Var Type
 -- As with unify below, unifyS treats all function types as the same.
 unifyS :: Type -> Type -> Maybe Type
 unifyS t@(TyVar v) (TyVar v') | v == v' = Just t
-unifyS (TyApply c tl) (TyApply c' tl') | c == c' = TyApply c =<<. unifySList tl tl'
+unifyS (TyApply c tl) (TyApply c' tl') | c == c' = TyApply c =.< unifySList tl tl'
 unifyS t@(TyFun _ _) (TyFun _ _) = Just t
 unifyS t@(TyIO _) (TyIO _) = Just t
 unifyS TyInt TyInt = Just TyInt
@@ -69,7 +69,7 @@ unify' :: TypeEnv -> Type -> Type -> Maybe TypeEnv
 unify' env (TyVar v) t = 
   case Map.lookup v env of
     Nothing -> Just (Map.insert v t env)
-    Just t' -> unifyS t t' >>=. \t'' -> Map.insert v t'' env
+    Just t' -> unifyS t t' >.= \t'' -> Map.insert v t'' env
 unify' env (TyApply c tl) (TyApply c' tl') | c == c' = unifyList' env tl tl'
 unify' env (TyFun _ _) (TyFun _ _) = Just env
 unify' env (TyIO _) (TyIO _) = Just env
