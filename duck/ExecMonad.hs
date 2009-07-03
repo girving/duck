@@ -6,6 +6,9 @@ module ExecMonad
   , withFrame
   , runExec
   , execError
+  , liftInfer
+  , GlobalTypes
+  , getGlobalTypes
   ) where
 
 -- Execution tracing monad.  This accomplishes
@@ -15,39 +18,43 @@ module ExecMonad
 import Prelude hiding (catch)
 import Var
 import Value
-import Pretty
 import Control.Monad.State hiding (guard)
 import Control.Exception
+import Control.Arrow hiding ((<+>))
 import Util
+import Callstack
+import InferMonad hiding (withFrame)
+import Type
 
-type Callstack = [(Var, [Value])]
+type GlobalTypes = TypeEnv
+type ExecState = (Callstack Value, (GlobalTypes, FunctionInfo))
 
-newtype Exec a = Exec { unExec :: StateT Callstack IO a }
-  deriving (Monad, MonadIO)
-
-handleE :: Exception e => (forall a. e -> Exec a) -> Exec b -> Exec b
-handleE h e = Exec (do
-  s <- get
-  mapStateT (handle (\e -> evalStateT (unExec (h e)) s)) (unExec e))
+newtype Exec a = Exec { unExec :: StateT ExecState IO a }
+  deriving (Monad, MonadIO, MonadInterrupt)
 
 withFrame :: Var -> [Value] -> Exec a -> Exec a
 withFrame f args e =
   handleE (\ (e :: AsyncException) -> execError (show e))
   (Exec $ do
-    s <- get
-    put ((f,args) : s)
+    (s,_) <- get
+    modify (first ((f,args):))
     r <- unExec e
-    put s
+    modify (first (const s))
     return r)
 
-runExec :: Exec a -> IO a
-runExec e = evalStateT (unExec e) []
-
-showStack :: Callstack -> String
-showStack s = unlines (h : reverse (map p s)) where
-  h = "Traceback (most recent call last):"
-  p (f,args) = "  in "++show (pretty f)++' ' : show (prettylist args)
+runExec :: (GlobalTypes, FunctionInfo) -> Exec a -> IO a
+runExec info e = evalStateT (unExec e) ([],info)
 
 execError :: String -> Exec a
-execError msg = Exec $ get >>= \s ->
+execError msg = Exec $ get >>= \ (s,_) ->
   liftIO (die (showStack s ++ "Error: "++msg))
+
+liftInfer :: Infer a -> Exec a
+liftInfer infer = Exec $ do
+  (_,(_,info)) <- get
+  (r,info) <- liftIO $ runInfer info infer
+  modify (second (second (const info)))
+  return r
+
+getGlobalTypes :: Exec GlobalTypes
+getGlobalTypes = Exec $ get >.= fst. snd

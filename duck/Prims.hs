@@ -48,24 +48,24 @@ primIOType p args = typeError ("invalid arguments"++show (prettylist args)++" to
 prelude :: Lir.Prog
 prelude = Lir.prog $ decTuples ++ binops ++ io where
   [a,b] = take 2 standardVars
-  ty = TyFun TyInt (TyFun TyInt (TyVar a))
+  ty = TsFun TsInt (TsFun TsInt (TsVar a))
   binops = map binop [IntAddOp, IntSubOp, IntMulOp, IntDivOp, IntEqOp, IntLessOp]
   binop op = Ir.Over (V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
 
   decTuples = map decTuple [2..5]
-  decTuple i = Data c vars [(c, map TyVar vars)] where
+  decTuple i = Data c vars [(c, map TsVar vars)] where
     c = tuple vars
     vars = take i standardVars
 
 io :: [Decl]
 io = [map',join,exitFailure,testAll,returnIO] where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
-  [ta,tb] = map TyVar [a,b]
-  map' = Over (V "map") (TyFun (TyFun ta tb) (TyFun (TyIO ta) (TyIO tb)))
+  [ta,tb] = map TsVar [a,b]
+  map' = Over (V "map") (TsFun (TsFun ta tb) (TsFun (TsIO ta) (TsIO tb)))
     (Lambda f (Lambda c
       (Bind x (Var c)
       (Return (Apply (Var f) (Var x))))))
-  join = Over (V "join") (TyFun (TyIO (TyIO ta)) (TyIO ta))
+  join = Over (V "join") (TsFun (TsIO (TsIO ta)) (TsIO ta))
     (Lambda c
       (Bind x (Var c)
       (Var x)))

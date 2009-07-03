@@ -22,9 +22,9 @@ import Data.List
 type Prog = [Decl]
 
 data Decl
-  = DefD Var (Maybe Type) [Pattern] Exp
+  = DefD Var (Maybe TypeSet) [Pattern] Exp
   | LetD Pattern Exp
-  | Data CVar [Var] [(CVar,[Type])]
+  | Data CVar [Var] [(CVar,[TypeSet])]
   | Infix PrecFix [Var]
   deriving Show
 
@@ -37,7 +37,7 @@ data Exp
   | Int Int
   | List [Exp]
   | Ops (Ops Exp)
-  | TypeCheck Exp Type
+  | TypeCheck Exp TypeSet
   | Case Exp [(Pattern,Exp)]
   | If Exp Exp Exp
   | ExpLoc SrcLoc Exp
@@ -48,7 +48,7 @@ data Pattern
   | PatVar Var
   | PatCons CVar [Pattern]
   | PatOps (Ops Pattern)
-  | PatType Pattern Type
+  | PatType Pattern TypeSet
   deriving Show
 
 -- Pretty printing

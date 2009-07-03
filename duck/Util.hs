@@ -1,3 +1,4 @@
+{-# LANGUAGE RankNTypes, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances #-}
 -- Duck utility functions
 
 module Util
@@ -13,6 +14,14 @@ module Util
   , (>.), (>.=), (>=.)
   , (=.<), (.=<)
   , foldM1
+  , allM
+  , firstM
+  , secondM
+  , MaybeT(..)
+  , MonadMaybe(..)
+  , success
+  , MonadInterrupt(..)
+  , mapMaybeT
   ) where
 
 import System.IO
@@ -20,7 +29,10 @@ import System.Exit
 import System.IO.Unsafe
 import Data.Function
 import Data.List
-import Control.Monad
+import Control.Exception
+import Control.Monad.Error
+import Control.Monad.State
+import Control.Monad.Trans
 
 debug :: Show a => a -> b -> b
 debug a b =
@@ -42,8 +54,8 @@ groupPairs pairs = map squash groups where
   squash l = (fst (head l), map snd l)
   groups = groupBy ((==) `on` fst) pairs
 
-die :: String -> IO a
-die s = do
+die :: MonadIO m => String -> m a
+die s = liftIO $ do
   hPutStrLn stderr s
   exitFailure
 
@@ -89,3 +101,60 @@ nop = return ()
 foldM1 :: Monad m => (a -> a -> m a) -> [a] -> m a
 foldM1 f (h:t) = foldM f h t
 foldM1 _ [] = error "foldM1 applied to an empty list"
+
+allM :: Monad m => (a -> m Bool) -> [a] -> m Bool
+allM _ [] = return True
+allM f (x:y) = f x >>= \b -> if b then allM f y else return False
+
+-- The equivalents of first and second for monads (instead of arrows)
+firstM :: Monad m => (a -> m b) -> (a, c) -> m (b, c)
+firstM f (a,c) = f a >.= \b -> (b, c)
+
+secondM :: Monad m => (a -> m b) -> (c, a) -> m (c, b)
+secondM f (c,a) = f a >.= \b -> (c, b)
+
+-- A monad transformer that adds Maybe failure, similar to MonadError ()
+
+newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
+
+instance Monad m => Monad (MaybeT m) where
+  m >>= f = MaybeT (runMaybeT m >>= runMaybeT . maybe nothing f)
+  return = MaybeT . return . Just
+
+instance MonadTrans MaybeT where
+  lift m = MaybeT (m >.= Just)
+
+class Monad m => MonadMaybe m where
+  nothing :: m a
+
+instance MonadMaybe Maybe where
+  nothing = Nothing
+
+instance Monad m => MonadMaybe (MaybeT m) where
+  nothing = MaybeT (return Nothing)
+
+success :: MonadMaybe m => m ()
+success = return ()
+
+instance MonadError e m => MonadError e (MaybeT m) where
+  throwError = lift . throwError
+  catchError m f = MaybeT $ catchError (runMaybeT m) (runMaybeT . f)
+
+mapMaybeT :: (m (Maybe a) -> n (Maybe b)) -> MaybeT m a -> MaybeT n b
+mapMaybeT f = MaybeT . f . runMaybeT
+
+-- A monad for asynchronously interruptible computations
+-- I.e., the equivalent of handle for general monads
+
+class Monad m => MonadInterrupt m where
+  handleE :: Exception e => (e -> m a) -> m a -> m a
+
+instance MonadInterrupt IO where
+  handleE = handle
+
+instance MonadInterrupt m => MonadInterrupt (StateT s m) where
+  handleE h m = get >>= \s ->
+    mapStateT (handleE (\e -> runStateT (h e) s)) m
+
+instance (MonadInterrupt m, Error e) => MonadInterrupt (ErrorT e m) where
+  handleE h = mapErrorT (handleE (runErrorT . h))

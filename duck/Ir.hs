@@ -30,8 +30,8 @@ import GHC.Exts
 data Decl
   = LetD Var Exp
   | LetM [Var] Exp
-  | Over Var Type Exp
-  | Data CVar [Var] [(CVar, [Type])]
+  | Over Var TypeSet Exp
+  | Data CVar [Var] [(CVar, [TypeSet])]
   deriving Show
 
 data Exp

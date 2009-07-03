@@ -20,6 +20,7 @@ import InferMonad
 import Control.Monad
 import qualified Data.Set as Set
 import Data.Set (Set)
+import qualified Data.Map as Map
 import Data.List
 import Util
 
@@ -91,12 +92,12 @@ main = do
   ir <- phase' PIr (Ir.prog ast)
   lir <- phase' PLir (Lir.prog ir)
   lir <- phase' PLink (Lir.union Prims.prelude lir)
-  _ <- phase PInfer (runInfer $ Infer.prog lir)
-  env <- phase PEnv (runExec $ Interp.prog lir)
+  info <- phase PInfer (runInfer Map.empty $ Infer.prog lir)
+  env <- phase PEnv (runExec info $ Interp.prog lir)
 
   unless (compileOnly flags) $ do
     unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
-    Interp.main lir env
+    Interp.main lir env info
 
 -- for ghci use
 run :: String -> IO ()

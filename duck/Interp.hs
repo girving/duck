@@ -22,8 +22,10 @@ import qualified Prims
 import qualified Data.Map as Map
 import Util
 import ExecMonad
+import InferMonad hiding (withFrame)
 import Control.Monad hiding (guard)
 import Control.Monad.Trans
+import qualified Infer
 
 -- Environments
 
@@ -41,7 +43,7 @@ lookup prog global env v
 lookupOverloads :: Prog -> Var -> [Overload]
 lookupOverloads prog v = Map.findWithDefault [] v (Lir.functions prog)
 
-lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [Type])
+lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [TypeSet])
 lookupConstructor prog c
   | Just tc <- Map.lookup c (Lir.conses prog)
   , Just (vl,cases) <- Map.lookup tc (Lir.datatypes prog)
@@ -71,9 +73,7 @@ expr prog global env = exp where
   exp (Lir.Apply e1 e2) = do
     v1 <- exp e1
     v2 <- exp e2
-    case v1 of
-      ValClosure f args -> apply prog global f (args ++ [v2])
-      _ -> execError ("expected a -> b, got " ++ show (pretty v1))
+    apply prog global v1 v2
   exp (Lir.Let v e body) = do
     d <- exp e
     expr prog global (Map.insert v d env) body
@@ -103,20 +103,32 @@ expr prog global env = exp where
   exp (Lir.Return e) = exp e >.= ValLiftIO
   exp (Lir.PrimIO p el) = mapM exp el >.= ValPrimIO p
 
+apply :: Prog -> Globals -> Value -> Value -> Exec Value
+apply prog global (ValClosure f args) v2 = apply' prog global f (args ++ [v2])
+apply _ _ v1 _ = execError ("expected a -> b, got " ++ show (pretty v1))
+
+applyTry :: Prog -> Type -> Type -> MaybeT Exec Type
+applyTry prog t1 t2 = do
+  global <- lift getGlobalTypes
+  mapMaybeT liftInfer (Infer.applyTry prog global t1 t2)
+
 -- Overloaded function application
-apply :: Prog -> Globals -> Var -> [Value] -> Exec Value
-apply prog global f args = do
+apply' :: Prog -> Globals -> Var -> [Value] -> Exec Value
+apply' prog global f args = do
   types <- mapM (typeof prog) args
+  let rawOverloads = lookupOverloads prog f -- look up possibilities
   let call = unwords (map show (pretty f : map (guard 51) types))
-      prune o@(tl,_,_,_) = case unifyList tl types of
-        Just _ -> Just o
-        Nothing -> Nothing
-      overloads = catMaybes (map prune rawOverloads) -- prune those that don't match
-      isSpecOf a b = isJust (unifyList b a)
-      isMinimal (tl,_,_,_) = all (\ (tl',_,_,_) -> isSpecOf tl tl' || not (isSpecOf tl' tl)) overloads
-      rawOverloads = lookupOverloads prog f -- look up possibilities
+      prune o@(tl,_,_,_) = runMaybeT $ unifyList (applyTry prog) tl types >. o
+  overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
+  let isSpecOf :: [TypeSet] -> [TypeSet] -> Exec Bool
+      isSpecOf a b = isJust =.< runMaybeT (unifyListSkolem (applyTry prog) b a)
+      isMinimal (tl,_,_,_) = allM (\ (tl',_,_,_) -> do
+        less <- isSpecOf tl tl'
+        more <- isSpecOf tl' tl
+        return $ less || not more) overloads
       options overs = concatMap (\ (tl,r,_,_) -> concat ("\n  " : intersperse " -> " (map (show . guard 2) (tl ++ [r])))) overs
-  case filter isMinimal overloads of -- prune away overloads which are more general than some other overload
+  filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
+  case filtered of
     [] -> execError (call++" doesn't match any overload, possibilities are"++options rawOverloads)
     os -> case partition (\ (_,_,l,_) -> length l == length args) os of
       ([],_) -> return $ ValClosure f args -- all overloads are still partially applied
@@ -130,19 +142,19 @@ typeof _ (ValInt _) = return TyInt
 typeof prog (ValCons c args) = do
   tl <- mapM (typeof prog) args
   (tv, vl, tl') <- lookupConstructor prog c
-  case unifyList tl' tl of
+  result <- runMaybeT $ unifyList (applyTry prog) tl' tl
+  case result of
     Just tenv -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-    Nothing -> execError ("failed to unify types "++showlist tl++" with "++showlist tl') where
-      showlist = unwords . (map (show . guard 51))
+    Nothing -> execError ("failed to unify types "++show (prettylist tl)++" with "++show (prettylist tl')) where
 typeof _ (ValClosure _ _) = return $ TyFun TyVoid TyVoid
 typeof _ (ValBindIO _ _ _) = return $ TyIO TyVoid
 typeof _ (ValPrimIO _ _) = return $ TyIO TyVoid
 typeof _ (ValLiftIO _) = return $ TyIO TyVoid
 
 -- IO and main
-main :: Prog -> Globals -> IO ()
-main prog global = runExec $ do
+main :: Prog -> Globals -> (GlobalTypes, FunctionInfo) -> IO ()
+main prog global info = runExec info $ do
   main <- lookup prog global Map.empty (V "main")
   _ <- runIO prog global Map.empty main
   return ()

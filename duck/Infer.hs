@@ -1,8 +1,9 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, ScopedTypeVariables #-}
 -- Duck type inference
 
 module Infer
   ( prog
+  , applyTry
   ) where
 
 import Var
@@ -12,9 +13,9 @@ import Pretty
 import Lir (Prog, Datatype, Overload)
 import qualified Lir
 import qualified Data.Map as Map
-import Data.List hiding (lookup)
+import Data.List hiding (lookup, intersect)
 import qualified Data.List
-import Control.Monad hiding (guard)
+import Control.Monad.Error hiding (guard, join)
 import InferMonad
 import Prelude hiding (lookup)
 import qualified Prims
@@ -41,7 +42,7 @@ lookup :: Prog -> Globals -> Locals -> Var -> Infer Type
 lookup prog global env v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
-  | Just _ <- Map.lookup v (Lir.functions prog) = return $ TyClosure v [] -- if we find overloads, make a new closure
+  | Just _ <- Map.lookup v (Lir.functions prog) = return $ TyClosure [(v,[])] -- if we find overloads, make a new closure
   | otherwise = typeError ("unbound variable " ++ show v)
 
 lookupDatatype :: Prog -> CVar -> Infer Datatype
@@ -54,7 +55,7 @@ lookupOverloads prog f
   | Just o <- Map.lookup f (Lir.functions prog) = return o
   | otherwise = typeError ("unbound function " ++ show f)
 
-lookupConstructor :: Prog -> Var -> Infer (CVar, [Var], [Type])
+lookupConstructor :: Prog -> Var -> Infer (CVar, [Var], [TypeSet])
 lookupConstructor prog c
   | Just tc <- Map.lookup c (Lir.conses prog)
   , Just (vl,cases) <- Map.lookup tc (Lir.datatypes prog)
@@ -84,8 +85,7 @@ expr prog global env = exp where
   exp (Lir.Apply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
-    unless (isConcrete t2) $ typeError (show (pretty e2)++" has nonconcrete type "++show (pretty t2))
-    applyType prog global t1 t2
+    apply prog global t1 t2
   exp (Lir.Let v e body) = do
     t <- exp e
     expr prog global (Map.insert v t env) body
@@ -99,25 +99,26 @@ expr prog global env = exp where
             caseType (c,vl,e')
               | Just tl <- List.lookup c cases, a <- length tl =
                   if length vl == a then
-                    expr prog global (foldl (\e (v,t) -> Map.insert v t e) env (zip vl (map (subst tenv) tl))) e'
+                    let tl' = map (subst tenv) tl in
+                    case mapM unsingleton tl' of
+                      Nothing -> typeError ("datatype declaration "++show (pretty tv)++" is invalid, constructor "++show (pretty c)++" has nonconcrete types "++show (prettylist tl'))
+                      Just tl -> expr prog global (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) e'
                   else
                     typeError ("arity mismatch in pattern: "++show (pretty c)++" expected "++show a++" argument"++(if a == 1 then "" else "s")
                       ++" but got ["++concat (intersperse ", " (map (show . pretty) vl))++"]")
               | otherwise = typeError ("datatype "++show (pretty tv)++" has no constructor "++show (pretty c))
             defaultType Nothing = return []
             defaultType (Just (v,e')) = expr prog global (Map.insert v t env) e' >.= \t -> [t]
-            join t1 t2 | Just (_,t) <- unifyS t1 t2 = return t
-                       | otherwise = typeError ("failed to unify types "++show (pretty t1)++" and "++show (pretty t2)++" from different case branches")
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
-        foldM1 join (caseResults ++ defaultResults)
+        joinList prog global (caseResults ++ defaultResults)
       _ -> typeError ("expected datatype, got "++show (pretty t))
   exp (Lir.Cons c el) = do
     args <- mapM exp el
     (tv,vl,tl) <- lookupConstructor prog c
-    case unifyList tl args of
-      Nothing -> typeError (show (pretty c)++" expected arguments "++showlist tl++", got "++showlist args) where
-        showlist = unwords . map (show . guard 51)
+    result <- runMaybeT $ unifyList (applyTry prog global) tl args
+    case result of
+      Nothing -> typeError (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) where
       Just tenv -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
   exp (Lir.Binop op e1 e2) = do
@@ -131,61 +132,83 @@ expr prog global env = exp where
   exp (Lir.Return e) = exp e >.= TyIO
   exp (Lir.PrimIO p el) = mapM exp el >>= Prims.primIOType p >.= TyIO
 
-applyType :: Prog -> Globals -> Type -> Type -> Infer Type
-applyType _ _ TyVoid _ = return TyVoid
-applyType _ _ _ TyVoid = return TyVoid
-applyType prog global (TyClosure f args) t2 = do
-  r <- lookupInfo f args'
-  case r of
+join :: Prog -> Globals -> Type -> Type -> Infer Type
+join prog global t1 t2 = do
+  result <- runMaybeT $ intersect (applyTry prog global) t1 t2
+  case result of
     Just t -> return t
-    Nothing -> apply prog global f args'
-  where args' = args ++ [t2]
-applyType _ _ (TyFun a r) t2 | Just tenv <- unify a t2 = return (subst tenv r)
-applyType _ _ t1@(TyFun _ _) t2 = typeError ("cannot apply "++show (pretty t1)++" to "++show (pretty t2))
-applyType _ _ t1 _ = typeError ("expected a -> b, got " ++ show (pretty t1))
+    _ -> typeError ("failed to unify types "++show (pretty t1)++" and "++show (pretty t2))
+
+-- In future, we might want this to produce more informative error messages
+joinList :: Prog -> Globals -> [Type] -> Infer Type
+joinList prog global = foldM1 (join prog global)
+
+apply :: Prog -> Globals -> Type -> Type -> Infer Type
+apply _ _ TyVoid _ = return TyVoid
+apply _ _ _ TyVoid = return TyVoid
+apply prog global (TyClosure fl) t2 = joinList prog global =<< mapM ap fl where
+  ap :: (Var,[Type]) -> Infer Type
+  ap (f,args) = do
+    r <- lookupInfo f args'
+    case r of
+      Just t -> return t
+      Nothing -> apply' prog global f args'
+    where args' = args ++ [t2]
+apply prog global (TyFun a r) t2 = do
+  result <- runMaybeT $ unify'' (applyTry prog global) a t2
+  case result of
+    Just () -> return r
+    _ -> typeError ("cannot apply "++show (pretty (TyFun a r))++" to "++show (pretty t2))
+apply _ _ t1 _ = typeError ("expected a -> b, got " ++ show (pretty t1))
+
+applyTry :: Prog -> Globals -> Type -> Type -> MaybeT Infer Type
+applyTry prog global f t = catchError (lift $ apply prog global f t) (\_ -> nothing)
 
 -- Overloaded function application
-apply :: Prog -> Globals -> Var -> [Type] -> Infer Type
-apply prog global f args = do
+apply' :: Prog -> Globals -> Var -> [Type] -> Infer Type
+apply' prog global f args = do
   rawOverloads <- lookupOverloads prog f -- look up possibilities
   let call = unwords (map show (pretty f : map (guard 51) args))
-      prune o@(tl,_,_,_) = case unifyList tl args of
-        Just _ -> Just o
-        Nothing -> Nothing
-      overloads = catMaybes (map prune rawOverloads) -- prune those that don't match
-      isSpecOf a b = isJust (unifyList b a)
-      isMinimal (tl,_,_,_) = all (\ (tl',_,_,_) -> isSpecOf tl tl' || not (isSpecOf tl' tl)) overloads
+      prune o@(tl,_,_,_) = runMaybeT $ unifyList (applyTry prog global) tl args >. o
+  overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
+  let isSpecOf :: [TypeSet] -> [TypeSet] -> Infer Bool
+      isSpecOf a b = isJust =.< runMaybeT (unifyListSkolem (applyTry prog global) b a)
+      isMinimal (tl,_,_,_) = allM (\ (tl',_,_,_) -> do
+        less <- isSpecOf tl tl'
+        more <- isSpecOf tl' tl
+        return $ less || not more) overloads
       options overs = concatMap (\ (tl,r,_,_) -> concat ("\n  " : intersperse " -> " (map (show . guard 2) (tl ++ [r])))) overs
-  case filter isMinimal overloads of -- prune away overloads which are more general than some other overload
+  filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
+  case filtered of
     [] -> typeError (call++" doesn't match any overload, possibilities are"++options rawOverloads)
     os -> case partition (\ (_,_,l,_) -> length l == length args) os of
-      ([],_) -> return $ TyClosure f args -- all overloads are still partially applied
+      ([],_) -> return $ TyClosure [(f,args)] -- all overloads are still partially applied
       ([o],[]) -> cache prog global f args o -- exactly one fully applied option
       (fully@(_:_),partially@(_:_)) -> typeError (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
       (fully@(_:_:_),[]) -> typeError (call++" is ambiguous, possibilities are"++options fully)
 
 -- Type infer a function call and cache the results
 -- The overload is assumed to match, since this is handled by apply.
+--
 -- TODO: cache currently infers every nonvoid function call at least twice, regardless of recursion.  Fix this.
+-- TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
+-- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
 cache :: Prog -> Globals -> Var -> [Type] -> Overload -> Infer Type
 cache prog global f args (types,r,vl,e) = do
+  Just tenv <- runMaybeT $ unifyList (applyTry prog global) types args
+  let tl = map (substVoid tenv) types
+      rs = substVoid tenv r
+      fix prev = do
+        r' <- withFrame f tl (expr prog global (Map.fromList (zip vl tl)) e)
+        result <- runMaybeT $ intersect (applyTry prog global) r' rs
+        case result of
+          Nothing -> typeError ("in call "++show (pretty f <+> prettylist args)++", failed to unify result "++show (pretty r')++" with return signature "++show (pretty rs))
+          Just r ->
+            if prev == r
+              then return r
+              else fix r
   insertInfo f tl TyVoid -- recursive function calls are initially assumed to be void
   fix TyVoid
-  where
-  Just tenv = unifyList types args
-  tl = map (subst tenv) types
-  rs = subst tenv r
-  fix prev = do
-    unless (all isConcrete tl) $ typeError ("nonconcrete call "++show (pretty f <+> prettylist tl)++", arguments were "++show (prettylist args))
-    r' <- withFrame f tl (expr prog global (Map.fromList (zip vl tl)) e)
-    result <- case unifyS r' rs of
-      Nothing -> typeError ("in call "++show (pretty f <+> prettylist args)++", failed to unify result "++show (pretty r')++" with return signature "++show (pretty rs))
-      Just (_,r) -> do
-        unless (isConcrete r) $ typeError ("nonconcrete result "++show (pretty f <+> prettylist tl)++" = "++show (pretty r))
-        return r
-    if prev == result
-      then return result
-      else fix result
 
 -- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
