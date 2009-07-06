@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
--- Duck interpreter values
+-- | Duck interpreter values
 
 -- For now, this is dynamically typed
 

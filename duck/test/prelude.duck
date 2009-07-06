@@ -2,17 +2,17 @@
 
 ---- operator precedence
 
-infixr 9  .
-infixr 8  ^, ^^, **
-infixl 7  *, /
-infixl 6  +, -
-infixr 5  :
-infix  4  ==, !=, <, <=, >=, >
-infixr 3  &&
-infixr 2  ||
-infixl 1  >>, >>=
-infixr 1  =<<
-infixr 0  $, $!
+infixr 90  .
+infixr 80  ^, ^^, **
+infixl 70  *, /
+infixl 60  +, -
+infixr 50  :
+infix  40  ==, !=, <, <=, >=, >
+infixr 30  &&
+infixr 20  ||
+infixl 10  >>, >>=
+infixr 10  =<<
+infixr 0   $, $!
 
 --------- miscellaneous basic functions
 

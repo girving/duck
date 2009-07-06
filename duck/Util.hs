@@ -1,4 +1,4 @@
--- Duck utility functions
+-- | Duck utility functions
 
 module Util
   ( debug
@@ -46,13 +46,13 @@ die s = do
   hPutStrLn stderr s
   exitFailure
 
--- Stacks are lists with an extra bit of information at the bottom
+-- |Stacks are lists with an extra bit of information at the bottom
 -- This is useful to represent stacks with different layers of types
 data Stack a b
   = Base b
   | a :. Stack a b
 
--- append a list and a stack
+-- |append a list and a stack
 (++.) :: [a] -> Stack a b -> Stack a b
 (++.) [] r = r
 (++.) (h:t) r = h :. (t ++. r)

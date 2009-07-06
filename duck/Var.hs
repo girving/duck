@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
--- Duck Variables
+-- | Duck Variables
 
 module Var 
   ( Var(..)
@@ -82,7 +82,7 @@ precedence (V op) = case head op of
 
 tuple :: [a] -> Var
 tuple [] = V "()"
-tuple x = V (replicate (length x - 1) ',')
+tuple (_:l) = V ([',' | _ <- l])
 
 istuple :: Var -> Bool
 istuple (V s) = all (',' ==) s

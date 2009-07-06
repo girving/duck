@@ -1,5 +1,5 @@
--- Duck prefix trie data structure
-
+-- | Duck prefix trie data structure
+--
 -- A prefix trie represents a partial map [k] -> v with the property that no
 -- key is a proper prefix of any other key.  For example, a prefix trie can
 -- be used to represent the types of overloaded curried functions.
@@ -58,7 +58,7 @@ singleton' :: [k] -> v -> Ptrie' k v
 singleton' [] v = Leaf v
 singleton' (x:k) v = Node (Map.singleton x (singleton' k v))
 
--- Inserting with a key k has no effect if there is an existing key which
+-- |Inserting with a key k has no effect if there is an existing key which
 -- is a proper prefix of k.  If insertion succeeds, all entries which contain
 -- k as a prefix are clobbered.
 insert :: Ord k => [k] -> v -> Ptrie k v -> Ptrie k v

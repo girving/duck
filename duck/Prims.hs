@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
--- Duck primitive operations
+-- | Duck primitive operations
 
 module Prims 
   ( prim

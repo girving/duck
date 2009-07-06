@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
--- Duck Lifted Intermediate Representation
+-- | Duck Lifted Intermediate Representation
 
 module Lir
   ( Prog(..)
@@ -11,7 +11,6 @@ module Lir
   ) where
 
 import Prelude hiding (mapM)
-import Var
 import Type
 import Data.Maybe
 import Data.Set (Set)
@@ -23,6 +22,7 @@ import Data.Traversable (mapM)
 
 import Var
 import Util
+import SrcLoc
 import Pretty
 import Text.PrettyPrint
 import Data.List hiding (union)
@@ -54,6 +54,7 @@ data Exp
   | Bind Var Exp Exp
   | Return Exp
   | PrimIO PrimIO [Exp]
+  | ExpLoc SrcLoc Exp
   deriving Show
 
 -- Lambda lifting: IR to Lifted IR conversion
@@ -85,7 +86,7 @@ decl_vars s (Ir.LetM vl _) = foldl (flip Set.insert) s vl
 decl_vars s (Ir.Over v _ _) = Set.insert v s
 decl_vars s (Ir.Data _ _ _) = s
 
--- Statements are added in reverse order
+-- |Statements are added in reverse order
 decl :: Ir.Decl -> State Prog ()
 decl (Ir.LetD v e@(Ir.Lambda _ _)) = do
   let (vl,e') = unwrapLambda e
@@ -104,20 +105,20 @@ decl (Ir.LetM vl e) = do
 decl (Ir.Data tc tvl cases) =
   modify $ \p -> p { datatypes = Map.insert tc (tvl,cases) (datatypes p) }
 
--- Add a toplevel statement
+-- |Add a toplevel statement
 statement :: [Var] -> Exp -> State Prog ()
 statement vl e = modify $ \p -> p { statements = (vl,e) : statements p }
 
--- Add a global overload
+-- |Add a global overload
 overload :: Var -> [Type] -> Type -> [Var] -> Exp -> State Prog ()
 overload v tl r vl e = modify $ \p -> p { functions = Map.insertWith (++) v [(tl,r,vl,e)] (functions p) }
 
--- Add an unoverloaded global function
+-- |Add an unoverloaded global function
 function :: Var -> [Var] -> Exp -> State Prog ()
 function v vl e = overload v tl r vl e where
   (tl,r) = generalType vl
 
--- Unwrap a lambda as far as we can
+-- |Unwrap a lambda as far as we can
 unwrapLambda :: Ir.Exp -> ([Var], Ir.Exp)
 unwrapLambda (Ir.Lambda v e) = (v:vl, e') where
   (vl, e') = unwrapLambda e
@@ -127,13 +128,13 @@ generalType :: [a] -> ([Type], Type)
 generalType vl = (tl,r) where
   r : tl = map TyVar (take (length vl + 1) standardVars)
 
--- Unwrap a type/lambda combination as far as we can
+-- |Unwrap a type/lambda combination as far as we can
 unwrapTypeLambda :: Type -> Ir.Exp -> ([Type], Type, [Var], Ir.Exp)
 unwrapTypeLambda (TyFun t tl) (Ir.Lambda v e) = (t:tl', r, v:vl, e') where
   (tl', r, vl, e') = unwrapTypeLambda tl e
 unwrapTypeLambda t e = ([], t, [], e)
 
--- Lambda lift an expression
+-- |Lambda lift an expression
 expr :: Set Var -> Ir.Exp -> State Prog Exp
 expr locals (Ir.Let v e@(Ir.Lambda _ _) rest) = do
   e <- lambda locals v e
@@ -168,8 +169,9 @@ expr locals (Ir.Bind v e rest) = do
   return $ Bind v e rest
 expr locals (Ir.Return e) = Return =.< expr locals e
 expr locals (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals) el
+expr locals (Ir.ExpLoc l e) = ExpLoc l =.< expr locals e
 
--- Lift a single lambda expression
+-- |Lift a single lambda expression
 lambda :: Set Var -> Var -> Ir.Exp -> State Prog Exp
 lambda locals v e = do
   f <- freshenM v -- use the suggested function name
@@ -179,7 +181,7 @@ lambda locals v e = do
   function f (vs ++ vl) e
   return $ foldl Apply (Var f) (map Var vs)
 
--- Generate a fresh variable
+-- |Generate a fresh variable
 freshenM :: Var -> State Prog Var
 freshenM v = do
   p <- get
@@ -187,7 +189,7 @@ freshenM v = do
   put $ p { globals = Set.insert v' (globals p) }
   return v'
 
--- Compute the list of free variables in an expression
+-- |Compute the list of free variables in an expression
 free :: Set Var -> Exp -> [Var]
 free locals e = Set.toList (Set.intersection locals (f e)) where
   f :: Exp -> Set Var
@@ -203,8 +205,9 @@ free locals e = Set.toList (Set.intersection locals (f e)) where
   f (Bind v e rest) = Set.union (f e) (Set.delete v (f rest))
   f (Return e) = f e
   f (PrimIO _ el) = Set.unions (map f el)
+  f (ExpLoc _ e) = f e
 
--- Merge two programs into one
+-- |Merge two programs into one
 
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
@@ -245,3 +248,4 @@ revert (Binop op e1 e2) = Ir.Binop op (revert e1) (revert e2)
 revert (Bind v e rest) = Ir.Bind v (revert e) (revert rest)
 revert (Return e) = Ir.Return (revert e)
 revert (PrimIO p el) = Ir.PrimIO p (map revert el)
+revert (ExpLoc l e) = Ir.ExpLoc l (revert e)

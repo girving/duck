@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, ScopedTypeVariables, Rank2Types #-}
--- Duck execution monad
+-- | Duck execution monad
 
 module ExecMonad
   ( Exec

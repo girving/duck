@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards #-}
--- Duck Intermediate Representation
+-- | Duck Intermediate Representation
 
 module Ir 
   ( Decl(..)
@@ -20,6 +20,7 @@ import qualified Data.Map as Map
 import Util
 import Pretty
 import ParseOps
+import SrcLoc
 import Text.PrettyPrint
 import Data.List
 import Data.Either
@@ -47,6 +48,7 @@ data Exp
   | Bind Var Exp Exp
   | Return Exp
   | PrimIO PrimIO [Exp]
+  | ExpLoc SrcLoc Exp
   deriving Show
 
 data Binop
@@ -127,9 +129,9 @@ expr env s (Ast.Ops o) = expr env s $ Ast.opsExp $ sortOps (envPrecs env) o
 expr env s (Ast.TypeCheck e _) = expr env s e
 expr env s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) (map (expr env s) el)
 expr env s (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) (expr env s c)) (expr env s e1)) (expr env s e2)
-expr env s (Ast.ExpLoc _ e) = expr env s e
+expr env s (Ast.ExpLoc l e) = ExpLoc l $ expr env s e
 
--- match processes a single pattern into an input variable, a new in-scope set,
+-- |match processes a single pattern into an input variable, a new in-scope set,
 -- and a transformer that converts an input expression and a result expression
 -- into new expression representing the match
 match :: Env -> InScopeSet -> Ast.Pattern -> (Var, InScopeSet, Exp -> Exp -> Exp)
@@ -152,7 +154,7 @@ matches env s pl = foldr f ([],s,\[] -> id) pl where
   f p (vl,s,m) = (v:vl, s', \ (e:el) -> m' e . m el) where
     (v,s',m') = match env s p
 
--- cases turns a multilevel pattern match into iterated single level pattern match by
+-- |cases turns a multilevel pattern match into iterated single level pattern match by
 --   (1) partitioning the cases by outer element,
 --   (2) performing the outer match, and
 --   (3) iteratively matching the components returned in the outer match
@@ -256,6 +258,8 @@ instance Pretty Exp where
   pretty' (Return e) = (6, text "return" <+> guard 7 e)
   pretty' (PrimIO p []) = pretty' p
   pretty' (PrimIO p args) = (50, guard 50 p <+> hsep (map (guard 51) args))
+  pretty' (ExpLoc _ e) = pretty' e
+  -- pretty' (ExpLoc l e) = fmap (text "{-@" <+> text (show l) <+> text "-}" <+>) $ pretty' e
 
 instance Pretty PrimIO where
   pretty' p = (100, text (show p))

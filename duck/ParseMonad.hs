@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, TypeSynonymInstances, FlexibleContexts, DeriveDataTypeable #-}
--- Duck Lexer/Parser Monads
+-- | Duck Lexer/Parser Monads
 
 module ParseMonad 
   ( P
@@ -8,6 +8,7 @@ module ParseMonad
   , parseFile
   , runP
   , parseError
+  , parseThrow
   , parseTry
   , get, put
   , ParseMonad
@@ -40,9 +41,9 @@ data ParseError = ParseError
   } deriving (Typeable)
 
 data ParseState = ParseState 
-  { ps_loc  :: !SrcLoc -- position at current input location
-  , ps_rest :: String  -- the current input
-  , ps_prev :: !Char   -- the character before the input
+  { ps_loc  :: !SrcLoc -- ^ position at current input location
+  , ps_rest :: String  -- ^ the current input
+  , ps_prev :: !Char   -- ^ the character before the input
   }
 
 newtype P a = P { unP :: ParseState -> IO (ParseResult a) }
@@ -83,6 +84,9 @@ instance MError.MonadError ParseError P where
       ParseOk _ _ -> return r
       ParseFail e -> (unP (f e)) s
 
+parseError :: ParseError -> P a
+parseError = MError.throwError
+
 parseString :: P a -> String -> String -> P a
 parseString parse file input = do
   s <- get
@@ -110,8 +114,8 @@ instance MonadState ParseState P where
 
   put s = P $ \_ -> return $ ParseOk s ()
 
-parseError :: String -> a
-parseError s = throw (MError.strMsg s :: ParseError)
+parseThrow :: String -> a
+parseThrow s = throw (MError.strMsg s :: ParseError)
 
 parseTry :: a -> P a
 parseTry x = P $ \s ->

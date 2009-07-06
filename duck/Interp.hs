@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
--- Duck interpreter
+-- | Duck interpreter
 
 -- For now, this is dynamically typed
 
@@ -102,6 +102,7 @@ expr prog global env = exp where
     return (ValBindIO v d e2)
   exp (Lir.Return e) = exp e >.= ValLiftIO
   exp (Lir.PrimIO p el) = mapM exp el >.= ValPrimIO p
+  exp (Lir.ExpLoc _ e) = exp e -- TODO: add SrcLoc to exec state
 
 -- Overloaded function application
 apply :: Prog -> Globals -> Var -> [Value] -> Exec Value

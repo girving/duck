@@ -1,4 +1,4 @@
--- Duck parser
+-- | Duck parser
 
 -- shift/reduce conflicts: exactly 7
 --
@@ -25,6 +25,7 @@ import Var
 import Lex
 import Ast
 import Type
+import SrcLoc
 import ParseMonad
 import ParseOps
 import qualified Data.Map as Map
@@ -32,41 +33,41 @@ import qualified Data.Map as Map
 }
 
 %name parse
-%tokentype { Token }
+%tokentype { Loc Token }
 
 %monad { P }
-%lexer { lexwrap } { TokEOF }
+%lexer { lexwrap } { Loc _ TokEOF }
 %error { parserError }
 
 %token
-  var  { TokVar $$ _ }
-  cvar { TokCVar $$ _ }
-  sym  { TokSym $$ _ }
-  csym { TokCSym $$ _ }
-  int  { TokInt $$ _ }
-  data { TokData _ }
-  over { TokOver _ }
-  let  { TokLet _ }
-  in   { TokIn _ }
-  case { TokCase _ }
-  of   { TokOf _ }
-  if   { TokIf _ }
-  then { TokThen _ }
-  else { TokElse _ }
-  '='  { TokEq _ }
-  '::' { TokDColon _ }
-  ','  { TokComma _ }
-  '('  { TokLP _ }
-  ')'  { TokRP _ }
-  '['  { TokLB _ }
-  ']'  { TokRB _ }
-  '_'  { TokAny _ }
-  '\\' { TokLambda _ }
-  '->' { TokArrow _ }
-  '|'  { TokOr _ }
-  '-'  { TokMinus _ }
-  import { TokImport _ }
-  infix  { TokInfix $$ _ }
+  var  { Loc _ (TokVar _) }
+  cvar { Loc _ (TokCVar _) }
+  sym  { Loc _ (TokSym _) }
+  csym { Loc _ (TokCSym _) }
+  int  { Loc _ (TokInt _) }
+  data { Loc _ (TokData) }
+  over { Loc _ (TokOver) }
+  let  { Loc _ (TokLet) }
+  in   { Loc _ (TokIn) }
+  case { Loc _ (TokCase) }
+  of   { Loc _ (TokOf) }
+  if   { Loc _ (TokIf) }
+  then { Loc _ (TokThen) }
+  else { Loc _ (TokElse) }
+  '='  { Loc _ (TokEq) }
+  '::' { Loc _ (TokDColon) }
+  ','  { Loc _ (TokComma) }
+  '('  { Loc _ (TokLP) }
+  ')'  { Loc _ (TokRP) }
+  '['  { Loc _ (TokLB) }
+  ']'  { Loc _ (TokRB) }
+  '_'  { Loc _ (TokAny) }
+  '\\' { Loc _ (TokLambda) }
+  '->' { Loc _ (TokArrow) }
+  '|'  { Loc _ (TokOr) }
+  '-'  { Loc _ (TokMinus) }
+  import { Loc _ (TokImport) }
+  infix  { Loc _ (TokInfix $$) }
 
 %left ';'
 %right '=' '->'
@@ -83,29 +84,29 @@ decls :: { [[Decl]] }
   | decls decl { $2 : $1 }
 
 decl :: { [Decl] }
-  : let avar patterns '=' exp { [DefD $2 Nothing (reverse $3) $5] }
-  | let pattern2 sym pattern2 '=' exp { [DefD $3 Nothing [$2,$4] $6] }
-  | over ty let avar patterns '=' exp { [DefD $4 (Just $2) (reverse $5) $7] }
-  | over ty let pattern2 sym pattern2 '=' exp { [DefD $5 (Just $2) [$4,$6] $8] }
-  | let pattern '=' exp { [LetD $2 $4] }
-  | import var {% let V file = $2 in parseFile parse file }
-  | infix int asyms { [Infix ($2,$1) (reverse $3)] }
-  | data cvar vars maybeConstructors { [Data $2 (reverse $3) (reverse $4)] }
+  : let avar patterns '=' exp { [DefD $2 Nothing (reverse (unLoc $3)) (expLoc $5)] }
+  | let pattern2 sym pattern2 '=' exp { [DefD (var $3) Nothing [patLoc $2,patLoc $4] (expLoc $6)] }
+  | over ty let avar patterns '=' exp { [DefD $4 (Just $2) (reverse (unLoc $5)) (expLoc $7)] }
+  | over ty let pattern2 sym pattern2 '=' exp { [DefD (var $5) (Just $2) [patLoc $4,patLoc $6] (expLoc $8)] }
+  | let pattern '=' exp { [LetD (patLoc $2) (expLoc $4)] }
+  | import var {% let V file = var $2 in parseFile parse file }
+  | infix int asyms { [Infix (int $2,$1) (reverse $3)] }
+  | data cvar vars maybeConstructors { [Data (var $2) (reverse $3) (reverse $4)] }
   | data '(' ')' maybeConstructors { [Data (V "()") [] (reverse $4)] } -- type ()
-  | data '[' var ']' maybeConstructors { [Data (V "[]") [$3] (reverse $5)] } -- type [a]
+  | data '[' var ']' maybeConstructors { [Data (V "[]") [var $3] (reverse $5)] } -- type [a]
 
 avar :: { Var }
-  : var { $1 }
-  | '(' asym ')' { $2 }
+  : var { var $1 }
+  | '(' asym ')' { unLoc $2 }
   | '(' if ')' { V "if" }
 
 vars :: { [Var] }
   : {--} { [] }
-  | vars var { $2 : $1 }
+  | vars var { var $2 : $1 }
 
 asyms :: { [Var] }
-  : asym { [$1] }
-  | asyms ',' asym { $3 : $1 }
+  : asym { [unLoc $1] }
+  | asyms ',' asym { unLoc $3 : $1 }
 
 maybeConstructors :: { [(CVar,[Type])] }
   : {--} { [] }
@@ -116,106 +117,106 @@ constructors :: { [(CVar,[Type])] }
   | constructors '|'  constructor { $3 : $1 }
 
 constructor :: { (CVar,[Type]) }
-  : cvar ty3s { ($1,reverse $2) }
-  | ty2 csym ty2 { ($2,[$1,$3]) }
+  : cvar ty3s { (var $1,reverse $2) }
+  | ty2 csym ty2 { (var $2,[$1,$3]) }
   | '(' ')' { (V "()",[]) }
   | '[' ']' { (V "[]",[]) }
 
 --- Expressions ---
 
-exp :: { Exp }
-  : let var patterns '=' exp in exp { Def $2 (reverse $3) $5 $7 }
-  | let pattern '=' exp in exp { Let $2 $4 $6 }
-  | case exp of cases { Case $2 (reverse $4) }
-  | if exp then exp else exp { If $2 $4 $6 }
-  | exptuple { Apply (Var (tuple $1)) (reverse $1) }
+exp :: { Loc Exp }
+  : let var patterns '=' exp in exp { loc $1 $> $ Def (var $2) (reverse (unLoc $3)) (expLoc $5) (expLoc $7) }
+  | let pattern '=' exp in exp { loc $1 $> $ Let (patLoc $2) (expLoc $4) (expLoc $6) }
+  | case exp of cases { loc $1 $> $ Case (expLoc $2) (reverse (unLoc $4)) }
+  | if exp then exp else exp { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
+  | exptuple { fmap (\et -> Apply (Var (tuple et)) (reverse et)) $1 }
   | exp0 { $1 }
 
 exps :: { [Exp] }
-  : exp0 { [$1] }
-  | exps ',' exp0 { $3 : $1 }
+  : exp0 { [expLoc $1] }
+  | exps ',' exp0 { expLoc $3 : $1 }
 
-exptuple :: { [Exp] }
-  : exp0 ',' exp0 { [$3,$1] }
-  | exptuple ',' exp0 { $3 : $1 }
+exptuple :: { Loc [Exp] }
+  : exp0 ',' exp0 { loc $1 $> $ [expLoc $3,expLoc $1] }
+  | exptuple ',' exp0 { loc $1 $> $ expLoc $3 : unLoc $1 }
 
-exp0 :: { Exp }
+exp0 :: { Loc Exp }
   : exp1 { $1 }
-  | exp1 '::' ty3 { TypeCheck $1 $3 }
+  | exp1 '::' ty3 { loc1 $1 $ TypeCheck (unLoc $1) $3 }
 
-exp1 :: { Exp }
-  : ops { Ops $1 }
+exp1 :: { Loc Exp }
+  : ops { fmap Ops $1 }
 
-ops :: { Ops Exp }
-  : ops asym unops { OpBin $2 $1 $3 }
+ops :: { Loc (Ops Exp) }
+  : ops asym unops { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
   | unops { $1 }
 
-unops :: { Ops Exp }
-  : exp2 { OpAtom $1 }
-  | '-' unops { OpUn (V "-") $2 }
+unops :: { Loc (Ops Exp) }
+  : exp2 { loc1 $1 $ OpAtom (expLoc $1) }
+  | '-' unops { loc $1 $> $ OpUn (V "-") (unLoc $2) }
 
-asym :: { Var }
-  : sym { $1 }
-  | csym { $1 }
-  | '-' { V "-" }
+asym :: { Loc Var }
+  : sym { locVar $1 }
+  | csym { locVar $1 }
+  | '-' { loc1 $1 $ V "-" }
 
-exp2 :: { Exp }
-  : apply { let f : a = reverse $1 in Apply f a }
-  | '\\' patterns '->' exp { Lambda (reverse $2) $4 }
+exp2 :: { Loc Exp }
+  : apply { fmap (\fa -> let f:a = reverse fa in Apply f a) $1 }
+  | '\\' patterns '->' exp { loc $1 $> $ Lambda (reverse (unLoc $2)) (expLoc $4) }
   | arg { $1 }
 
-apply :: { [Exp] }
-  : apply arg { $2 : $1 }
-  | arg arg { [$2,$1] }
+apply :: { Loc [Exp] }
+  : apply arg { loc $1 $> $ expLoc $2 : unLoc $1 }
+  | arg arg { loc $1 $> $ [expLoc $2,expLoc $1] }
 
-arg :: { Exp }
-  : int { Int $1 }
-  | var { Var $1 }
-  | cvar { Var $1 }
+arg :: { Loc Exp }
+  : int { fmap (Int . tokInt) $1 }
+  | var { fmap Var $ locVar $1 }
+  | cvar { fmap Var $ locVar $1 }
   | '(' exp ')' { $2 }
-  | '(' asym ')' { Var $2 }
-  | '(' ')' { Var (V "()") }
-  | '[' ']' { Var (V "[]") }
-  | '[' exps ']' { List (reverse $2) }
+  | '(' asym ')' { fmap Var $2 }
+  | '(' ')' { loc $1 $> $ Var (V "()") }
+  | '[' ']' { loc $1 $> $ Var (V "[]") }
+  | '[' exps ']' { loc $1 $> $ List (reverse $2) }
 
-cases :: { [(Pattern,Exp)] }
-  : pattern '->' exp { [($1,$3)] }
-  | cases '|' pattern '->' exp { ($3,$5) : $1 }
+cases :: { Loc [(Pattern,Exp)] }
+  : pattern '->' exp { loc $1 $> $ [(patLoc $1,expLoc $3)] }
+  | cases '|' pattern '->' exp { loc $1 $> $ (patLoc $3,expLoc $5) : unLoc $1 }
 
 --- Patterns ---
 
-patterns :: { [Pattern] }
-  : pattern3 { [$1] }
-  | patterns pattern3 { $2 : $1 }
+patterns :: { Loc [Pattern] }
+  : pattern3 { loc1 $1 $ [patLoc $1] }
+  | patterns pattern3 { loc $1 $> $ patLoc $2 : unLoc $1 }
 
-pattern :: { Pattern }
+pattern :: { Loc Pattern }
   : pattern1 { $1 }
-  | pattuple { PatCons (tuple $1) (reverse $1) }
+  | pattuple { fmap (\pt -> PatCons (tuple pt) (reverse pt)) $1 }
 
-pattern1 :: { Pattern }
+pattern1 :: { Loc Pattern }
   : pattern2 { $1 }
-  | patternops { PatOps $1 }
+  | patternops { fmap PatOps $1 }
 
-patternops :: { Ops Pattern }
-  : patternops csym pattern2 { OpBin $2 $1 (OpAtom $3) }
-  | pattern2 csym pattern2 { OpBin $2 (OpAtom $1) (OpAtom $3) }
+patternops :: { Loc (Ops Pattern) }
+  : patternops csym pattern2 { loc $1 $> $ OpBin (var $2) (unLoc $1) (OpAtom (patLoc $3)) }
+  | pattern2 csym pattern2 { loc $1 $> $ OpBin (var $2) (OpAtom (patLoc $1)) (OpAtom (patLoc $3)) }
 
-pattern2 :: { Pattern }
+pattern2 :: { Loc Pattern }
   : pattern3 { $1 }
-  | cvar patterns { PatCons $1 (reverse $2) }
-  | pattern3 '::' ty3 { PatType $1 $3 }
+  | cvar patterns { loc $1 $> $ PatCons (var $1) (reverse (unLoc $2)) }
+  | pattern3 '::' ty3 { loc1 $1 $ PatType (unLoc $1) $3 }
 
-pattern3 :: { Pattern }
-  : var { PatVar $1 }
-  | cvar { PatCons $1 [] }
-  | '_' { PatAny }
+pattern3 :: { Loc Pattern }
+  : var { fmap PatVar $ locVar $1 }
+  | cvar { fmap (\v -> PatCons v []) (locVar $1) }
+  | '_' { loc1 $1 PatAny }
   | '(' pattern ')' { $2 }
-  | '(' ')' { PatCons (V "()") [] }
-  | '[' ']' { PatCons (V "[]") [] }
+  | '(' ')' { loc $1 $> $ PatCons (V "()") [] }
+  | '[' ']' { loc $1 $> $ PatCons (V "[]") [] }
 
-pattuple :: { [Pattern] }
-  : pattern1 ',' pattern1 { [$3,$1] }
-  | pattuple ',' pattern1 { $3 : $1 }
+pattuple :: { Loc [Pattern] }
+  : pattern1 ',' pattern1 { loc $1 $> $ [patLoc $3,patLoc $1] }
+  | pattuple ',' pattern1 { loc $1 $> $ patLoc $3 : unLoc $1 }
 
 --- Types ---
 
@@ -229,10 +230,10 @@ ty1 :: { Type }
 
 ty2 :: { Type }
   : ty3 { $1 }
-  | cvar ty3s { tyapply $1 (reverse $2) }
+  | cvar ty3s { tyapply (var $1) (reverse $2) }
 
 ty3 :: { Type }
-  : var { TyVar $1 }
+  : var { TyVar (var $1) }
   | '(' ty ')' { $2 }
   | '[' ty ']' { TyApply (V "[]") [$2] }
 
@@ -248,8 +249,8 @@ ty3s :: { [Type] }
 
 parse :: P Prog
 
-parserError :: Token -> P a
-parserError t = fail ("syntax error at '" ++ show t ++ "'")
+parserError :: Loc Token -> P a
+parserError (Loc l t) = parseError (ParseError l ("syntax error at '" ++ show t ++ "'"))
 
 binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
@@ -259,5 +260,29 @@ tyapply (V "IO") [t] = TyIO t
 tyapply (V "Int") [] = TyInt
 tyapply (V "Void") [] = TyVoid
 tyapply c args = TyApply c args
+
+var :: Loc Token -> Var
+var = tokVar . unLoc
+
+int :: Loc Token -> Int
+int = tokInt . unLoc
+
+loc :: Loc x -> Loc y -> a -> Loc a
+loc (Loc l _) (Loc r _) = Loc (srcRng l r)
+
+loc1 :: Loc x -> a -> Loc a
+loc1 (Loc l _) = Loc l
+
+locVar :: Loc Token -> Loc Var
+locVar = fmap tokVar
+
+expLoc :: Loc Exp -> Exp
+expLoc (Loc l (ExpLoc _ e)) = expLoc (Loc l e) -- shouldn't happen
+expLoc (Loc l e)
+  | hasLoc l = ExpLoc l e
+  | otherwise = e
+
+patLoc :: Loc Pattern -> Pattern
+patLoc = unLoc -- no PatLoc (yet)
 
 }

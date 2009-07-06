@@ -1,4 +1,4 @@
--- Duck Operator Tree Parsing
+-- | Duck Operator Tree Parsing
 
 module ParseOps 
   ( Ops(..)
@@ -55,7 +55,7 @@ sortOps precs input = out where
   otoks (OpUn o r) t = Right o : otoks r t
   otoks (OpBin o l r) t = otoks l (Right o : otoks r t)
   prec o = fromMaybe defaultPrec $ Map.lookup o precs
-  err o = parseError ("ambiguous operator expression involving " ++ show (pretty o)) 
+  err o = parseThrow ("ambiguous operator expression involving " ++ show (pretty o)) 
 
 instance Pretty a => Pretty (Ops a) where
   pretty' (OpAtom a) = pretty' a

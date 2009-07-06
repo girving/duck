@@ -1,4 +1,4 @@
--- Duck interpreter
+-- | Duck interpreter
 
 module Main where
 

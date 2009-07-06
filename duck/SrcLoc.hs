@@ -1,30 +1,80 @@
+-- | Source file location annotations for reporting
+
 module SrcLoc
   ( SrcLoc
   , srcFile
   , startLoc
-  , moveLoc
+  , incrLoc
+  , noLoc
+  , hasLoc
+  , srcRng
+  , Loc(..)
   ) where
 
 import Data.Monoid
 
-data SrcLoc = SrcLoc 
-  { srcFile :: String
-  , srcLine, srcCol :: !Int
-  }
+data SrcLoc 
+  = SrcNone
+    { srcFile :: String }
+  | SrcLoc 
+    { srcFile :: String
+    , srcLine, srcCol :: !Int
+    }
+  | SrcRng
+    { srcFile :: String
+    , srcLine, srcCol :: !Int
+    , srcEndLine, srcEndCol :: !Int
+    }
+
+data Loc a = Loc { srcLoc :: SrcLoc, unLoc :: a }
+
+instance Functor Loc where
+  fmap f (Loc l x) = Loc l (f x)
 
 instance Show SrcLoc where
-  show (SrcLoc "" 0 0) = "<unknown>"
-  show (SrcLoc file line col) = file ++ ':' : show line ++ ':' : show col
+  show (SrcNone "") = "<unknown>"
+  show (SrcNone s) = s
+  show (SrcLoc file line col) = file ++ ':' : shows line (':' : show col)
+  show (SrcRng file line col line' col')
+    | line == line' = file ++ ':' : shows line (':' : shows col ('-' : show col'))
+    | otherwise = file ++ ':' : shows line (':' : shows col ('-' : shows line' (':' : show col')))
 
 startLoc :: String -> SrcLoc
 startLoc file = SrcLoc file 1 1
 
-moveLoc :: SrcLoc -> Char -> SrcLoc
-moveLoc l '\n' = l{ srcLine = succ $ srcLine l, srcCol = 1 }
-moveLoc l _    = l{ srcCol = succ $ srcCol l }
+incrLoc :: SrcLoc -> Char -> SrcLoc
+incrLoc l@(SrcNone _) _ = l
+incrLoc l '\n' = l{ srcLine = succ $ srcLine l, srcCol = 1 }
+incrLoc l _    = l{ srcCol = succ $ srcCol l }
+
+joinFile :: String -> String -> String
+joinFile "" s = s
+joinFile s "" = s
+joinFile s1 s2
+  | s1 == s2 = s1
+  | otherwise = s1 ++ ';' : s2
+
+joinLocs :: SrcLoc -> String -> Int -> Int -> SrcLoc
+joinLocs (SrcNone s1) s2 r2 c2 = SrcLoc (joinFile s1 s2) r2 c2
+joinLocs l s2 r2 c2 
+  | srcLine l == r2 && srcCol l == c2 = SrcLoc s r2 c2
+  | otherwise = SrcRng s (srcLine l) (srcCol l) r2 c2
+  where s = joinFile (srcFile l) s2
 
 instance Monoid SrcLoc where
-  mempty = SrcLoc "" 0 0
+  mempty = SrcNone ""
 
-  mappend (SrcLoc "" 0 0) l = l
-  mappend l _ = l
+  mappend (SrcNone s) l = l{ srcFile = joinFile s (srcFile l) }
+  mappend l (SrcNone s) = l{ srcFile = joinFile (srcFile l) s }
+  mappend l (SrcLoc s2 r2 c2) = joinLocs l s2 r2 c2
+  mappend l (SrcRng s2 _ _ r2 c2) = joinLocs l s2 r2 c2
+
+noLoc :: SrcLoc
+noLoc = mempty
+
+hasLoc :: SrcLoc -> Bool
+hasLoc (SrcNone "") = False
+hasLoc _ = True
+
+srcRng :: SrcLoc -> SrcLoc -> SrcLoc
+srcRng = mappend

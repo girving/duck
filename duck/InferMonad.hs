@@ -1,5 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, ScopedTypeVariables, Rank2Types, PatternGuards #-}
--- Duck type inference monad
+-- | Duck type inference monad
 
 module InferMonad
   ( Infer
