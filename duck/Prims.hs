@@ -10,24 +10,25 @@ module Prims
 import Var
 import Type
 import Value
+import SrcLoc
 import Pretty
 import Ir
 import qualified Lir
 import ExecMonad
 import Text.PrettyPrint
 
-prim :: Binop -> Value -> Value -> Exec Value
-prim IntAddOp (ValInt i) (ValInt j) = return $ ValInt (i+j)
-prim IntSubOp (ValInt i) (ValInt j) = return $ ValInt (i-j)
-prim IntMulOp (ValInt i) (ValInt j) = return $ ValInt (i*j)
-prim IntDivOp (ValInt i) (ValInt j) = return $ ValInt (div i j)
-prim IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True" else "False")) []
-prim IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
-prim op v1 v2 = execError ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
+prim :: SrcLoc -> Binop -> Value -> Value -> Exec Value
+prim _ IntAddOp (ValInt i) (ValInt j) = return $ ValInt (i+j)
+prim _ IntSubOp (ValInt i) (ValInt j) = return $ ValInt (i-j)
+prim _ IntMulOp (ValInt i) (ValInt j) = return $ ValInt (i*j)
+prim _ IntDivOp (ValInt i) (ValInt j) = return $ ValInt (div i j)
+prim _ IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True" else "False")) []
+prim _ IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
+prim loc op v1 v2 = execError loc ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
 
 primIO :: PrimIO -> [Value] -> Exec Value
-primIO ExitFailure [] = execError "exit failure"
-primIO p args = execError ("invalid arguments "++show (hsep (map pretty args))++" to "++show p)
+primIO ExitFailure [] = execError noLoc "exit failure"
+primIO p args = execError noLoc ("invalid arguments "++show (hsep (map pretty args))++" to "++show p)
 
 prelude :: Lir.Prog
 prelude = Lir.prog $ decTuples ++ binops ++ io where

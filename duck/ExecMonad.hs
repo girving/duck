@@ -15,15 +15,22 @@ module ExecMonad
 import Prelude hiding (catch)
 import Var
 import Value
+import SrcLoc
 import Pretty
 import Text.PrettyPrint
 import Control.Monad.State hiding (guard)
 import Control.Exception
 import Util
 
-type Callstack = [(Var, [Value])]
+data CallFrame = CallFrame 
+  { callFunction :: Var
+  , callArgs :: [Value]
+  , callLoc :: SrcLoc
+  }
 
-newtype Exec a = Exec { unExec :: StateT Callstack IO a }
+type CallStack = [CallFrame]
+
+newtype Exec a = Exec { unExec :: StateT CallStack IO a }
   deriving (Monad, MonadIO)
 
 handleE :: Exception e => (forall a. e -> Exec a) -> Exec b -> Exec b
@@ -31,12 +38,12 @@ handleE h e = Exec (do
   s <- get
   mapStateT (handle (\e -> evalStateT (unExec (h e)) s)) (unExec e))
 
-withFrame :: Var -> [Value] -> Exec a -> Exec a
-withFrame f args e =
-  handleE (\ (e :: AsyncException) -> execError (show e))
+withFrame :: Var -> [Value] -> SrcLoc -> Exec a -> Exec a
+withFrame f args loc e =
+  handleE (\ (e :: AsyncException) -> execError loc (show e))
   (Exec (do
     s <- get
-    put ((f,args) : s)
+    put ((CallFrame f args loc) : s)
     r <- unExec e
     put s
     return r))
@@ -44,11 +51,11 @@ withFrame f args e =
 runExec :: Exec a -> IO a
 runExec e = evalStateT (unExec e) []
 
-showStack :: Callstack -> String
+showStack :: CallStack -> String
 showStack s = unlines (h : reverse (map p s)) where
   h = "Traceback (most recent call last):"
-  p (f,args) = "  in "++show (pretty f)++' ' : show (hsep (map (guard 2) args))
+  p (CallFrame f args loc) = "  " ++ show loc ++ " in "++show (pretty f)++' ' : show (hsep (map (guard 2) args))
 
-execError :: String -> Exec a
-execError msg = Exec $ get >>= \s ->
-  liftIO (die (showStack s ++ "Error: "++msg))
+execError :: SrcLoc -> String -> Exec a
+execError loc msg = Exec $ get >>= \s ->
+  liftIO (die (showStack s ++ "Error: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
