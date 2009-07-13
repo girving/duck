@@ -47,7 +47,7 @@ runExec info e = evalStateT (unExec e) ([],info)
 
 execError :: String -> Exec a
 execError msg = Exec $ get >>= \ (s,_) ->
-  liftIO (die (showStack s ++ "Error: "++msg))
+  liftIO (die (showStack s ++ "RuntimeError: "++msg))
 
 liftInfer :: Infer a -> Exec a
 liftInfer infer = Exec $ do

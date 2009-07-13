@@ -133,7 +133,7 @@ instance MonadMaybe Maybe where
 instance Monad m => MonadMaybe (MaybeT m) where
   nothing = MaybeT (return Nothing)
 
-success :: MonadMaybe m => m ()
+success :: Monad m => m ()
 success = return ()
 
 instance MonadError e m => MonadError e (MaybeT m) where

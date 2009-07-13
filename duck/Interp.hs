@@ -144,9 +144,9 @@ typeof prog (ValCons c args) = do
   (tv, vl, tl') <- lookupConstructor prog c
   result <- runMaybeT $ unifyList (applyTry prog) tl' tl
   case result of
-    Just tenv -> return $ TyCons tv targs where
+    Just (tenv,[]) -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-    Nothing -> execError ("failed to unify types "++show (prettylist tl)++" with "++show (prettylist tl')) where
+    _ -> execError ("failed to unify types "++show (prettylist tl)++" with "++show (prettylist tl')) where
 typeof _ (ValClosure _ _) = return $ TyFun TyVoid TyVoid
 typeof _ (ValBindIO _ _ _) = return $ TyIO TyVoid
 typeof _ (ValPrimIO _ _) = return $ TyIO TyVoid

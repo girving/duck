@@ -118,9 +118,9 @@ expr prog global env = exp where
     (tv,vl,tl) <- lookupConstructor prog c
     result <- runMaybeT $ unifyList (applyTry prog global) tl args
     case result of
-      Nothing -> typeError (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) where
-      Just tenv -> return $ TyCons tv targs where
+      Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
+      _ -> typeError (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) where
   exp (Lir.Binop op e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
@@ -168,7 +168,7 @@ applyTry prog global f t = catchError (lift $ apply prog global f t) (\_ -> noth
 apply' :: Prog -> Globals -> Var -> [Type] -> Infer Type
 apply' prog global f args = do
   rawOverloads <- lookupOverloads prog f -- look up possibilities
-  let call = unwords (map show (pretty f : map (guard 51) args))
+  let call = show (pretty f <+> prettylist args)
       prune o@(tl,_,_,_) = runMaybeT $ unifyList (applyTry prog global) tl args >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
   let isSpecOf :: [TypeSet] -> [TypeSet] -> Infer Bool
@@ -177,7 +177,7 @@ apply' prog global f args = do
         less <- isSpecOf tl tl'
         more <- isSpecOf tl' tl
         return $ less || not more) overloads
-      options overs = concatMap (\ (tl,r,_,_) -> concat ("\n  " : intersperse " -> " (map (show . guard 2) (tl ++ [r])))) overs
+      options overs = concatMap (\ (tl,r,_,_) -> "\n  "++show (pretty (foldr TsFun r tl))) overs
   filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
   case filtered of
     [] -> typeError (call++" doesn't match any overload, possibilities are"++options rawOverloads)
@@ -195,15 +195,21 @@ apply' prog global f args = do
 -- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
 cache :: Prog -> Globals -> Var -> [Type] -> Overload -> Infer Type
 cache prog global f args (types,r,vl,e) = do
-  Just tenv <- runMaybeT $ unifyList (applyTry prog global) types args
+  Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog global) types args
+  let call = show (pretty f <+> prettylist args)
+      vars = case contravariantVars leftovers of
+        [v] -> "variable "++show (pretty v)
+        vl -> "variables "++concat (intersperse ", " (map (show . pretty) vl))
+  unless (null leftovers) $ typeError (call++" uses invalid overload "++show (pretty (foldr TsFun r types))++"; can't overload on contravariant "++vars)
   let tl = map (substVoid tenv) types
       rs = substVoid tenv r
       fix prev = do
         r' <- withFrame f tl (expr prog global (Map.fromList (zip vl tl)) e)
         result <- runMaybeT $ intersect (applyTry prog global) r' rs
         case result of
-          Nothing -> typeError ("in call "++show (pretty f <+> prettylist args)++", failed to unify result "++show (pretty r')++" with return signature "++show (pretty rs))
-          Just r ->
+          Nothing -> typeError ("in call "++call++", failed to unify result "++show (pretty r')++" with return signature "++show (pretty rs))
+          Just r -> do
+            insertInfo f tl r
             if prev == r
               then return r
               else fix r

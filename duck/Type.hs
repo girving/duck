@@ -17,6 +17,7 @@ module Type
   , occurs
   , singleton
   , unsingleton
+  , contravariantVars
   ) where
 
 import Var
@@ -25,6 +26,7 @@ import Text.PrettyPrint
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Control.Monad hiding (guard)
 import Control.Arrow hiding ((<+>))
 import Util
 
@@ -126,29 +128,51 @@ unionList _ _ _ = nothing
 -- argument of type x, can we pass it a y?"  As an example, unify x Void always
 -- succeeds since the hypothesis is vacuously true: there are no values of
 -- type Void.
-unify :: MonadMaybe m => Apply m -> TypeSet -> Type -> m TypeEnv
-unify apply = unify' apply Map.empty
+--
+-- The order in which subtypes are unified must be adaptive in the presence of
+-- function type sets.  For example, when unifying (a -> Int, a) with
+-- (Negate, Int), the value of "a" must be determined from the second part of
+-- the tuple before the function part can be checked.  To handle this, unify'
+-- produces a list of indeterminate subcomputations as it runs, and unify
+-- iterates on this until a fixed point is reached.
+unify :: MonadMaybe m => Apply m -> TypeSet -> Type -> m (TypeEnv, Leftovers)
+unify apply t t' = unifyFix apply Map.empty =<< unify' apply Map.empty t t'
 
-unify' :: MonadMaybe m => Apply m -> TypeEnv -> TypeSet -> Type -> m TypeEnv
+type Leftover = (TypeSet, Type)
+type Leftovers = [Leftover]
+
+unifyFix :: MonadMaybe m => Apply m -> TypeEnv -> (TypeEnv, Leftovers) -> m (TypeEnv, Leftovers)
+unifyFix _ _ r@(_, []) = return r -- finished leftovers, so done
+unifyFix _ prev r@(env, _) | prev == env = return r -- reached fixpoint without exhausing leftovers
+unifyFix apply _ (env, leftovers) = unifyFix apply env =<< foldM step (env, []) leftovers where
+  step (env, leftovers) (t,t') = do
+    (env, l) <- unify' apply env t t'
+    return (env, l ++ leftovers)
+
+unify' :: MonadMaybe m => Apply m -> TypeEnv -> TypeSet -> Type -> m (TypeEnv, Leftovers)
 unify' apply env (TsVar v) t =
   case Map.lookup v env of
-    Nothing -> return (Map.insert v t env)
-    Just t' -> intersect apply t t' >.= \t'' -> Map.insert v t'' env
+    Nothing -> return (Map.insert v t env, [])
+    Just t' -> intersect apply t t' >.= \t'' -> (Map.insert v t'' env, [])
 unify' apply env (TsCons c tl) (TyCons c' tl') | c == c' = unifyList' apply env tl tl'
-unify' apply env (TsFun s t) (TyFun s' t') = do
-  s <- unsingleton' env s
-  unify'' apply s' s -- note reversed arguments due to contravariance
-  unify' apply env t t' -- back to covariance
-unify' apply env (TsFun s t) f@(TyClosure _) = do
-  s <- unsingleton' env s
-  t' <- apply f s
-  unify' apply env t t'
+unify' apply env f@(TsFun s t) f'@(TyFun s' t') = do
+  case unsingleton' env s of
+    Nothing -> return (env,[(f,f')])
+    Just s -> do
+      unify'' apply s' s -- note reversed arguments due to contravariance
+      unify' apply env t t' -- back to covariance
+unify' apply env f@(TsFun s t) f'@(TyClosure _) = do
+  case unsingleton' env s of
+    Nothing -> return (env,[(f,f')])
+    Just s -> do
+      t' <- apply f' s
+      unify' apply env t t'
 unify' _ env (TsClosure f) (TyClosure f') = -- succeed if f' is a subset of f
-  if all (\x -> List.elem (second (map singleton) x) f) f' then return env else nothing
+  if all (\x -> List.elem (second (map singleton) x) f) f' then return (env,[]) else nothing
 unify' _ _ (TsClosure _) (TyFun _ _) = nothing -- TyFun is never considered as general as TyClosure
 unify' apply env (TsIO t) (TyIO t') = unify' apply env t t'
-unify' _ env TsInt TyInt = return env
-unify' _ env _ TyVoid = return env
+unify' _ env TsInt TyInt = return (env,[])
+unify' _ env _ TyVoid = return (env,[])
 unify' _ _ _ _ = nothing
 
 -- Same as unify', but the first argument is a type
@@ -172,14 +196,15 @@ unify'' _ _ _ = nothing
 -- at least as long as the second argument (think of the first argument as the
 -- types a function takes as arguments, and the second as the types of the
 -- values it is passed).
-unifyList :: MonadMaybe m => Apply m -> [TypeSet] -> [Type] -> m TypeEnv
-unifyList apply = unifyList' apply Map.empty
+unifyList :: MonadMaybe m => Apply m -> [TypeSet] -> [Type] -> m (TypeEnv, Leftovers)
+unifyList apply tl tl' = unifyFix apply Map.empty =<< unifyList' apply Map.empty tl tl'
 
-unifyList' :: MonadMaybe m => Apply m -> TypeEnv -> [TypeSet] -> [Type] -> m TypeEnv
-unifyList' _ env _ [] = return env
+unifyList' :: MonadMaybe m => Apply m -> TypeEnv -> [TypeSet] -> [Type] -> m (TypeEnv, Leftovers)
+unifyList' _ env _ [] = return (env,[])
 unifyList' apply env (t:tl) (t':tl') = do
-  env' <- unify' apply env t t'
-  unifyList' apply env' tl tl'
+  (env,l1) <- unify' apply env t t'
+  (env,l2) <- unifyList' apply env tl tl'
+  return (env, l1 ++ l2)
 unifyList' _ _ _ _ = nothing
 
 -- Same as unifyList', but for Type instead of TypeSet
@@ -244,10 +269,10 @@ singleton TyInt = TsInt
 singleton TyVoid = TsVoid
  
 -- Convert a singleton typeset to a type if possible
-unsingleton :: MonadMaybe m => TypeSet -> m Type
+unsingleton :: TypeSet -> Maybe Type
 unsingleton = unsingleton' Map.empty
 
-unsingleton' :: MonadMaybe m => TypeEnv -> TypeSet -> m Type
+unsingleton' :: TypeEnv -> TypeSet -> Maybe Type
 unsingleton' env (TsVar v) | Just t <- Map.lookup v env = return t
 unsingleton' _ (TsVar _) = nothing
 unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
@@ -272,6 +297,20 @@ skolemize (TsFun t1 t2) = TyFun (skolemize t1) (skolemize t2)
 skolemize (TsIO t) = TyIO (skolemize t)
 skolemize TsInt = TyInt
 skolemize TsVoid = TyVoid
+
+-- If leftovers remain after unification, this function explains which
+-- variables caused the problem.
+contravariantVars :: Leftovers -> [Var]
+contravariantVars = concatMap cv where
+  cv (TsFun s _, _) = vars s
+  cv _ = []
+  vars (TsVar v) = [v]
+  vars (TsCons _ tl) = concatMap vars tl
+  vars (TsClosure fl) = concatMap (concatMap vars . snd) fl
+  vars (TsFun t1 t2) = vars t1 ++ vars t2
+  vars (TsIO t) = vars t
+  vars TsInt = []
+  vars TsVoid = []
  
 -- Pretty printing
 
