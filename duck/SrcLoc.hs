@@ -23,7 +23,7 @@ data SrcLoc
   | SrcRng
     { srcFile :: String
     , srcLine, srcCol :: !Int
-    , srcEndLine, srcEndCol :: !Int
+    , _srcEndLine, _srcEndCol :: !Int
     }
 
 data Loc a = Loc { srcLoc :: SrcLoc, unLoc :: a }

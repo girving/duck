@@ -20,22 +20,22 @@ import Ptrie (Ptrie')
 import qualified Ptrie
 import Data.Map (Map)
 import qualified Data.Map as Map
-import SrcLoc
 import Pretty
 import Text.PrettyPrint
 import Control.Arrow hiding ((<+>))
 import Control.Exception
-import Callstack
+import CallStack
+import SrcLoc
 
 -- Stores our current knowledge about the types of functions
 type FunctionInfo = Map Var (Ptrie' Type Type)
 
-type InferState = (Callstack Type, FunctionInfo)
+type InferState = (CallStack Type, FunctionInfo)
 
-data TypeError = TypeError (Callstack Type) String
+data TypeError = TypeError (CallStack Type) SrcLoc String
 
 instance Error TypeError where
-  strMsg = TypeError []
+  strMsg = TypeError [] noLoc
 
 newtype Infer a = Infer { unInfer :: StateT InferState (ErrorT TypeError IO) a }
   deriving (Monad, MonadIO, MonadError TypeError, MonadInterrupt)
@@ -53,21 +53,21 @@ lookupInfo f tl = Infer get >.= \ (_,info) ->
     Just _ -> Just (TyClosure [(f,tl)]) -- partially applied
 
 showError :: TypeError -> String
-showError (TypeError stack msg) = showStack stack ++ "Type error: "++msg
+showError (TypeError stack loc msg) = showStack stack ++ "Type error: "++msg++(if hasLoc loc then " at " ++ show loc else [])
 
-makeTypeError :: String -> Infer TypeError
-makeTypeError msg = Infer $ get >.= \ (s,_) -> TypeError s msg
+makeTypeError :: SrcLoc -> String -> Infer TypeError
+makeTypeError loc msg = Infer $ get >.= \ (s,_) -> TypeError s loc msg
 
-typeError :: String -> Infer a
-typeError msg = throwError =<< makeTypeError msg
+typeError :: SrcLoc -> String -> Infer a
+typeError loc msg = throwError =<< makeTypeError loc msg
 
-withFrame :: Var -> [Type] -> Infer a -> Infer a
-withFrame f args e =
-  handleE (\ (e :: AsyncException) -> die . showError =<< makeTypeError (show e))
+withFrame :: Var -> [Type] -> SrcLoc -> Infer a -> Infer a
+withFrame f args loc e =
+  handleE (\ (e :: AsyncException) -> die . showError =<< makeTypeError noLoc (show e))
     (Infer $ do
       (s,_) <- get
-      when (length s > 10) (unInfer $ typeError "stack overflow")
-      modify (first (CallFrame f args noLoc:))
+      when (length s > 10) (unInfer $ typeError noLoc "stack overflow")
+      modify (first (CallFrame f args loc :))
       r <- unInfer e
       modify (first (const s))
       return r)

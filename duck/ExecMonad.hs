@@ -23,12 +23,12 @@ import Control.Monad.State hiding (guard)
 import Control.Exception
 import Control.Arrow hiding ((<+>))
 import Util
-import Callstack
+import CallStack
 import InferMonad hiding (withFrame)
 import Type
 
 type GlobalTypes = TypeEnv
-type ExecState = (Callstack TValue, (GlobalTypes, FunctionInfo))
+type ExecState = (CallStack TValue, (GlobalTypes, FunctionInfo))
 
 newtype Exec a = Exec { unExec :: StateT ExecState IO a }
   deriving (Monad, MonadIO, MonadInterrupt)
@@ -36,12 +36,12 @@ newtype Exec a = Exec { unExec :: StateT ExecState IO a }
 withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
 withFrame f args loc e =
   handleE (\ (e :: AsyncException) -> execError loc (show e))
-  (Exec $ do
+  (Exec (do
     (s,_) <- get
-    modify (first (CallFrame f args loc:))
+    modify (first (CallFrame f args loc :))
     r <- unExec e
     modify (first (const s))
-    return r)
+    return r))
 
 runExec :: (GlobalTypes, FunctionInfo) -> Exec a -> IO a
 runExec info e = evalStateT (unExec e) ([],info)

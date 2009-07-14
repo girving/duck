@@ -258,8 +258,8 @@ instance Pretty Exp where
   pretty' (Return e) = (6, text "return" <+> guard 7 e)
   pretty' (PrimIO p []) = pretty' p
   pretty' (PrimIO p args) = (50, guard 50 p <+> prettylist args)
-  -- pretty' (ExpLoc l e) = fmap (text "{-@" <+> text (show l) <+> text "-}" <+>) $ pretty' e
   pretty' (ExpLoc _ e) = pretty' e
+  -- pretty' (ExpLoc l e) = fmap (text "{-@" <+> text (show l) <+> text "-}" <+>) $ pretty' e
 
 instance Pretty PrimIO where
   pretty' p = (100, text (show p))

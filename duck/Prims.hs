@@ -28,23 +28,23 @@ prim _ IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True
 prim _ IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
 prim loc op v1 v2 = execError loc ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
 
-primType :: Binop -> Type -> Type -> Infer Type
-primType IntAddOp TyInt TyInt = return TyInt
-primType IntSubOp TyInt TyInt = return TyInt
-primType IntMulOp TyInt TyInt = return TyInt
-primType IntDivOp TyInt TyInt = return TyInt
-primType IntEqOp TyInt TyInt = return $ TyCons (V "Bool") []
-primType IntLessOp TyInt TyInt = return $ TyCons (V "Bool") []
-primType op t1 t2 = typeError ("invalid arguments "++show (pretty t1)++", "++show (pretty t2)++" to "++show op)
+primType :: SrcLoc -> Binop -> Type -> Type -> Infer Type
+primType _ IntAddOp TyInt TyInt = return TyInt
+primType _ IntSubOp TyInt TyInt = return TyInt
+primType _ IntMulOp TyInt TyInt = return TyInt
+primType _ IntDivOp TyInt TyInt = return TyInt
+primType _ IntEqOp TyInt TyInt = return $ TyCons (V "Bool") []
+primType _ IntLessOp TyInt TyInt = return $ TyCons (V "Bool") []
+primType loc op t1 t2 = typeError loc ("invalid arguments "++show (pretty t1)++", "++show (pretty t2)++" to "++show op)
 
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError noLoc "exit failure"
 primIO p args = execError noLoc ("invalid arguments "++show (prettylist args)++" to "++show p)
 
-primIOType :: PrimIO -> [Type] -> Infer Type
-primIOType ExitFailure [] = return $ TyCons (V "()") []
-primIOType TestAll [] = return $ TyCons (V "()") []
-primIOType p args = typeError ("invalid arguments"++show (prettylist args)++" to "++show p)
+primIOType :: SrcLoc -> PrimIO -> [Type] -> Infer Type
+primIOType _ ExitFailure [] = return $ TyCons (V "()") []
+primIOType _ TestAll [] = return $ TyCons (V "()") []
+primIOType loc p args = typeError loc ("invalid arguments"++show (prettylist args)++" to "++show p)
 
 prelude :: Lir.Prog
 prelude = Lir.prog $ decTuples ++ binops ++ io where
