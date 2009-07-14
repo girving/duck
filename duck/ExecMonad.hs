@@ -27,12 +27,12 @@ import InferMonad hiding (withFrame)
 import Type
 
 type GlobalTypes = TypeEnv
-type ExecState = (Callstack Value, (GlobalTypes, FunctionInfo))
+type ExecState = (Callstack TValue, (GlobalTypes, FunctionInfo))
 
 newtype Exec a = Exec { unExec :: StateT ExecState IO a }
   deriving (Monad, MonadIO, MonadInterrupt)
 
-withFrame :: Var -> [Value] -> Exec a -> Exec a
+withFrame :: Var -> [TValue] -> Exec a -> Exec a
 withFrame f args e =
   handleE (\ (e :: AsyncException) -> execError (show e))
   (Exec $ do

@@ -3,7 +3,11 @@
 
 module Infer
   ( prog
+  , expr
+  , apply
   , applyTry
+  , resolve
+  , lookupDatatype
   ) where
 
 import Var
@@ -120,7 +124,7 @@ expr prog global env = exp where
     case result of
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      _ -> typeError (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) where
+      _ -> typeError (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args))
   exp (Lir.Binop op e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
@@ -164,9 +168,9 @@ apply _ _ t1 _ = typeError ("expected a -> b, got " ++ show (pretty t1))
 applyTry :: Prog -> Globals -> Type -> Type -> MaybeT Infer Type
 applyTry prog global f t = catchError (lift $ apply prog global f t) (\_ -> nothing)
 
--- Overloaded function application
-apply' :: Prog -> Globals -> Var -> [Type] -> Infer Type
-apply' prog global f args = do
+-- Resolve an overload.  A result of Nothing means all overloads are still partially applied.
+resolve :: Prog -> Globals -> Var -> [Type] -> Infer (Maybe Overload)
+resolve prog global f args = do
   rawOverloads <- lookupOverloads prog f -- look up possibilities
   let call = show (pretty f <+> prettylist args)
       prune o@(tl,_,_,_) = runMaybeT $ unifyList (applyTry prog global) tl args >. o
@@ -182,10 +186,18 @@ apply' prog global f args = do
   case filtered of
     [] -> typeError (call++" doesn't match any overload, possibilities are"++options rawOverloads)
     os -> case partition (\ (_,_,l,_) -> length l == length args) os of
-      ([],_) -> return $ TyClosure [(f,args)] -- all overloads are still partially applied
-      ([o],[]) -> cache prog global f args o -- exactly one fully applied option
+      ([],_) -> return Nothing -- all overloads are still partially applied
+      ([o],[]) -> return (Just o) -- exactly one fully applied option
       (fully@(_:_),partially@(_:_)) -> typeError (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
       (fully@(_:_:_),[]) -> typeError (call++" is ambiguous, possibilities are"++options fully)
+
+-- Overloaded function application
+apply' :: Prog -> Globals -> Var -> [Type] -> Infer Type
+apply' prog global f args = do
+  overload <- resolve prog global f args
+  case overload of
+    Nothing -> return $ TyClosure [(f,args)]
+    Just o -> cache prog global f args o
 
 -- Type infer a function call and cache the results
 -- The overload is assumed to match, since this is handled by apply.

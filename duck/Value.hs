@@ -6,28 +6,32 @@
 module Value
   ( Env
   , Value(..)
+  , TValue
   ) where
 
 import Prelude hiding (lookup)
 import Data.List hiding (lookup)
 import Var
+import Type
 import Pretty
 import Text.PrettyPrint
 import qualified Lir
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-type Env = Map Var Value
-
 data Value
   = ValInt Int
   | ValCons Var [Value]
-  | ValClosure Var [Value]
+  | ValClosure Var [TValue]
     -- Monadic IO
   | ValLiftIO Value
   | ValPrimIO Lir.PrimIO [Value]
-  | ValBindIO Var Value Lir.Exp
+  | ValBindIO Var TValue Lir.Exp
   deriving Show
+
+type TValue = (Value, Type)
+
+type Env = Map Var TValue
 
 -- Pretty printing
 
