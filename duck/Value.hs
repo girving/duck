@@ -6,28 +6,32 @@
 module Value
   ( Env
   , Value(..)
+  , TValue
   ) where
 
 import Prelude hiding (lookup)
 import Data.List hiding (lookup)
 import Var
+import Type
 import Pretty
 import Text.PrettyPrint
 import qualified Lir
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-type Env = Map Var Value
-
 data Value
   = ValInt Int
   | ValCons Var [Value]
-  | ValClosure Var [Value]
+  | ValClosure Var [TValue]
     -- Monadic IO
   | ValLiftIO Value
   | ValPrimIO Lir.PrimIO [Value]
-  | ValBindIO Var Value Lir.Exp
+  | ValBindIO Var TValue Lir.Exp
   deriving Show
+
+type TValue = (Value, Type)
+
+type Env = Map Var TValue
 
 -- Pretty printing
 
@@ -44,7 +48,7 @@ instance Pretty Value where
     extract e = error ("invalid tail "++show (pretty e)++" in list")
   pretty' (ValCons c fields) = (2, pretty c <+> sep (map (guard 3) fields))
   -- pretty' (ValFun _ vl e) = -- conveniently ignore env
-  --  (0, text "\\" <> hsep (map pretty vl) <> text " -> " <> pretty e)
+  --  (0, text "\\" <> prettylist vl <> text " -> " <> pretty e)
   pretty' (ValClosure v args) = (2, pretty v <+> sep (map (guard 3) args))
   pretty' (ValLiftIO v) = (2, text "return" <+> guard 3 v)
   pretty' (ValPrimIO p []) = pretty' p
