@@ -108,15 +108,15 @@ asyms :: { [Var] }
   : asym { [unLoc $1] }
   | asyms ',' asym { unLoc $3 : $1 }
 
-maybeConstructors :: { [(CVar,[Type])] }
+maybeConstructors :: { [(CVar,[TypeSet])] }
   : {--} { [] }
   | '=' constructors { $2 }
 
-constructors :: { [(CVar,[Type])] }
+constructors :: { [(CVar,[TypeSet])] }
   : constructor { [$1] }
   | constructors '|'  constructor { $3 : $1 }
 
-constructor :: { (CVar,[Type]) }
+constructor :: { (CVar,[TypeSet]) }
   : cvar ty3s { (var $1,reverse $2) }
   | ty2 csym ty2 { (var $2,[$1,$3]) }
   | '(' ')' { (V "()",[]) }
@@ -220,28 +220,28 @@ pattuple :: { Loc [Pattern] }
 
 --- Types ---
 
-ty :: { Type }
+ty :: { TypeSet }
   : ty1 { $1 }
-  | tytuple { TyApply (tuple $1) (reverse $1) }
+  | tytuple { TsCons (tuple $1) (reverse $1) }
 
-ty1 :: { Type }
+ty1 :: { TypeSet }
   : ty2 { $1 }
-  | ty2 '->' ty1 { TyFun $1 $3 }
+  | ty2 '->' ty1 { TsFun $1 $3 }
 
-ty2 :: { Type }
+ty2 :: { TypeSet }
   : ty3 { $1 }
-  | cvar ty3s { tyapply (var $1) (reverse $2) }
+  | cvar ty3s { tycons (var $1) (reverse $2) }
 
-ty3 :: { Type }
-  : var { TyVar (var $1) }
+ty3 :: { TypeSet }
+  : var { TsVar (var $1) }
   | '(' ty ')' { $2 }
-  | '[' ty ']' { TyApply (V "[]") [$2] }
+  | '[' ty ']' { TsCons (V "[]") [$2] }
 
-tytuple :: { [Type] }
+tytuple :: { [TypeSet] }
   : ty1 ',' ty1 { [$3,$1] }
   | tytuple ',' ty1 { $3 : $1 }
 
-ty3s :: { [Type] }
+ty3s :: { [TypeSet] }
   : {--} { [] }
   | ty3s ty3 { $2 : $1 }
 
@@ -255,11 +255,11 @@ parserError (Loc l t) = parseError (ParseError l ("syntax error at '" ++ show t 
 binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
 
-tyapply :: CVar -> [Type] -> Type
-tyapply (V "IO") [t] = TyIO t
-tyapply (V "Int") [] = TyInt
-tyapply (V "Void") [] = TyVoid
-tyapply c args = TyApply c args
+tycons :: CVar -> [TypeSet] -> TypeSet
+tycons (V "IO") [t] = TsIO t
+tycons (V "Int") [] = TsInt
+tycons (V "Void") [] = TsVoid
+tycons c args = TsCons c args
 
 var :: Loc Token -> Var
 var = tokVar . unLoc

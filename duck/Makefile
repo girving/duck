@@ -16,6 +16,7 @@ duck: Duck.hs others
 others: Parse.hs Lex.hs
 
 test: duck test/basic.duck
+	./duck -c test/apply.duck
 	./duck test/basic.duck
 	./duck -c test/prelude.duck
 	./duck -c test/ops.duck

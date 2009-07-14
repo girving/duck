@@ -21,6 +21,8 @@ module Ptrie
   , insert'
   , insert''
   , lookup
+  , toList
+  , toList'
   ) where
 
 import Prelude hiding (lookup)
@@ -62,16 +64,16 @@ singleton' (x:k) v = Node (Map.singleton x (singleton' k v))
 -- is a proper prefix of k.  If insertion succeeds, all entries which contain
 -- k as a prefix are clobbered.
 insert :: Ord k => [k] -> v -> Ptrie k v -> Ptrie k v
-insert k v t = Just (insert'' k v t)
+insert k v t = Just (insert' k v t)
 
-insert' :: Ord k => [k] -> v -> Ptrie' k v -> Ptrie' k v
-insert' [] v _ = Leaf v
-insert' (_:_) _ t@(Leaf _) = t
-insert' (x:k) v (Node m) = Node (Map.alter (insert k v) x m)
+insert' :: Ord k => [k] -> v -> Ptrie k v -> Ptrie' k v
+insert' k v Nothing = singleton' k v
+insert' k v (Just t) = insert'' k v t
 
-insert'' :: Ord k => [k] -> v -> Ptrie k v -> Ptrie' k v
-insert'' k v Nothing = singleton' k v
-insert'' k v (Just t) = insert' k v t
+insert'' :: Ord k => [k] -> v -> Ptrie' k v -> Ptrie' k v
+insert'' [] v _ = Leaf v
+insert'' (_:_) _ t@(Leaf _) = t
+insert'' (x:k) v (Node m) = Node (Map.alter (insert k v) x m)
 
 lookup :: Ord k => [k] -> Ptrie k v -> Ptrie k v
 lookup _ Nothing = Nothing
@@ -81,3 +83,10 @@ lookup' :: Ord k => [k] -> Ptrie' k v -> Ptrie k v
 lookup' [] t = Just t
 lookup' (_:_) (Leaf _) = Nothing
 lookup' (x:k) (Node t) = lookup k (Map.lookup x t)
+
+toList :: Ptrie k v -> [([k],v)]
+toList = maybe [] toList'
+
+toList' :: Ptrie' k v -> [([k],v)]
+toList' (Leaf v) = [([],v)]
+toList' (Node t) = [(x:k,v) | (x,p) <- Map.toList t, (k,v) <- toList' p]

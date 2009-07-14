@@ -38,8 +38,8 @@ data Prog = Prog
   , conses :: Map Var CVar -- map constructors to datatypes (type inference will make this go away)
   , statements :: [Statement] }
 
-type Datatype = ([Var], [(CVar, [Type])])
-type Overload = ([Type], Type, [Var], Exp)
+type Datatype = ([Var], [(CVar, [TypeSet])])
+type Overload = ([TypeSet], TypeSet, [Var], Exp)
 type Statement = ([Var], Exp)
 
 data Exp
@@ -72,7 +72,7 @@ prog decls = flip execState emptyProg $ do
   where
   datatype :: (CVar, Datatype) -> State Prog ()
   datatype (tc, (_, cases)) = mapM_ f cases where
-    f :: (CVar, [Type]) -> State Prog ()
+    f :: (CVar, [TypeSet]) -> State Prog ()
     f (c,tyl) = do
       modify $ \p -> p { conses = Map.insert c tc (conses p) }
       case tyl of
@@ -110,7 +110,7 @@ statement :: [Var] -> Exp -> State Prog ()
 statement vl e = modify $ \p -> p { statements = (vl,e) : statements p }
 
 -- |Add a global overload
-overload :: Var -> [Type] -> Type -> [Var] -> Exp -> State Prog ()
+overload :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> State Prog ()
 overload v tl r vl e = modify $ \p -> p { functions = Map.insertWith (++) v [(tl,r,vl,e)] (functions p) }
 
 -- |Add an unoverloaded global function
@@ -124,13 +124,13 @@ unwrapLambda (Ir.Lambda v e) = (v:vl, e') where
   (vl, e') = unwrapLambda e
 unwrapLambda e = ([], e)
 
-generalType :: [a] -> ([Type], Type)
+generalType :: [a] -> ([TypeSet], TypeSet)
 generalType vl = (tl,r) where
-  r : tl = map TyVar (take (length vl + 1) standardVars)
+  r : tl = map TsVar (take (length vl + 1) standardVars)
 
 -- |Unwrap a type/lambda combination as far as we can
-unwrapTypeLambda :: Type -> Ir.Exp -> ([Type], Type, [Var], Ir.Exp)
-unwrapTypeLambda (TyFun t tl) (Ir.Lambda v e) = (t:tl', r, v:vl, e') where
+unwrapTypeLambda :: TypeSet -> Ir.Exp -> ([TypeSet], TypeSet, [Var], Ir.Exp)
+unwrapTypeLambda (TsFun t tl) (Ir.Lambda v e) = (t:tl', r, v:vl, e') where
   (tl', r, vl, e') = unwrapTypeLambda tl e
 unwrapTypeLambda t e = ([], t, [], e)
 
@@ -144,7 +144,7 @@ expr locals e@(Ir.Lambda _ _) = lambda locals (V "f") e
 expr _ (Ir.Int i) = return $ Int i
 expr _ (Ir.Var v) = return $ Var v
 expr locals (Ir.Apply e1 e2) = do
-  e1 <- expr locals e1 
+  e1 <- expr locals e1
   e2 <- expr locals e2
   return $ Apply e1 e2
 expr locals (Ir.Let v e rest) = do
@@ -175,7 +175,7 @@ expr locals (Ir.ExpLoc l e) = ExpLoc l =.< expr locals e
 lambda :: Set Var -> Var -> Ir.Exp -> State Prog Exp
 lambda locals v e = do
   f <- freshenM v -- use the suggested function name
-  let (vl,e') = unwrapLambda e     
+  let (vl,e') = unwrapLambda e
   e <- expr (foldl (flip Set.insert) locals vl) e'
   let vs = free locals e
   function f (vs ++ vl) e
@@ -227,10 +227,10 @@ instance Pretty Prog where
     ++ [function v tl r vl e | (v,o) <- Map.toList functions, (tl,r,vl,e) <- o]
     ++ map statement statements
     where
-    function :: Var -> [Type] -> Type -> [Var] -> Exp -> Doc
+    function :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> Doc
     function v tl r vl e =
-      text "over" <+> pretty (foldr TyFun r tl) $$
-      text "let" <+> hsep (map pretty (v : vl)) <+> equals <+> nest 2 (pretty e) 
+      text "over" <+> pretty (foldr TsFun r tl) $$
+      text "let" <+> prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
     statement (vl,e) =
       text "let" <+> hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
 

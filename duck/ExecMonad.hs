@@ -6,6 +6,9 @@ module ExecMonad
   , withFrame
   , runExec
   , execError
+  , liftInfer
+  , GlobalTypes
+  , getGlobalTypes
   ) where
 
 -- Execution tracing monad.  This accomplishes
@@ -16,46 +19,43 @@ import Prelude hiding (catch)
 import Var
 import Value
 import SrcLoc
-import Pretty
-import Text.PrettyPrint
 import Control.Monad.State hiding (guard)
 import Control.Exception
+import Control.Arrow hiding ((<+>))
 import Util
+import Callstack
+import InferMonad hiding (withFrame)
+import Type
 
-data CallFrame = CallFrame 
-  { callFunction :: Var
-  , callArgs :: [Value]
-  , callLoc :: SrcLoc
-  }
+type GlobalTypes = TypeEnv
+type ExecState = (Callstack TValue, (GlobalTypes, FunctionInfo))
 
-type CallStack = [CallFrame]
+newtype Exec a = Exec { unExec :: StateT ExecState IO a }
+  deriving (Monad, MonadIO, MonadInterrupt)
 
-newtype Exec a = Exec { unExec :: StateT CallStack IO a }
-  deriving (Monad, MonadIO)
-
-handleE :: Exception e => (forall a. e -> Exec a) -> Exec b -> Exec b
-handleE h e = Exec (do
-  s <- get
-  mapStateT (handle (\e -> evalStateT (unExec (h e)) s)) (unExec e))
-
-withFrame :: Var -> [Value] -> SrcLoc -> Exec a -> Exec a
+withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
 withFrame f args loc e =
   handleE (\ (e :: AsyncException) -> execError loc (show e))
-  (Exec (do
-    s <- get
-    put ((CallFrame f args loc) : s)
+  (Exec $ do
+    (s,_) <- get
+    modify (first (CallFrame f args loc:))
     r <- unExec e
-    put s
-    return r))
+    modify (first (const s))
+    return r)
 
-runExec :: Exec a -> IO a
-runExec e = evalStateT (unExec e) []
-
-showStack :: CallStack -> String
-showStack s = unlines (h : reverse (map p s)) where
-  h = "Traceback (most recent call last):"
-  p (CallFrame f args loc) = "  " ++ show loc ++ " in "++show (pretty f)++' ' : show (hsep (map (guard 2) args))
+runExec :: (GlobalTypes, FunctionInfo) -> Exec a -> IO a
+runExec info e = evalStateT (unExec e) ([],info)
 
 execError :: SrcLoc -> String -> Exec a
-execError loc msg = Exec $ get >>= \s ->
-  liftIO (die (showStack s ++ "Error: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
+execError loc msg = Exec $ get >>= \ (s,_) ->
+  liftIO (die (showStack s ++ "RuntimeError: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
+
+liftInfer :: Infer a -> Exec a
+liftInfer infer = Exec $ do
+  (_,(_,info)) <- get
+  (r,info) <- liftIO $ runInfer info infer
+  modify (second (second (const info)))
+  return r
+
+getGlobalTypes :: Exec GlobalTypes
+getGlobalTypes = Exec $ get >.= fst. snd

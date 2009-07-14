@@ -31,8 +31,8 @@ import GHC.Exts
 data Decl
   = LetD Var Exp
   | LetM [Var] Exp
-  | Over Var Type Exp
-  | Data CVar [Var] [(CVar, [Type])]
+  | Over Var TypeSet Exp
+  | Data CVar [Var] [(CVar, [TypeSet])]
   deriving Show
 
 data Exp
@@ -227,7 +227,7 @@ instance Pretty Exp where
       (guard prec e1) <+> text s <+> (guard (prec+1) e2))
     (Var c, el) | Just n <- tuplelen c, n == length el -> (1,
       hcat $ intersperse (text ", ") $ map (guard 2) el)
-    (e, el) -> (50, guard 50 e <+> hsep (map (guard 51) el))
+    (e, el) -> (50, guard 50 e <+> prettylist el)
     where apply (Apply e a) al = apply e (a:al) 
           apply e al = (e,al)
   pretty' (Let v e body) = (0,
@@ -257,9 +257,9 @@ instance Pretty Exp where
     pretty v <+> text "<-" <+> guard 0 e1 $$ guard 0 e2)
   pretty' (Return e) = (6, text "return" <+> guard 7 e)
   pretty' (PrimIO p []) = pretty' p
-  pretty' (PrimIO p args) = (50, guard 50 p <+> hsep (map (guard 51) args))
-  pretty' (ExpLoc _ e) = pretty' e
+  pretty' (PrimIO p args) = (50, guard 50 p <+> prettylist args)
   -- pretty' (ExpLoc l e) = fmap (text "{-@" <+> text (show l) <+> text "-}" <+>) $ pretty' e
+  pretty' (ExpLoc _ e) = pretty' e
 
 instance Pretty PrimIO where
   pretty' p = (100, text (show p))

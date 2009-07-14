@@ -1,0 +1,11 @@
+Notes about effects:
+
+1.  How equivalent are uniqueness typing and monads?  In particular, what do the
+    two look like when handing world state changes such as freezing/thawing
+    regions of memory?
+
+2.  We can handle imperative region effects by treating IO as "all" regions and
+    adding various splitting operators that take pieces out of IO.  We'll also
+    need types for "IO minus a region" for this purpose.  This all seems doable
+    with the standard duck type system, since >>= can take two diferent monad
+    types and produce a third.

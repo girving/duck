@@ -14,22 +14,28 @@ import qualified Ir
 import qualified Lir
 import qualified Interp
 import qualified Prims
+import qualified Infer
 import ExecMonad
+import InferMonad
 import Control.Monad
 import qualified Data.Set as Set
 import Data.Set (Set)
+import qualified Data.Map as Map
 import Data.List
 import Util
 
 -- Options
 
-data Phase = PAst | PIr | PLir | PLink | PEnv deriving (Enum, Bounded, Ord, Eq)
+data Phase = PAst | PIr | PLir | PLink | PInfer | PEnv
+  deriving (Enum, Bounded, Ord, Eq)
+
 instance Pretty Phase where
   pretty = pretty . f where
     f PAst = "ast"
     f PIr = "ir"
     f PLir = "lir"
     f PLink = "link"
+    f PInfer = "infer"
     f PEnv = "env"
 
 data Flags = Flags
@@ -80,16 +86,18 @@ main = do
         r <- io
         ifv p $ pprint r
         return r
+      phase' p = phase p . return
 
   ast <- phase PAst (runP parse file code)
-  ir <- phase PIr (return $ Ir.prog ast)
-  lir <- phase PLir (return $ Lir.prog ir)
-  lir <- phase PLink (return $ Lir.union Prims.prelude lir)
-  env <- phase PEnv (runExec $ Interp.prog lir)
+  ir <- phase' PIr (Ir.prog ast)
+  lir <- phase' PLir (Lir.prog ir)
+  lir <- phase' PLink (Lir.union Prims.prelude lir)
+  info <- phase PInfer (runInfer Map.empty $ Infer.prog lir)
+  env <- phase PEnv (runExec info $ Interp.prog lir)
 
   unless (compileOnly flags) $ do
     unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
-    Interp.main lir env
+    Interp.main lir env info
 
 -- for ghci use
 run :: String -> IO ()
