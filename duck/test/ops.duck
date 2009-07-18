@@ -1,4 +1,4 @@
-import prelude
+import prelude ;
 
-let seven = 1 + 2 * 3
-let five = 1 * 2 + 3
+seven = 1 + 2 * 3 ;
+five = 1 * 2 + 3 ;

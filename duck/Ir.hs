@@ -75,7 +75,8 @@ prog_vars :: Ast.Prog -> InScopeSet
 prog_vars = foldl' decl_vars Set.empty
 
 decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
-decl_vars s (Ast.DefD v _ _ _) = Set.insert v s 
+decl_vars s (Ast.SpecD v _) = Set.insert v s 
+decl_vars s (Ast.DefD v _ _) = Set.insert v s 
 decl_vars s (Ast.LetD p _) = pattern_vars s p
 decl_vars s (Ast.Data _ _ _) = s
 decl_vars s (Ast.Infix _ _) = s
@@ -93,24 +94,32 @@ prog_precs = foldl' set_precs Map.empty where
   set_precs s (Ast.Infix p vl) = foldl' (\s v -> Map.insert v p s) s vl
   set_precs s _ = s
 
-prog :: [Ast.Decl] -> [Decl]
-prog decls = catMaybes $ map (decl (Env precs) vars) decls where
-  vars = prog_vars decls
-  precs = prog_precs decls
+prog :: [Ast.Decl] -> IO [Decl]
+prog prog = either die return (decls prog) where
+  env = Env $ prog_precs prog
+  s = prog_vars prog
 
-decl :: Env -> InScopeSet -> Ast.Decl -> Maybe Decl
-decl env s (Ast.DefD f Nothing args body) = Just $ LetD f (expr env s (Ast.Lambda args body))
-decl env s (Ast.DefD f (Just t) args body) = Just $ Over f t (expr env s (Ast.Lambda args body))
-decl env s (Ast.LetD Ast.PatAny e) = Just $ LetD ignored (expr env s e)
-decl env s (Ast.LetD (Ast.PatVar v) e) = Just $ LetD v (expr env s e)
-decl env s (Ast.LetD p e) = Just d where
-  d = case vars of
-    [v] -> LetD v (m (expr env s e) (Var v))
-    vl -> LetM vl (m (expr env s e) (Cons (tuple vars) (map Var vars)))
-  vars = Set.toList (pattern_vars Set.empty p)
-  (_,_,m) = match env s p
-decl _ _ (Ast.Data t args cons) = Just $ Data t args cons
-decl _ _ (Ast.Infix _ _) = Nothing
+  -- Declaration conversion can turn multiple Ast.Decls into a single Ir.Decl, as with
+  --   f :: <type>
+  --   f x = ...
+  -- We use Either in order to return errors.  TODO: add location information to the errors.
+  decls :: [Ast.Decl] -> Either String [Decl]
+  decls [] = return []
+  decls (Ast.DefD f args body : rest) = (LetD f (expr env s (Ast.Lambda args body)) :) =.< decls rest
+  decls (Ast.SpecD f t : rest) = case rest of
+    Ast.DefD f' args body : rest | f == f' -> (Over f t (expr env s (Ast.Lambda args body)) :) =.< decls rest
+    Ast.DefD f' _ _ : _ -> Left ("Syntax error: type specification for '"++show (pretty f)++"' followed by definition of '"++show (pretty f')++"'") -- TODO: clean up error handling
+    _ -> Left ("Syntax error: type specification for '"++show (pretty f)++"' must be followed by a definition") -- TODO: clean up error handling
+  decls (Ast.LetD Ast.PatAny e : rest) = (LetD ignored (expr env s e) :) =.< decls rest
+  decls (Ast.LetD (Ast.PatVar v) e : rest) = (LetD v (expr env s e) :) =.< decls rest
+  decls (Ast.LetD p e : rest) = (d :) =.< decls rest where
+    d = case vars of
+      [v] -> LetD v (m (expr env s e) (Var v))
+      vl -> LetM vl (m (expr env s e) (Cons (tuple vars) (map Var vars)))
+    vars = Set.toList (pattern_vars Set.empty p)
+    (_,_,m) = match env s p
+  decls (Ast.Data t args cons : rest) = (Data t args cons :) =.< decls rest
+  decls (Ast.Infix _ _ : rest) = decls rest
 
 expr :: Env -> InScopeSet -> Ast.Exp -> Exp
 expr _ _ (Ast.Int i) = Int i
@@ -207,12 +216,12 @@ cases env s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where
 
 instance Pretty Decl where
   pretty (LetD v e) =
-    text "let" <+> pretty v <+> equals <+> nest 2 (pretty e)
+    pretty v <+> equals <+> nest 2 (pretty e)
   pretty (LetM vl e) =
-    text "let" <+> hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
+    hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
   pretty (Over v t e) =
-    text "over" <+> pretty t $$
-    text "let" <+> pretty v <+> equals <+> nest 2 (pretty e)
+    pretty v <+> text "::" <+> pretty t $$
+    pretty v <+> equals <+> nest 2 (pretty e)
   pretty (Data t args cons) =
     pretty (Ast.Data t args cons)
 

@@ -27,7 +27,6 @@ tokens :-
   infix   { c (TokInfix NonFix) }
   def     { c TokDef }
   data    { c TokData }
-  over    { c TokOver }
   let     { c TokLet }
   in      { c TokIn }
   case    { c TokCase }
@@ -39,7 +38,9 @@ tokens :-
   \)      { c TokRP }
   \[      { c TokLB }
   \]      { c TokRB }
-  \;      { c TokSep }
+  \{      { c TokLC }
+  \}      { c TokRC }
+  \;      { c TokSemi }
   \,      { c TokComma }
   _       { c TokAny }
   $digit+ { v (TokInt . read) }
@@ -80,12 +81,13 @@ data Token
   | TokRP
   | TokLB
   | TokRB
-  | TokSep
+  | TokLC
+  | TokRC
+  | TokSemi
   | TokDColon
   | TokComma
   | TokDef
   | TokLet
-  | TokOver
   | TokData
   | TokIn
   | TokCase
@@ -111,7 +113,6 @@ instance Show Token where
     TokInt i -> show i
     TokDef -> "def"
     TokLet -> "let"
-    TokOver -> "over"
     TokData -> "data"
     TokIn -> "in"
     TokCase -> "case"
@@ -128,7 +129,9 @@ instance Show Token where
     TokRP -> ")"
     TokLB -> "["
     TokRB -> "]"
-    TokSep -> ";"
+    TokLC -> "{"
+    TokRC -> "}"
+    TokSemi -> ";"
     TokDColon -> ":"
     TokComma -> ","
     TokAny -> "_"

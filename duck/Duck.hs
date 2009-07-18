@@ -89,7 +89,7 @@ main = do
       phase' p = phase p . return
 
   ast <- phase PAst (runP parse file code)
-  ir <- phase' PIr (Ir.prog ast)
+  ir <- phase PIr (Ir.prog ast)
   lir <- phase' PLir (Lir.prog ir)
   lir <- phase' PLink (Lir.union Prims.prelude lir)
   info <- phase PInfer (runInfer Map.empty $ Infer.prog lir)

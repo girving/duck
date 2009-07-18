@@ -22,7 +22,8 @@ import Data.List
 type Prog = [Decl]
 
 data Decl
-  = DefD Var (Maybe TypeSet) [Pattern] Exp
+  = SpecD Var TypeSet
+  | DefD Var [Pattern] Exp
   | LetD Pattern Exp
   | Data CVar [Var] [(CVar,[TypeSet])]
   | Infix PrecFix [Var]
@@ -65,12 +66,12 @@ opsPattern (OpUn _ _) = parseThrow "unary operator in pattern"
 opsPattern (OpBin o l r) = PatCons o [opsPattern l, opsPattern r]
 
 instance Pretty Decl where
+  pretty (SpecD f t) =
+    pretty f <+> text "::" <+> pretty t
+  pretty (DefD f args e) =
+    pretty f <+> prettylist args <+> equals $$ nest 2 (guard 0 e)
   pretty (LetD p e) =
-    text "let" <+> pretty p <+> equals <+> pretty e
-  pretty (DefD f mt args e) =
-    maybe empty (\t -> text "over" <+> pretty t) mt $$
-    text "let" <+> pretty f <+> prettylist args <+> equals
-      $$ nest 2 (guard 0 e)
+    pretty p <+> equals <+> pretty e
   pretty (Data t args []) =
     text "data" <+> pretty t <+> prettylist args
   pretty (Data t args (hd:tl)) =

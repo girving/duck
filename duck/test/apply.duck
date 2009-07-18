@@ -1,6 +1,6 @@
-over (a -> a) -> a -> a
-let apply f x = f x
+apply :: (a -> a) -> a -> a ;
+apply f x = f x ;
 
-let id x = x
+id x = x ;
 
-let _ = apply id 0
+_ = apply id 0
