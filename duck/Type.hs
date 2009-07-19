@@ -30,7 +30,7 @@ import Control.Monad hiding (guard)
 import Control.Arrow hiding ((<+>))
 import Util
 
--- A concrete type (the types of values are always concrete)
+-- |A concrete type (the types of values are always concrete)
 data Type
   = TyCons CVar [Type]
   | TyClosure [(Var,[Type])] -- an intersection of one or more closures
@@ -40,8 +40,8 @@ data Type
   | TyVoid
   deriving (Eq, Ord, Show)
 
--- A set of concrete types (used for function overloads).  This is the same
--- as Type except that it can contain type variables.
+-- |A set of concrete types (used for function overloads).  This is the same
+-- as 'Type' except that it can contain type variables.
 data TypeSet
   = TsVar Var
   | TsCons CVar [TypeSet]
@@ -175,7 +175,7 @@ unify' _ env TsInt TyInt = return (env,[])
 unify' _ env _ TyVoid = return (env,[])
 unify' _ _ _ _ = nothing
 
--- Same as unify', but the first argument is a type
+-- |Same as 'unify'', but the first argument is a type
 unify'' :: MonadMaybe m => Apply m -> Type -> Type -> m ()
 unify'' apply (TyCons c tl) (TyCons c' tl') | c == c' = unifyList'' apply tl tl'
 unify'' apply (TyFun s t) (TyFun s' t') = do

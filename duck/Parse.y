@@ -22,6 +22,7 @@ import SrcLoc
 import ParseMonad
 import ParseOps
 import qualified Data.Map as Map
+import Data.Monoid (mappend, mconcat)
 
 }
 
@@ -62,7 +63,7 @@ import qualified Data.Map as Map
   '-'  { Loc _ (TokMinus) }
   ';'  { Loc _ (TokSemi) }
   import { Loc _ (TokImport) }
-  infix  { Loc _ (TokInfix $$) }
+  infix  { Loc _ (TokInfix _) }
 
 %left ';'
 %right '=' '->'
@@ -74,47 +75,47 @@ import qualified Data.Map as Map
 prog :: { Prog }
   : decls { concat $ reverse $1 }
 
-decls :: { [[Decl]] }
+decls :: { [[Loc Decl]] }
   : {--} { [] }
   | decl { [$1] }
   | decls ';' { $1 }
   | decls ';' decl { $3 : $1 }
 
-decl :: { [Decl] }
-  : avar '::' ty { [SpecD (unLoc $1) $3] }
-  | avar patterns '=' exp { [DefD (unLoc $1) (reverse (unLoc $2)) (expLoc $4)] }
-  | pattern2 sym pattern2 '=' exp { [DefD (var $2) [patLoc $1,patLoc $3] (expLoc $5)] }
-  | pattern0 '=' exp { [LetD (patLoc $1) (expLoc $3)] }
+decl :: { [Loc Decl] }
+  : avar '::' ty { [loc $1 $> $SpecD (unLoc $1) (unLoc $3)] }
+  | avar patterns '=' exp { [loc $1 $> $ DefD (unLoc $1) (reverse (unLoc $2)) (expLoc $4)] }
+  | pattern2 sym pattern2 '=' exp { [loc $1 $> $ DefD (var $2) [patLoc $1,patLoc $3] (expLoc $5)] }
+  | pattern0 '=' exp { [loc $1 $> $ LetD (patLoc $1) (expLoc $3)] }
   | import var {% let V file = var $2 in parseFile parse file }
-  | infix int asyms { [Infix (int $2,$1) (reverse $3)] }
-  | data cvar tyvars maybeConstructors { [Data (var $2) (reverse $3) (reverse $4)] }
-  | data '(' ')' maybeConstructors { [Data (V "()") [] (reverse $4)] } -- type ()
-  | data '[' var ']' maybeConstructors { [Data (V "[]") [var $3] (reverse $5)] } -- type [a]
+  | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
+  | data cvar tyvars maybeConstructors { [Loc (mconcat [srcLoc $1, srcLoc $2, srcLoc $3, srcLoc $4]) $ Data (var $2) (reverse (unLoc $3)) (reverse (unLoc $4))] }
+  | data '(' ')' maybeConstructors { [Loc (mconcat [srcLoc $1, srcLoc $3, srcLoc $4]) $ Data (V "()") [] (reverse (unLoc $4))] } -- type ()
+  | data '[' var ']' maybeConstructors { [Loc (mconcat [srcLoc $1, srcLoc $4, srcLoc $5]) $ Data (V "[]") [var $3] (reverse (unLoc $5))] } -- type [a]
 
 avar :: { Loc Var }
   : var { locVar $1 }
   | '(' asym ')' { loc $1 $> (unLoc $2) }
   | '(' if ')' { loc $1 $> (V "if") }
 
-tyvars :: { [Var] }
-  : {--} { [] }
-  | tyvars var { var $2 : $1 }
+tyvars :: { Loc [Var] }
+  : {--} { loc0 [] }
+  | tyvars var { loc $1 $> $ var $2 : unLoc $1 }
 
-asyms :: { [Var] }
-  : asym { [unLoc $1] }
-  | asyms ',' asym { unLoc $3 : $1 }
+asyms :: { Loc [Var] }
+  : asym { fmap (:[]) $1 }
+  | asyms ',' asym { loc $1 $> $ unLoc $3 : unLoc $1 }
 
-maybeConstructors :: { [(CVar,[TypeSet])] }
-  : {--} { [] }
-  | '=' '{' constructors '}' { $3 }
+maybeConstructors :: { Loc [(CVar,[TypeSet])] }
+  : {--} { loc0 [] }
+  | '=' '{' constructors '}' { loc $1 $> $ $3 }
 
 constructors :: { [(CVar,[TypeSet])] }
   : constructor { [$1] }
   | constructors ';'  constructor { $3 : $1 }
 
 constructor :: { (CVar,[TypeSet]) }
-  : cvar ty3s { (var $1,reverse $2) }
-  | ty2 csym ty2 { (var $2,[$1,$3]) }
+  : cvar ty3s { (var $1,reverse (unLoc $2)) }
+  | ty2 csym ty2 { (var $2,[unLoc $1,unLoc $3]) }
   | '(' ')' { (V "()",[]) }
   | '[' ']' { (V "[]",[]) }
 
@@ -122,7 +123,7 @@ constructor :: { (CVar,[TypeSet]) }
 
 exp :: { Loc Exp }
   : exp0 { $1 }
-  | exp0 '::' ty { loc1 $1 $ TypeCheck (expLoc $1) $3 } -- TODO: add locations to types
+  | exp0 '::' ty { loc $1 $> $ TypeCheck (expLoc $1) (unLoc $3) }
 
 exp0 :: { Loc Exp }
   : let avar patterns '=' exp in exp0 { loc $1 $> $ Def (unLoc $2) (reverse (unLoc $3)) (expLoc $5) (expLoc $7) }
@@ -185,7 +186,7 @@ arg :: { Loc Exp }
 
 pattern :: { Loc Pattern }
   : pattern0 { $1 }
-  | pattern0 '::' ty { loc1 $1 $ PatType (patLoc $1) $3 }
+  | pattern0 '::' ty { loc $1 $> $ PatType (patLoc $1) (unLoc $3) }
 
 pattern0 :: { Loc Pattern }
   : pattern1 { $1 }
@@ -221,30 +222,30 @@ pattern3 :: { Loc Pattern }
 
 --- Types ---
 
-ty :: { TypeSet }
+ty :: { Loc TypeSet }
   : ty1 { $1 }
-  | tytuple { TsCons (tuple $1) (reverse $1) }
+  | tytuple { fmap (\tt -> TsCons (tuple tt) (reverse tt)) $1 }
 
-ty1 :: { TypeSet }
+ty1 :: { Loc TypeSet }
   : ty2 { $1 }
-  | ty2 '->' ty1 { TsFun $1 $3 }
+  | ty2 '->' ty1 { loc $1 $> $ TsFun (unLoc $1) (unLoc $3) }
 
-ty2 :: { TypeSet }
+ty2 :: { Loc TypeSet }
   : ty3 { $1 }
-  | cvar ty3s { tycons (var $1) (reverse $2) }
+  | cvar ty3s { loc $1 $> $ tycons (var $1) (reverse (unLoc $2)) }
 
-ty3 :: { TypeSet }
-  : var { TsVar (var $1) }
-  | '(' ty ')' { $2 }
-  | '[' ty ']' { TsCons (V "[]") [$2] }
+ty3 :: { Loc TypeSet }
+  : var { fmap (TsVar . tokVar) $1 }
+  | '(' ty ')' { loc $1 $> $ unLoc $2 }
+  | '[' ty ']' { loc $1 $> $ TsCons (V "[]") [unLoc $2] }
 
-tytuple :: { [TypeSet] }
-  : ty1 ',' ty1 { [$3,$1] }
-  | tytuple ',' ty1 { $3 : $1 }
+tytuple :: { Loc [TypeSet] }
+  : ty1 ',' ty1 { loc $1 $> $ [unLoc $3,unLoc $1] }
+  | tytuple ',' ty1 { loc $1 $> $ unLoc $3 : unLoc $1 }
 
-ty3s :: { [TypeSet] }
-  : {--} { [] }
-  | ty3s ty3 { $2 : $1 }
+ty3s :: { Loc [TypeSet] }
+  : {--} { loc0 [] }
+  | ty3s ty3 { loc $1 $> $ unLoc $2 : unLoc $1 }
 
 {
 
@@ -268,11 +269,17 @@ var = tokVar . unLoc
 int :: Loc Token -> Int
 int = tokInt . unLoc
 
+ifix :: Loc Token -> Fixity
+ifix = tokFix . unLoc
+
 loc :: Loc x -> Loc y -> a -> Loc a
-loc (Loc l _) (Loc r _) = Loc (srcRng l r)
+loc (Loc l _) (Loc r _) = Loc (mappend l r)
 
 loc1 :: Loc x -> a -> Loc a
 loc1 (Loc l _) = Loc l
+
+loc0 :: a -> Loc a
+loc0 = Loc noLoc
 
 locVar :: Loc Token -> Loc Var
 locVar = fmap tokVar

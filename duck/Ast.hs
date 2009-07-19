@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | Duck Abstract Syntax Tree
 
 module Ast
@@ -19,7 +19,7 @@ import ParseMonad
 import Text.PrettyPrint
 import Data.List
 
-type Prog = [Decl]
+type Prog = [Loc Decl]
 
 data Decl
   = SpecD Var TypeSet
@@ -64,6 +64,9 @@ opsPattern :: Ops Pattern -> Pattern
 opsPattern (OpAtom a) = a
 opsPattern (OpUn _ _) = parseThrow "unary operator in pattern"
 opsPattern (OpBin o l r) = PatCons o [opsPattern l, opsPattern r]
+
+instance Pretty (Loc Decl) where
+  pretty' (Loc _ d) = pretty' d
 
 instance Pretty Decl where
   pretty (SpecD f t) =

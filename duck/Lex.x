@@ -8,6 +8,7 @@ module Lex where
 import Var
 import SrcLoc
 import ParseMonad
+import Data.Monoid (mappend)
 }
 
 $white = [\ \n\r] -- No tabs!
@@ -166,7 +167,7 @@ lexer = do
       lexer
     AlexToken s' len action -> do
       put s'
-      return $ Loc (srcRng (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
+      return $ Loc (mappend (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
 
 -- happy wants the lexer in continuation form
 lexwrap :: (Loc Token -> P a) -> P a

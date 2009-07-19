@@ -69,6 +69,7 @@ standardVars = letters ++ others where
   letters = [V [x] | x <- ['a'..'z']]
   others = [V ("t" ++ show i) | i <- [1..] :: [Int]]
 
+ignored :: Var
 ignored = V "_"
 
 precedence :: Var -> Maybe Int
