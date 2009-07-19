@@ -24,11 +24,11 @@ f $ x = f x ;
 
 ---- unit
 
-data () = { () } ;
+data () of { () } ;
 
 ---- bool
 
-data Bool = { False ; True } ;
+data Bool of { False ; True } ;
 
 bool :: Bool -> Bool ;
 bool x = x ;
@@ -60,7 +60,7 @@ x < y = case x of {
 
 ---- maybe
 
-data Maybe a = { Nothing ; Just a } ;
+data Maybe a of { Nothing ; Just a } ;
 
 map :: (a -> b) -> Maybe a -> Maybe b ;
 map f m = case m of {
@@ -99,7 +99,7 @@ cmp x y = case x,y of {
 
 ---- lists
 
-data [a] = { [] ; a : [a] } ;
+data [a] of { [] ; a : [a] } ;
 
 map :: (a -> b) -> [a] -> [b] ;
 map f l = case l of {
@@ -151,7 +151,7 @@ cmp (a,b,c) (a',b',c') = cmp a a' || cmp b b' || cmp c c' ;
 
 ---- orderings
 
-data Ordering = { LT ; EQ ; GT } ;
+data Ordering of { LT ; EQ ; GT } ;
 
 negate :: Ordering -> Ordering ;
 negate x = case x of {
@@ -236,7 +236,7 @@ a >> b = a >>= \_ -> b ;
 
 ----- Since IO is magical, we mention the types here but don't actually declare them.
 --
--- data IO a = ... 
+-- type IO a = ... 
 -- join :: IO (IO a) -> IO a
 -- map :: (a -> b) -> IO a -> IO b
 -- 

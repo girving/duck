@@ -106,7 +106,7 @@ asyms :: { [Var] }
 
 maybeConstructors :: { [(CVar,[TypeSet])] }
   : {--} { [] }
-  | '=' '{' constructors '}' { $3 }
+  | of '{' constructors '}' { $3 }
 
 constructors :: { [(CVar,[TypeSet])] }
   : constructor { [$1] }
