@@ -9,6 +9,7 @@ import Var
 import Token
 import SrcLoc
 import ParseMonad
+import Data.Monoid (mappend)
 }
 
 $white = [\ \n\r] -- No tabs!
@@ -96,6 +97,6 @@ lexer = do
       lexer
     AlexToken s' len action -> do
       put s'
-      return $ Loc (srcRng (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
+      return $ Loc (mappend (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
 
 }

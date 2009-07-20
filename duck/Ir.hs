@@ -72,7 +72,7 @@ data Env = Env
   }
 
 prog_vars :: Ast.Prog -> InScopeSet
-prog_vars = foldl' decl_vars Set.empty
+prog_vars = foldl' decl_vars Set.empty . map unLoc
 
 decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
 decl_vars s (Ast.SpecD v _) = Set.insert v s 
@@ -91,35 +91,35 @@ pattern_vars s (Ast.PatType _ _) = s
 prog_precs :: Ast.Prog -> PrecEnv
 prog_precs = foldl' set_precs Map.empty where
   -- TODO: error on duplicates
-  set_precs s (Ast.Infix p vl) = foldl' (\s v -> Map.insert v p s) s vl
+  set_precs s (Loc _ (Ast.Infix p vl)) = foldl' (\s v -> Map.insert v p s) s vl
   set_precs s _ = s
 
-prog :: [Ast.Decl] -> IO [Decl]
-prog prog = either die return (decls prog) where
-  env = Env $ prog_precs prog
-  s = prog_vars prog
+prog :: [Loc Ast.Decl] -> IO [Decl]
+prog p = either die return (decls p) where
+  env = Env $ prog_precs p
+  s = prog_vars p
 
   -- Declaration conversion can turn multiple Ast.Decls into a single Ir.Decl, as with
   --   f :: <type>
   --   f x = ...
   -- We use Either in order to return errors.  TODO: add location information to the errors.
-  decls :: [Ast.Decl] -> Either String [Decl]
+  decls :: [Loc Ast.Decl] -> Either String [Decl]
   decls [] = return []
-  decls (Ast.DefD f args body : rest) = (LetD f (expr env s (Ast.Lambda args body)) :) =.< decls rest
-  decls (Ast.SpecD f t : rest) = case rest of
-    Ast.DefD f' args body : rest | f == f' -> (Over f t (expr env s (Ast.Lambda args body)) :) =.< decls rest
-    Ast.DefD f' _ _ : _ -> Left ("Syntax error: type specification for '"++show (pretty f)++"' followed by definition of '"++show (pretty f')++"'") -- TODO: clean up error handling
+  decls (Loc _ (Ast.DefD f args body) : rest) = (LetD f (expr env s (Ast.Lambda args body)) :) =.< decls rest
+  decls (Loc _ (Ast.SpecD f t) : rest) = case rest of
+    Loc _ (Ast.DefD f' args body) : rest | f == f' -> (Over f t (expr env s (Ast.Lambda args body)) :) =.< decls rest
+    Loc _ (Ast.DefD f' _ _) : _ -> Left ("Syntax error: type specification for '"++show (pretty f)++"' followed by definition of '"++show (pretty f')++"'") -- TODO: clean up error handling
     _ -> Left ("Syntax error: type specification for '"++show (pretty f)++"' must be followed by a definition") -- TODO: clean up error handling
-  decls (Ast.LetD Ast.PatAny e : rest) = (LetD ignored (expr env s e) :) =.< decls rest
-  decls (Ast.LetD (Ast.PatVar v) e : rest) = (LetD v (expr env s e) :) =.< decls rest
-  decls (Ast.LetD p e : rest) = (d :) =.< decls rest where
+  decls (Loc _ (Ast.LetD Ast.PatAny e) : rest) = (LetD ignored (expr env s e) :) =.< decls rest
+  decls (Loc _ (Ast.LetD (Ast.PatVar v) e) : rest) = (LetD v (expr env s e) :) =.< decls rest
+  decls (Loc _ (Ast.LetD p e) : rest) = (d :) =.< decls rest where
     d = case vars of
       [v] -> LetD v (m (expr env s e) (Var v))
       vl -> LetM vl (m (expr env s e) (Cons (tuple vars) (map Var vars)))
     vars = Set.toList (pattern_vars Set.empty p)
     (_,_,m) = match env s p
-  decls (Ast.Data t args cons : rest) = (Data t args cons :) =.< decls rest
-  decls (Ast.Infix _ _ : rest) = decls rest
+  decls (Loc _ (Ast.Data t args cons) : rest) = (Data t args cons :) =.< decls rest
+  decls (Loc _ (Ast.Infix _ _) : rest) = decls rest
 
 expr :: Env -> InScopeSet -> Ast.Exp -> Exp
 expr _ _ (Ast.Int i) = Int i

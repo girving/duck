@@ -1,5 +1,5 @@
 {-# LANGUAGE PatternGuards, ScopedTypeVariables #-}
--- Duck type inference
+-- | Duck type inference
 
 module Infer
   ( prog

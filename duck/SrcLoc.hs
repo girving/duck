@@ -9,7 +9,6 @@ module SrcLoc
   , sameLine
   , noLoc
   , hasLoc
-  , srcRng
   , Loc(..)
   ) where
 
@@ -60,10 +59,11 @@ sameLine s t = srcLine s == srcLine t
 
 joinFile :: String -> String -> String
 joinFile "" s = s
+joinFile s _ = s {- this is probably too slow to be worth it:
 joinFile s "" = s
-joinFile s1 s2
+joinFile s1 s2 = s1
   | s1 == s2 = s1
-  | otherwise = s1 ++ ';' : s2
+  | otherwise = s1 ++ ';' : s2 -}
 
 joinLocs :: SrcLoc -> String -> Int -> Int -> SrcLoc
 joinLocs (SrcNone s1) s2 r2 c2 = SrcLoc (joinFile s1 s2) r2 c2
@@ -87,5 +87,15 @@ hasLoc :: SrcLoc -> Bool
 hasLoc (SrcNone "") = False
 hasLoc _ = True
 
+{-
 srcRng :: SrcLoc -> SrcLoc -> SrcLoc
 srcRng = mappend
+
+srcLocStart :: SrcLoc -> SrcLoc
+srcLocStart (SrcRng s r c _ _) = SrcLoc s r c
+srcLocStart l = l
+
+srcLocEnd :: SrcLoc -> SrcLoc
+srcLocEnd (SrcRng s _ _ r c) = SrcLoc s r c
+srcLocEnd l = l
+-}
