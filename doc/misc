@@ -73,7 +73,7 @@ A place for miscellaneous notes:
 
         1. There is a parsing ambiguity: how we know that join isn't a quantified
            type argument?
-        2. It is not clean the value "join" and the type "join" can be compatibly
+        2. It is not clear the value "join" and the type "join" can be compatibly
            overloaded.
 
     Aside: can we solve these two problems simultaneously by declaring the type of
@@ -159,7 +159,7 @@ A place for miscellaneous notes:
         Let's go back a bit to why I thought they could collapse.  The types
         (Int, Int) and Type (Int, Int) have only one value each.  So what, I
         now say.  After putting this down in writing it seems foolish to
-        imagine that they were going to collapse, and more than iterated
+        imagine that they were going to collapse, any more than iterated
         newtype constructors should collapse.
 
         It's possible there could be a conversion between them, but that
@@ -262,12 +262,18 @@ A place for miscellaneous notes:
     Hmm.  I think there might be something wrong here, but I think
     it's time to step away for a bit.
 
+    20july2009: I don't think this "appeal to recursion" thing is necessary
+    at all.  Types don't need to be type checked, since they are implicitly
+    type checked as they are used.  This reasoning is a bit circular, but
+    I think it's enough given the "innocent until proven guilty" theme I've
+    been using for everything else.
+
 7.  It is worth exploring the connections between the duck type system and
     the "infinitely searchable sets" work.  Duck function types appears to fit
     the necessary compactness criteria (Tychonoff's (sp) theorem is awesome),
     which provides more evience that the next step is going to work.
 
-    To explain: even though a duck functino type is any algorithm function
+    To explain: even though a duck function type is any algorithm function
     from types to types, convergent programs with only plug in a finite number
     of possible arguments.
 
