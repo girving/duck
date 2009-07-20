@@ -2,188 +2,194 @@
 
 ---- operator precedence
 
-infixr 90  . ;
-infixr 80  ^, ^^, ** ;
-infixl 70  *, / ;
-infixl 60  +, - ;
-infixr 50  : ;
-infix  40  ==, !=, <, <=, >=, > ;
-infixr 30  && ;
-infixr 20  || ;
-infixl 10  >>, >>= ;
-infixr 10  =<< ;
-infixr 0   $, $! ;
+infixr 90  .
+infixr 80  ^, ^^, **
+infixl 70  *, /
+infixl 60  +, -
+infixr 50  :
+infix  40  ==, !=, <, <=, >=, >
+infixr 30  &&
+infixr 20  ||
+infixl 10  >>, >>=
+infixr 10  =<<
+infixr 0   $, $!
 
 --------- miscellaneous basic functions
 
-id x = x ;
+id x = x
 
-f $ x = f x ;
+f $ x = f x
 
 --------- basic types and related functions
 
 ---- unit
 
-data () of { () } ;
+data () of ()
 
 ---- bool
 
-data Bool of { False ; True } ;
+data Bool of False ; True
 
-bool :: Bool -> Bool ;
-bool x = x ;
+bool :: Bool -> Bool
+bool x = x
 
-(if) :: a -> b -> b -> b ;
-(if) c x y = case bool c of {
-    True -> x
-  ; False -> y } ;
+(if) :: a -> b -> b -> b
+(if) c x y = case bool c of
+  True -> x
+  False -> y
 
-not :: a -> Bool ;
-not x = if x then False else True ;
+not :: a -> Bool
+not x = if x then False else True
 
 -- TODO: && needs to be short circuiting
-(&&) :: a -> a -> a ;
-x && y = if x then y else x ;
+(&&) :: a -> a -> a
+x && y = if x then y else x
 
-(||) :: a -> a -> a ;
-x || y = if x then x else y ;
+(||) :: a -> a -> a
+x || y = if x then x else y
 
-(==) :: Bool -> Bool -> Bool ;
-x == y = case x of {
-    False -> not y
-  ; True -> y } ;
+(==) :: Bool -> Bool -> Bool
+x == y = case x of
+  False -> not y
+  True -> y
 
-(<) :: Bool -> Bool -> Bool ;
-x < y = case x of {
-    False -> y
-  ; True -> False } ;
+(<) :: Bool -> Bool -> Bool
+x < y = case x of
+  False -> y
+  True -> False
 
 ---- maybe
 
-data Maybe a of { Nothing ; Just a } ;
+data Maybe a of Nothing ; Just a
 
-map :: (a -> b) -> Maybe a -> Maybe b ;
-map f m = case m of {
-    Nothing -> Nothing
-  ; Just x -> Just (f x) } ;
+map :: (a -> b) -> Maybe a -> Maybe b
+map f m = case m of
+  Nothing -> Nothing
+  Just x -> Just (f x)
 
-fold :: (a -> b -> a) -> a -> Maybe b -> a ;
-fold f x l = case l of {
-    Nothing -> x
-  ; Just y -> f x y } ;
+fold :: (a -> b -> a) -> a -> Maybe b -> a
+fold f x l = case l of
+  Nothing -> x
+  Just y -> f x y
 
-join :: Maybe (Maybe a) -> Maybe a ;
-join m = case m of {
-    Nothing -> Nothing
-  ; Just Nothing -> Nothing
-  ; Just (Just x) -> Just x } ;
+join :: Maybe (Maybe a) -> Maybe a
+join m = case m of
+  Nothing -> Nothing
+  Just Nothing -> Nothing
+  Just (Just x) -> Just x
 
-bool :: Maybe a -> Bool ;
-bool x = case x of { Nothing -> False ; _ -> True } ;
+bool :: Maybe a -> Bool
+bool x = case x of
+  Nothing -> False
+  _ -> True
 
-join0 :: Maybe (Maybe a) -> Maybe a ;
-join0 x = join x ;
+join0 :: Maybe (Maybe a) -> Maybe a
+join0 x = join x
 
-(==) :: Maybe a -> Maybe b -> Bool ;
-x == y = case x,y of {
-    Nothing, Nothing -> True
-  ; Just x, Just y -> x == y
-  ; _ -> False } ;
+(==) :: Maybe a -> Maybe b -> Bool
+x == y = case x,y of
+  Nothing, Nothing -> True
+  Just x, Just y -> x == y
+  _ -> False
 
-cmp :: Maybe a -> Maybe b -> Ordering ;
-cmp x y = case x,y of {
-    Nothing, Nothing -> EQ
-  ; Nothing, Just _ -> LT
-  ; Just _, Nothing -> GT
-  ; Just x, Just y -> cmp x y } ;
+cmp :: Maybe a -> Maybe b -> Ordering
+cmp x y = case x,y of
+  Nothing, Nothing -> EQ
+  Nothing, Just _ -> LT
+  Just _, Nothing -> GT
+  Just x, Just y -> cmp x y
 
 ---- lists
 
-data [a] of { [] ; a : [a] } ;
+data [a] of
+  []
+  a : [a]
 
-map :: (a -> b) -> [a] -> [b] ;
-map f l = case l of {
-    [] -> []
-  ; x:l -> f x : map f l } ;
+map :: (a -> b) -> [a] -> [b]
+map f l = case l of
+  [] -> []
+  x:l -> f x : map f l
 
-fold :: (a -> b -> a) -> a -> [b] -> a ;
-fold f x l = case l of {
-    [] -> x
-  ; y:l -> fold f (f x y) l } ;
+fold :: (a -> b -> a) -> a -> [b] -> a
+fold f x l = case l of
+  [] -> x
+  y:l -> fold f (f x y) l
 
-join :: [[a]] -> [a] ;
-join l = case l of {
-    [] -> []
-  ; []:l -> join l
-  ; (x:y):l -> x : join (y:l) } ;
+join :: [[a]] -> [a]
+join l = case l of
+  [] -> []
+  []:l -> join l
+  (x:y):l -> x : join (y:l)
 
-join0 :: [[a]] -> [a] ;
-join0 x = join x ;
+join0 :: [[a]] -> [a]
+join0 x = join x
 
-bool :: [a] -> Bool ;
-bool x = case x of { [] -> False ; _ -> True } ;
+bool :: [a] -> Bool
+bool x = case x of
+  [] -> False
+  _ -> True
 
-(==) :: [a] -> [b] -> Bool ;
-x == y = case x,y of {
-    [],[] -> True
-  ; x:x',y:y' -> x == y && x' == y' } ;
+(==) :: [a] -> [b] -> Bool
+x == y = case x,y of
+  [],[] -> True
+  x:x',y:y' -> x == y && x' == y'
 
-cmp :: [a] -> [b] -> Ordering ;
-cmp x y = case x,y of {
-    [],[] -> EQ
-  ; [],_ -> LT
-  ; _,[] -> GT
-  ; x:x',y:y' -> cmp x y || cmp x' y' } ;
+cmp :: [a] -> [b] -> Ordering
+cmp x y = case x,y of
+  [],[] -> EQ
+  [],_ -> LT
+  _,[] -> GT
+  x:x',y:y' -> cmp x y || cmp x' y'
 
 ---- tuples
 
-(==) :: (a,b) -> (a',b') -> Bool ;
-(a,b) == (a',b') = a == a' && b == b' ;
+(==) :: (a,b) -> (a',b') -> Bool
+(a,b) == (a',b') = a == a' && b == b'
 
-cmp :: (a,b) -> (a',b') -> Ordering ;
-cmp (a,b) (a',b') = cmp a a' || cmp b b' ;
+cmp :: (a,b) -> (a',b') -> Ordering
+cmp (a,b) (a',b') = cmp a a' || cmp b b'
 
-(==) :: (a,b,c) -> (a',b',c') -> Bool ;
-(a,b,c) == (a',b',c') = a == a' && b == b' && c == c' ;
+(==) :: (a,b,c) -> (a',b',c') -> Bool
+(a,b,c) == (a',b',c') = a == a' && b == b' && c == c'
 
-cmp :: (a,b,c) -> (a',b',c') -> Ordering ;
-cmp (a,b,c) (a',b',c') = cmp a a' || cmp b b' || cmp c c' ;
+cmp :: (a,b,c) -> (a',b',c') -> Ordering
+cmp (a,b,c) (a',b',c') = cmp a a' || cmp b b' || cmp c c'
 
 ---- orderings
 
-data Ordering of { LT ; EQ ; GT } ;
+data Ordering of LT ; EQ ; GT
 
-negate :: Ordering -> Ordering ;
-negate x = case x of {
-    LT -> GT
-  ; EQ -> EQ
-  ; GT -> LT } ;
+negate :: Ordering -> Ordering
+negate x = case x of
+  LT -> GT
+  EQ -> EQ
+  GT -> LT
 
-(==) :: Ordering -> Ordering -> Bool ;
-x == y = case x,y of {
-    LT,LT -> True
-  ; EQ,EQ -> True
-  ; GT,GT -> True
-  ; _ -> False } ;
+(==) :: Ordering -> Ordering -> Bool
+x == y = case x,y of
+  LT,LT -> True
+  EQ,EQ -> True
+  GT,GT -> True
+  _ -> False
 
-(<) :: Ordering -> Ordering -> Bool ;
-x < y = case y of {
-    LT -> False
-  ; EQ -> x == LT
-  ; GT -> x != GT } ;
+(<) :: Ordering -> Ordering -> Bool
+x < y = case y of
+  LT -> False
+  EQ -> x == LT
+  GT -> x != GT
 
-bool :: Ordering -> Bool ;
-bool x = x != EQ ;
+bool :: Ordering -> Bool
+bool x = x != EQ
 
 -------- comparison
 
 -- Most comparison operators are defined in terms of (==) and (<),
 -- which are in turn defined for the types which support them
 
-x != y = not (x == y) ;
-x > y = y < x ;
-x <= y = not (y < x) ;
-x >= y = not (x < y) ;
+x != y = not (x == y)
+x > y = y < x
+x <= y = not (y < x)
+x >= y = not (x < y)
 
 -- For large types, using cmp can be more efficient.  cmp and (<)
 -- are recursively defined in terms of each other.
@@ -199,18 +205,18 @@ x >= y = not (x < y) ;
 cmp x y =
   if x < y then LT
   else if x == y then EQ
-  else GT ;
+  else GT
 
-x < y = cmp x y == EQ ;
+x < y = cmp x y == EQ
 
 -------- arithmetic
 
 -- implicitly declared: (+), (-), (*), (/)
 
-negate x = 0 - x ;
+negate x = 0 - x
 
-sum = fold (+) 0 ;
-product = fold (*) 1 ;
+sum = fold (+) 0
+product = fold (*) 1
 
 -------- monads
 
@@ -221,16 +227,16 @@ product = fold (*) 1 ;
 --   over (join :: a -> b) => a -> b
 --   join0 x = join x
 
-join0 :: a -> a ;
-join0 x = x ;
+join0 :: a -> a
+join0 x = x
 
 -- In Haskell, join0 would be replaced with join.  The use
 -- of join0 here avoids the need for return as a separate construct
 
 -- (>>=) :: m a -> (a -> b) -> join0 (m b)
-m >>= f = join0 (map f m) ;
+m >>= f = join0 (map f m)
 
-a >> b = a >>= \_ -> b ;
+a >> b = a >>= \_ -> b
 
 -------- IO!
 

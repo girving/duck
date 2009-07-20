@@ -11,7 +11,7 @@ module ParseMonad
   , parseThrow
   , parseTry
   , get, put
-  , ParseMonad
+  , Context(..)
   ) where
 
 -- Simple parser monad lifted from a combination of a happy example and Language.Haskell
@@ -40,18 +40,27 @@ data ParseError = ParseError
   , errMsg :: String
   } deriving (Typeable)
 
+-- |Layout contexts can be either be explicit when started by a literal '{' token
+-- or implicit when the '{' is left out.  The full source location is included
+-- for error reporting purposes.
+data Context =
+    Explicit SrcLoc
+  | Implicit SrcLoc Int
+  deriving Show
+
 data ParseState = ParseState 
-  { ps_loc  :: !SrcLoc -- ^ position at current input location
-  , ps_rest :: String  -- ^ the current input
-  , ps_prev :: !Char   -- ^ the character before the input
+  { ps_loc    :: !SrcLoc   -- ^ position at current input location
+  , ps_rest   :: String    -- ^ the current input
+  , ps_prev   :: !Char     -- ^ the character before the input
+  , ps_layout :: [Context] -- ^ stack of layout contexts
+  , ps_start  :: !Bool     -- ^ True if we're at the start of a new layout context (after SOF or 'of')
+  , ps_last   :: SrcLoc    -- ^ the location of the last token processed by layout (in order to detect new lines)
   }
 
 newtype P a = P { unP :: ParseState -> IO (ParseResult a) }
 
-class (MonadState ParseState m, MError.MonadError ParseError m) => ParseMonad m
-
 instance Show ParseError where
-  show (ParseError l s) = show l ++ ':' : s
+  show (ParseError l s) = show l ++ ": " ++ s
 
 instance Exception ParseError
 
@@ -90,7 +99,13 @@ parseError = MError.throwError
 parseString :: P a -> String -> String -> P a
 parseString parse file input = do
   s <- get
-  put (ParseState (startLoc file) input '\n')
+  put $ ParseState
+    { ps_loc = startLoc file
+    , ps_rest = input
+    , ps_prev = '\n'
+    , ps_layout = []
+    , ps_start = True
+    , ps_last = noLoc }
   r <- parse
   put s
   return r
@@ -104,10 +119,16 @@ parseFile parse file = do
  
 runP :: P a -> String -> String -> IO a
 runP parse file input = do
-  (unP parse) (ParseState (startLoc file) input '\n') >>= \r ->
-    case r of
-      ParseOk _ a -> return a
-      ParseFail e -> die (show e)
+  r <- unP parse $ ParseState
+    { ps_loc = (startLoc file)
+    , ps_rest = input
+    , ps_prev = '\n'
+    , ps_layout = []
+    , ps_start = True
+    , ps_last = noLoc }
+  case r of
+    ParseOk _ a -> return a
+    ParseFail e -> die (show e)
 
 instance MonadState ParseState P where
   get = P $ \s -> return $ ParseOk s s
@@ -120,5 +141,3 @@ parseThrow s = throw (MError.strMsg s :: ParseError)
 parseTry :: a -> P a
 parseTry x = P $ \s ->
   catch (ParseOk s =.< evaluate x) $ \(ParseError l m) -> return (ParseFail (ParseError (mappend l (ps_loc s)) m))
-
-instance ParseMonad P

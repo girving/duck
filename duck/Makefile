@@ -18,8 +18,10 @@ others: Parse.hs Lex.hs
 test: duck test/basic.duck
 	./duck -c test/apply.duck
 	./duck test/basic.duck
+	./duck test/layout.duck
 	./duck -c test/prelude.duck
 	./duck -c test/ops.duck
+	./duck -c test/null.duck
 
 %.hs: %.y
 	$(HAPPY) $(HAPPYFLAGS) $< -o $@

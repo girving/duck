@@ -1,10 +1,12 @@
 -- | Source file location annotations for reporting
 
 module SrcLoc
-  ( SrcLoc
+  ( SrcLoc(srcCol)
   , srcFile
+  , before
   , startLoc
   , incrLoc
+  , sameLine
   , noLoc
   , hasLoc
   , srcRng
@@ -39,6 +41,12 @@ instance Show SrcLoc where
     | line == line' = file ++ ':' : shows line (':' : shows col ('-' : show col'))
     | otherwise = file ++ ':' : shows line (':' : shows col ('-' : shows line' (':' : show col')))
 
+-- |The location immediately before another
+before :: SrcLoc -> SrcLoc
+before l@(SrcNone _) = l
+before (SrcLoc f l c) = SrcLoc f l (c-1)
+before (SrcRng f l c _ _) = SrcLoc f l (c-1)
+
 startLoc :: String -> SrcLoc
 startLoc file = SrcLoc file 1 1
 
@@ -46,6 +54,9 @@ incrLoc :: SrcLoc -> Char -> SrcLoc
 incrLoc l@(SrcNone _) _ = l
 incrLoc l '\n' = l{ srcLine = succ $ srcLine l, srcCol = 1 }
 incrLoc l _    = l{ srcCol = succ $ srcCol l }
+
+sameLine :: SrcLoc -> SrcLoc -> Bool
+sameLine s t = srcLine s == srcLine t
 
 joinFile :: String -> String -> String
 joinFile "" s = s

@@ -1,6 +1,6 @@
-apply :: (a -> a) -> a -> a ;
-apply f x = f x ;
+apply :: (a -> a) -> a -> a
+apply f x = f x
 
-id x = x ;
+id x = x
 
 _ = apply id 0

@@ -6,6 +6,7 @@
 module Lex where
 
 import Var
+import Token
 import SrcLoc
 import ParseMonad
 }
@@ -38,9 +39,9 @@ tokens :-
   \)      { c TokRP }
   \[      { c TokLB }
   \]      { c TokRB }
-  \{      { c TokLC }
-  \}      { c TokRC }
-  \;      { c TokSemi }
+  \{      { c (TokLC Nothing) }
+  \}      { c (TokRC Nothing) }
+  \;      { c (TokSemi Nothing) }
   \,      { c TokComma }
   _       { c TokAny }
   $digit+ { v (TokInt . read) }
@@ -70,77 +71,6 @@ sym s = TokSym (V s)
 
 -- Each action has type :: String -> Token
 
-data Token
-  = TokVar { tokVar :: Var }
-  | TokCVar { tokVar :: Var }
-  | TokSym { tokVar :: Var }
-  | TokCSym { tokVar :: Var }
-  | TokInt { tokInt :: Int }
-  | TokEq
-  | TokLP
-  | TokRP
-  | TokLB
-  | TokRB
-  | TokLC
-  | TokRC
-  | TokSemi
-  | TokDColon
-  | TokComma
-  | TokDef
-  | TokLet
-  | TokData
-  | TokIn
-  | TokCase
-  | TokOf
-  | TokIf
-  | TokThen
-  | TokElse
-  | TokAny
-  | TokLambda
-  | TokArrow
-  | TokOr
-  | TokMinus
-  | TokImport
-  | TokInfix { tokFix :: Fixity }
-  | TokEOF
-
-instance Show Token where
-  show t = case t of
-    TokVar (V v) -> v
-    TokCVar (V v) -> v
-    TokSym (V v) -> v
-    TokCSym (V v) -> v
-    TokInt i -> show i
-    TokDef -> "def"
-    TokLet -> "let"
-    TokData -> "data"
-    TokIn -> "in"
-    TokCase -> "case"
-    TokOf -> "of"
-    TokIf -> "if"
-    TokThen -> "then"
-    TokElse -> "else"
-    TokImport -> "import"
-    TokInfix LeftFix -> "infixl"
-    TokInfix RightFix -> "infixr"
-    TokInfix NonFix -> "infix"
-    TokEq -> "="
-    TokLP -> "("
-    TokRP -> ")"
-    TokLB -> "["
-    TokRB -> "]"
-    TokLC -> "{"
-    TokRC -> "}"
-    TokSemi -> ";"
-    TokDColon -> ":"
-    TokComma -> ","
-    TokAny -> "_"
-    TokLambda -> "\\"
-    TokArrow -> "->"
-    TokOr -> "|"
-    TokMinus -> "-"
-    TokEOF -> "<eof>"
-
 type AlexInput = ParseState
 
 alexInputPrevChar :: AlexInput -> Char
@@ -149,7 +79,7 @@ alexInputPrevChar = ps_prev
 alexGetChar :: AlexInput -> Maybe (Char,AlexInput)
 alexGetChar s = case ps_rest s of
   [] -> Nothing
-  c:r -> Just (c, ParseState
+  c:r -> Just (c, s
     { ps_loc = incrLoc (ps_loc s) c
     , ps_rest = r
     , ps_prev = c
@@ -167,9 +97,5 @@ lexer = do
     AlexToken s' len action -> do
       put s'
       return $ Loc (srcRng (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
-
--- happy wants the lexer in continuation form
-lexwrap :: (Loc Token -> P a) -> P a
-lexwrap cont = lexer >>= cont
 
 }

@@ -16,6 +16,8 @@ module Parse (lex, parse) where
 
 import Var
 import Lex
+import Token
+import Layout
 import Ast
 import Type
 import SrcLoc
@@ -29,7 +31,7 @@ import qualified Data.Map as Map
 %tokentype { Loc Token }
 
 %monad { P }
-%lexer { lexwrap } { Loc _ TokEOF }
+%lexer { (layout lexer >>=) } { Loc _ TokEOF } -- Happy wants the lexer in continuation form
 %error { parserError }
 
 %token
@@ -53,14 +55,14 @@ import qualified Data.Map as Map
   ')'  { Loc _ (TokRP) }
   '['  { Loc _ (TokLB) }
   ']'  { Loc _ (TokRB) }
-  '{'  { Loc _ (TokLC) }
-  '}'  { Loc _ (TokRC) }
+  '{'  { Loc _ (TokLC _) }
+  '}'  { Loc _ (TokRC _) }
+  ';'  { Loc _ (TokSemi _) }
   '_'  { Loc _ (TokAny) }
   '\\' { Loc _ (TokLambda) }
   '->' { Loc _ (TokArrow) }
   -- '|'  { Loc _ (TokOr) }
   '-'  { Loc _ (TokMinus) }
-  ';'  { Loc _ (TokSemi) }
   import { Loc _ (TokImport) }
   infix  { Loc _ (TokInfix $$) }
 
@@ -72,7 +74,7 @@ import qualified Data.Map as Map
 --- Toplevel stuff ---
 
 prog :: { Prog }
-  : decls { concat $ reverse $1 }
+  : '{' decls '}' { concat $ reverse $2 }
 
 decls :: { [[Decl]] }
   : {--} { [] }
@@ -113,7 +115,8 @@ constructors :: { [(CVar,[TypeSet])] }
   | constructors ';'  constructor { $3 : $1 }
 
 constructor :: { (CVar,[TypeSet]) }
-  : cvar ty3s { (var $1,reverse $2) }
+  : cvar { (var $1,[]) }
+  | cvar ty3s { (var $1,reverse $2) }
   | ty2 csym ty2 { (var $2,[$1,$3]) }
   | '(' ')' { (V "()",[]) }
   | '[' ']' { (V "[]",[]) }
@@ -177,9 +180,11 @@ arg :: { Loc Exp }
   | avar { fmap Var $1 }
   | cvar { fmap Var $ locVar $1 }
   | '(' exp ')' { $2 }
+  | '(' exp error {% unmatched $1 }
   | '(' ')' { loc $1 $> $ Var (V "()") }
   | '[' ']' { loc $1 $> $ Var (V "[]") }
   | '[' exps ']' { loc $1 $> $ List (reverse $2) }
+  | '[' exps error {% unmatched $1 }
 
 --- Patterns ---
 
@@ -235,6 +240,7 @@ ty2 :: { TypeSet }
 
 ty3 :: { TypeSet }
   : var { TsVar (var $1) }
+  | cvar { tycons (var $1) [] }
   | '(' ty ')' { $2 }
   | '[' ty ']' { TsCons (V "[]") [$2] }
 
@@ -243,7 +249,7 @@ tytuple :: { [TypeSet] }
   | tytuple ',' ty1 { $3 : $1 }
 
 ty3s :: { [TypeSet] }
-  : {--} { [] }
+  : ty3 { [$1] }
   | ty3s ty3 { $2 : $1 }
 
 {
@@ -251,7 +257,10 @@ ty3s :: { [TypeSet] }
 parse :: P Prog
 
 parserError :: Loc Token -> P a
-parserError (Loc l t) = parseError (ParseError l ("syntax error at '" ++ show t ++ "'"))
+parserError (Loc l t) = parseError (ParseError l ("syntax error "++showAt t))
+
+unmatched :: Loc Token -> P a
+unmatched (Loc l t) = parseError (ParseError l ("unmatched '"++show t++"' from "++show l++))
 
 binop :: Exp -> Token -> Exp -> Exp
 binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
