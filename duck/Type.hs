@@ -319,7 +319,6 @@ instance Pretty TypeSet where
   pretty' (TsCons t []) = pretty' t
   pretty' (TsClosure [(f,[])]) = pretty' f
   pretty' (TsCons t tl) | istuple t = (2, hcat $ List.intersperse (text ", ") $ map (guard 3) tl)
-  pretty' (TsCons (V "[]") [t]) = (100, brackets (pretty t))
   pretty' (TsCons t tl) = (50, guard 50 t <+> prettylist tl)
   pretty' (TsClosure fl) = (50, hsep (List.intersperse (text "&") (map (\ (f,tl) -> guard 50 f <+> prettylist tl) fl)))
   pretty' (TsFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)

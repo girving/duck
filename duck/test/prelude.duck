@@ -101,40 +101,40 @@ cmp x y = case x,y of
 
 ---- lists
 
-data [a] of
+data List a of
   []
-  a : [a]
+  a : List a
 
-map :: (a -> b) -> [a] -> [b]
+map :: (a -> b) -> List a -> List b
 map f l = case l of
   [] -> []
   x:l -> f x : map f l
 
-fold :: (a -> b -> a) -> a -> [b] -> a
+fold :: (a -> b -> a) -> a -> List b -> a
 fold f x l = case l of
   [] -> x
   y:l -> fold f (f x y) l
 
-join :: [[a]] -> [a]
+join :: List (List a) -> List a
 join l = case l of
   [] -> []
   []:l -> join l
   (x:y):l -> x : join (y:l)
 
-join0 :: [[a]] -> [a]
+join0 :: List (List a) -> List a
 join0 x = join x
 
-bool :: [a] -> Bool
+bool :: List a -> Bool
 bool x = case x of
   [] -> False
   _ -> True
 
-(==) :: [a] -> [b] -> Bool
+(==) :: List a -> List b -> Bool
 x == y = case x,y of
   [],[] -> True
   x:x',y:y' -> x == y && x' == y'
 
-cmp :: [a] -> [b] -> Ordering
+cmp :: List a -> List b -> Ordering
 cmp x y = case x,y of
   [],[] -> EQ
   [],_ -> LT

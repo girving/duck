@@ -90,14 +90,16 @@ decl :: { [Loc Decl] }
   | pattern0 '=' exp { [loc $1 $> $ LetD (patLoc $1) (expLoc $3)] }
   | import var {% let V file = var $2 in parseFile parse file }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
-  | data cvar tyvars maybeConstructors { [Loc (mconcat [srcLoc $1, srcLoc $2, srcLoc $3, srcLoc $4]) $ Data (var $2) (reverse (unLoc $3)) (reverse (unLoc $4))] }
-  | data '(' ')' maybeConstructors { [Loc (mconcat [srcLoc $1, srcLoc $3, srcLoc $4]) $ Data (V "()") [] (reverse (unLoc $4))] } -- type ()
-  | data '[' var ']' maybeConstructors { [Loc (mconcat [srcLoc $1, srcLoc $4, srcLoc $5]) $ Data (V "[]") [var $3] (reverse (unLoc $5))] } -- type [a]
+  | data dvar tyvars maybeConstructors { [loc $1 $> $ Data (unLoc $2) (reverse (unLoc $3)) (reverse (unLoc $4))] }
 
 avar :: { Loc Var }
   : var { locVar $1 }
   | '(' asym ')' { loc $1 $> (unLoc $2) }
   | '(' if ')' { loc $1 $> (V "if") }
+
+dvar :: { Loc Var }
+  : cvar { locVar $1 }
+  | '(' ')' { loc $1 $> $ V "()" } -- type ()
 
 tyvars :: { Loc [Var] }
   : {--} { loc0 [] }
@@ -242,8 +244,7 @@ ty2 :: { Loc TypeSet }
 ty3 :: { Loc TypeSet }
   : var { fmap (TsVar . tokVar) $1 }
   | cvar { fmap (\t -> tycons (tokVar t) []) $1 }
-  | '(' ty ')' { loc $1 $> $ unLoc $2 }
-  | '[' ty ']' { loc $1 $> $ TsCons (V "[]") [unLoc $2] }
+  | '(' ty ')' { $2 }
 
 tytuple :: { Loc [TypeSet] }
   : ty1 ',' ty1 { loc $1 $> $ [unLoc $3,unLoc $1] }
