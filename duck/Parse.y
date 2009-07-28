@@ -67,9 +67,6 @@ import Data.Monoid (mappend, mconcat)
   import { Loc _ (TokImport) }
   infix  { Loc _ (TokInfix _) }
 
-%left ';'
-%right '=' '->'
-
 %%
 
 --- Toplevel stuff ---
