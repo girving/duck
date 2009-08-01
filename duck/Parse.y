@@ -133,10 +133,10 @@ commas_ :: { Loc [Exp] }
   | commas_ ',' exp2_ { loc $1 $> $ expLoc $3 : unLoc $1 }
 
 exp2 :: { Loc Exp }
-  : ops { fmap Ops $1 }
+  : ops { fmap ops $1 }
 
 exp2_ :: { Loc Exp }
-  : ops_ { fmap Ops $1 }
+  : ops_ { fmap ops $1 }
 
 ops :: { Loc (Ops Exp) }
   : ops_ asym unops { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
@@ -294,6 +294,10 @@ tuple :: [Exp] -> Exp
 tuple [e] = e
 tuple el = Apply (Var (tupleCons el)) (reverse el)
 
+ops :: Ops Exp -> Exp
+ops (OpAtom e) = e
+ops o = Ops o
+
 pattern :: Loc Exp -> P (Loc Pattern)
 pattern (Loc l e) = Loc l =.< patternExp l e
 
@@ -330,7 +334,6 @@ patternOps l (OpUn v _) = parseError (ParseError l ("unary operator '"++show (pr
 -- (for a let) or a function declaraction (for a def).
 lefthandside :: Loc Exp -> P (Either Pattern (Var, [Pattern]))
 lefthandside (Loc _ (ExpLoc l e)) = lefthandside (Loc l e)
-lefthandside (Loc l (Ops (OpAtom e))) = lefthandside (Loc l e)
 lefthandside (Loc l (Apply e el)) | Just v <- unVar e, not (isCons v) = do
   pl <- mapM (patternExp l) el
   return $ Right (v,pl)
@@ -343,7 +346,6 @@ lefthandside (Loc l p) = Left =.< patternExp l p
 unVar :: Exp -> Maybe Var
 unVar (Var v) = Just v
 unVar (ExpLoc _ e) = unVar e
-unVar (Ops (OpAtom e)) = unVar e
 unVar _ = Nothing
 
 -- Currently, specifications are only allowed to be single lowercase variables
