@@ -55,7 +55,7 @@ prelude = Lir.prog $ decTuples ++ binops ++ io where
 
   decTuples = map decTuple [2..5]
   decTuple i = Data c vars [(c, map TsVar vars)] where
-    c = tuple vars
+    c = tupleCons vars
     vars = take i standardVars
 
 io :: [Decl]

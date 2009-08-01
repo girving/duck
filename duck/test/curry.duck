@@ -1,0 +1,12 @@
+import prelude
+
+add :: Int -> Int -> Int
+add x = y -> x + y
+
+add :: (Int,Int) -> (Int,Int) -> (Int,Int)
+add (x,x') = y,y' -> x+y,x'+y'
+
+test_1 = assert \ add 1 2 == 3
+test_2 = assert \ add (1,2) (3,4) == (4,6)
+
+main = testAll

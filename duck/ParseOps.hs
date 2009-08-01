@@ -62,6 +62,11 @@ instance Pretty a => Pretty (Ops a) where
   pretty' (OpUn (V o) a) = (20, pretty o <+> pretty a)
   pretty' (OpBin (V o) l r) = (20, guard 21 l <+> pretty o <+> guard 21 r)
 
+instance Functor Ops where
+  fmap f (OpAtom a) = OpAtom (f a)
+  fmap f (OpUn v o) = OpUn v (fmap f o)
+  fmap f (OpBin v o1 o2) = OpBin v (fmap f o1) (fmap f o2)
+
 instance Fold.Foldable Ops where
   foldr f z (OpAtom a) = f a z
   foldr f z (OpUn _ r) = Fold.foldr f z r

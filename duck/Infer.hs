@@ -136,6 +136,13 @@ expr prog global env loc = exp where
     checkIO t
   exp (Lir.Return e) = exp e >.= TyIO
   exp (Lir.PrimIO p el) = mapM exp el >>= Prims.primIOType loc p >.= TyIO
+  exp (Lir.Spec e ts) = do
+    t <- exp e
+    result <- runMaybeT $ unify (applyTry prog global) ts t
+    case result of
+      Just (tenv,[]) -> return $ substVoid tenv ts
+      Nothing -> typeError loc (show (pretty e)++" has type '"++show (pretty t)++"', which is incompatible with type specification '"++show (pretty ts))
+      Just (_,leftovers) -> typeError loc ("type specification '"++show (pretty ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
   exp (Lir.ExpLoc l e) = expr prog global env l e
 
 join :: Prog -> Globals -> SrcLoc -> Type -> Type -> Infer Type
@@ -164,7 +171,7 @@ apply prog global (TyFun a r) t2 loc = do
   result <- runMaybeT $ unify'' (applyTry prog global) a t2
   case result of
     Just () -> return r
-    _ -> typeError loc ("cannot apply "++show (pretty (TyFun a r))++" to "++show (pretty t2))
+    _ -> typeError loc ("cannot apply '"++show (pretty (TyFun a r))++"' to '"++show (pretty t2)++"'")
 apply _ _ t1 _ loc = typeError loc ("expected a -> b, got " ++ show (pretty t1))
 
 applyTry :: Prog -> Globals -> Type -> Type -> MaybeT Infer Type
@@ -211,10 +218,7 @@ cache :: Prog -> Globals -> Var -> [Type] -> Overload -> SrcLoc -> Infer Type
 cache prog global f args (types,r,vl,e) loc = do
   Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog global) types args
   let call = show (pretty f <+> prettylist args)
-      vars = case contravariantVars leftovers of
-        [v] -> "variable "++show (pretty v)
-        vl -> "variables "++concat (intersperse ", " (map (show . pretty) vl))
-  unless (null leftovers) $ typeError loc (call++" uses invalid overload "++show (pretty (foldr TsFun r types))++"; can't overload on contravariant "++vars)
+  unless (null leftovers) $ typeError loc (call++" uses invalid overload "++show (pretty (foldr TsFun r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
   let tl = map (substVoid tenv) types
       rs = substVoid tenv r
       fix prev = do

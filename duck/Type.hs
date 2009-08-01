@@ -18,6 +18,7 @@ module Type
   , singleton
   , unsingleton
   , contravariantVars
+  , showContravariantVars
   ) where
 
 import Var
@@ -311,6 +312,11 @@ contravariantVars = concatMap cv where
   vars (TsIO t) = vars t
   vars TsInt = []
   vars TsVoid = []
+
+showContravariantVars :: Leftovers -> String
+showContravariantVars leftovers = case contravariantVars leftovers of
+  [v] -> "variable "++show (pretty v)
+  vl -> "variables "++concat (List.intersperse ", " (map (show . pretty) vl))
  
 -- Pretty printing
 

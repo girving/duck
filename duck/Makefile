@@ -1,5 +1,5 @@
 GHC = ghc
-GHCFLAGS = -O -Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -prof -auto-all
+GHCFLAGS = -O -Wall -Werror -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -prof -auto-all
 HAPPY = happy
 HAPPYFLAGS = -agc
 ALEX = alex
@@ -19,6 +19,7 @@ test: duck test/basic.duck
 	./duck -c test/apply.duck
 	./duck test/basic.duck
 	./duck test/layout.duck
+	./duck test/curry.duck
 	./duck -c test/prelude.duck
 	./duck -c test/ops.duck
 	./duck -c test/null.duck

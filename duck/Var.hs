@@ -15,9 +15,10 @@ module Var
   , standardVars
   , ignored
   , precedence
-  , tuple
+  , tupleCons
   , istuple
   , tuplelen
+  , isCons
   ) where
 
 import Pretty
@@ -81,9 +82,10 @@ precedence (V op) = case head op of
   _ -> Nothing
 
 
-tuple :: [a] -> Var
-tuple [] = V "()"
-tuple (_:l) = V ([',' | _ <- l])
+tupleCons :: [a] -> Var
+tupleCons [] = V "()"
+tupleCons [_] = error "no singleton tuples"
+tupleCons (_:l) = V ([',' | _ <- l])
 
 istuple :: Var -> Bool
 istuple (V s) = all (',' ==) s
@@ -91,3 +93,7 @@ istuple (V s) = all (',' ==) s
 tuplelen :: Var -> Maybe Int
 tuplelen (V s) | istuple (V s) = Just (1 + length s)
 tuplelen _ = Nothing
+
+isCons :: Var -> Bool
+isCons (V (c:_)) | isUpper c || elem c "([:," = True
+isCons _ = False

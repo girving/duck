@@ -3,16 +3,15 @@
 ---- operator precedence
 
 infixr 90  .
-infixr 80  ^, ^^, **
-infixl 70  *, /
-infixl 60  +, -
+infixr 80  ^ ^^ **
+infixl 70  * /
+infixl 60  + -
 infixr 50  :
-infix  40  ==, !=, <, <=, >=, >
+infix  40  == != < <= >= >
 infixr 30  &&
 infixr 20  ||
-infixl 10  >>, >>=
+infixl 10  >> >>=
 infixr 10  =<<
-infixr 0   $, $!
 
 --------- miscellaneous basic functions
 

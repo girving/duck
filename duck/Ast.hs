@@ -36,9 +36,10 @@ data Exp
   | Apply Exp [Exp]
   | Var Var
   | Int Int
+  | Any
   | List [Exp]
   | Ops (Ops Exp)
-  | TypeCheck Exp TypeSet
+  | Spec Exp TypeSet
   | Case Exp [(Pattern,Exp)]
   | If Exp Exp Exp
   | ExpLoc SrcLoc Exp
@@ -48,8 +49,10 @@ data Pattern
   = PatAny
   | PatVar Var
   | PatCons CVar [Pattern]
+  | PatList [Pattern]
   | PatOps (Ops Pattern)
-  | PatType Pattern TypeSet
+  | PatSpec Pattern TypeSet
+  | PatLoc SrcLoc Pattern
   deriving Show
 
 -- Pretty printing
@@ -90,38 +93,41 @@ instance Pretty Decl where
       NonFix -> "infix"
 
 instance Pretty Exp where
-  pretty' (Let p e body) = (0,
+  pretty' (Spec e t) = (0, guard 1 e <+> text "::" <+> guard 60 t)
+  pretty' (Let p e body) = (1,
     text "let" <+> pretty p <+> equals <+> guard 0 e <+> text "in"
       $$ (guard 0 body))
-  pretty' (Def f args e body) = (0,
+  pretty' (Def f args e body) = (1,
     text "let" <+> pretty f <+> prettylist args <+> equals
       $$ nest 2 (guard 0 e) <+> text "in" $$ (guard 0 body))
-  pretty' (Lambda args e) = (5,
-    text "\\" <> prettylist args <+> text "->" <+> guard 5 e)
+  pretty' (Case e cases) = (1,
+    text "case" <+> pretty e <+> text "of" $$ nest 2 (
+      vjoin '|' (map (\ (p,e) -> pretty p <+> text "->" <+> pretty e) cases)))
+  pretty' (If c e1 e2) = (1,
+    text "if" <+> pretty c <+> text "then" <+> pretty e1 <+> text "else" <+> pretty e2)
+  pretty' (Lambda pl e) = (1, hsep (map (\p -> guard 2 p <+> text "->") pl) <+> guard 1 e)
   pretty' (Apply (Var v) [e1, e2]) | Just prec <- precedence v =
     let V s = v in
     (prec, (guard prec e1) <+> text s <+> (guard (prec+1) e2) )
-  pretty' (Apply (Var c) el) | Just n <- tuplelen c, n == length el = (1,
-    hcat $ intersperse (text ", ") $ map (guard 2) el)
+  pretty' (Apply (Var c) el) | Just n <- tuplelen c, n == length el = (2,
+    hcat $ intersperse (text ", ") $ map (guard 3) el)
   pretty' (Apply e el) = (50, guard 51 e <+> prettylist el)
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
+  pretty' Any = pretty' '_'
   pretty' (List el) = (100,
     lbrack <> hcat (intersperse (text ", ") $ map (guard 2) el) <> rbrack)
   pretty' (Ops o) = pretty' o
-  pretty' (Case e cases) = (0,
-    text "case" <+> pretty e <+> text "of" $$ nest 2 (
-      vjoin '|' (map (\ (p,e) -> pretty p <+> text "->" <+> pretty e) cases)))
-  pretty' (TypeCheck e t) = (2, guard 2 e <+> text "::" <+> guard 60 t)
-  pretty' (If c e1 e2) = (0,
-    text "if" <+> pretty c <+> text "then" <+> pretty e1 <+> text "else" <+> pretty e2)
   pretty' (ExpLoc _ e) = pretty' e
 
+patToExp :: Pattern -> Exp
+patToExp (PatSpec p t) = Spec (patToExp p) t
+patToExp (PatCons c pl) = Apply (Var c) (map patToExp pl)
+patToExp (PatOps o) = Ops (fmap patToExp o)
+patToExp (PatVar v) = Var v
+patToExp (PatList pl) = List (map patToExp pl)
+patToExp PatAny = Any
+patToExp (PatLoc l p) = ExpLoc l (patToExp p)
+
 instance Pretty Pattern where
-  pretty' (PatAny) = pretty' '_'
-  pretty' (PatVar v) = pretty' v
-  pretty' (PatCons c []) = pretty' c
-  pretty' (PatCons c pl) | istuple c = (1, hcat $ intersperse (text ", ") $ map (guard 2) pl)
-  pretty' (PatCons c pl) = (3, pretty c <+> prettylist pl)
-  pretty' (PatOps o) = pretty' o
-  pretty' (PatType p t) = (2, guard 2 p <+> text "::" <+> guard 0 t)
+  pretty' = pretty' . patToExp

@@ -1,14 +1,5 @@
 -- | Duck parser
 
--- shift/reduce conflicts: exactly 5
---
--- These are due to expressions like 1 + \x -> x, which we
--- parse as 1 + (\x -> x).  Parsing this requires the lambda rule to
--- go in exp2 (arguments to infix expressions).  Expressions of the
--- form \x -> x + 1 then become ambiguous.  In order to avoid duplicating
--- a slew of expression nonterminals, we let the generator resolve the
--- ambiguity correctly in favor of shift.
-
 {
 {-# OPTIONS_GHC -w #-}
 
@@ -25,6 +16,8 @@ import ParseMonad
 import ParseOps
 import qualified Data.Map as Map
 import Data.Monoid (mappend, mconcat)
+import Pretty
+import Util
 
 }
 
@@ -81,30 +74,11 @@ decls :: { [[Loc Decl]] }
   | decls ';' decl { $3 : $1 }
 
 decl :: { [Loc Decl] }
-  : avar '::' ty { [loc $1 $> $SpecD (unLoc $1) (unLoc $3)] }
-  | avar patterns '=' exp { [loc $1 $> $ DefD (unLoc $1) (reverse (unLoc $2)) (expLoc $4)] }
-  | pattern2 sym pattern2 '=' exp { [loc $1 $> $ DefD (var $2) [patLoc $1,patLoc $3] (expLoc $5)] }
-  | pattern0 '=' exp { [loc $1 $> $ LetD (patLoc $1) (expLoc $3)] }
+  : exp0 '::' ty {% spec $1 >.= \v -> [loc $1 $> $SpecD v (unLoc $3)] }
+  | exp '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
   | import var {% let V file = var $2 in parseFile parse file }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
-  | data dvar tyvars maybeConstructors { [loc $1 $> $ Data (unLoc $2) (reverse (unLoc $3)) (reverse (unLoc $4))] }
-
-avar :: { Loc Var }
-  : var { locVar $1 }
-  | '(' asym ')' { loc $1 $> (unLoc $2) }
-  | '(' if ')' { loc $1 $> (V "if") }
-
-dvar :: { Loc Var }
-  : cvar { locVar $1 }
-  | '(' ')' { loc $1 $> $ V "()" } -- type ()
-
-tyvars :: { Loc [Var] }
-  : {--} { loc0 [] }
-  | tyvars var { loc $1 $> $ var $2 : unLoc $1 }
-
-asyms :: { Loc [Var] }
-  : asym { fmap (:[]) $1 }
-  | asyms ',' asym { loc $1 $> $ unLoc $3 : unLoc $1 }
+  | data dvar lvars maybeConstructors { [loc $1 $> $ Data (unLoc $2) (reverse (unLoc $3)) (reverse (unLoc $4))] }
 
 maybeConstructors :: { Loc [(CVar,[TypeSet])] }
   : {--} { loc0 [] }
@@ -123,112 +97,123 @@ constructor :: { (CVar,[TypeSet]) }
 
 --- Expressions ---
 
+-- An underscore after a nonterminal (exp_) means it cannot contain a parenthesis-killing backslash expression.
+-- This duplication is unfortunately, but I finally got tired of the shift-reduce conflicts.
+
 exp :: { Loc Exp }
-  : exp0 { $1 }
-  | exp0 '::' ty { loc $1 $> $ TypeCheck (expLoc $1) (unLoc $3) }
+  : exp0 '::' ty { loc $1 $> $ Spec (expLoc $1) (unLoc $3) }
+  | exp0 { $1 }
 
 exp0 :: { Loc Exp }
-  : let avar patterns '=' exp in exp0 { loc $1 $> $ Def (unLoc $2) (reverse (unLoc $3)) (expLoc $5) (expLoc $7) }
-  | let pattern '=' exp in exp0 { loc $1 $> $ Let (patLoc $2) (expLoc $4) (expLoc $6) }
+  : let exp '=' exp in exp0 {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def v pl (expLoc $4) (expLoc $6)) l }
   | case exp of '{' cases '}' { loc $1 $> $ Case (expLoc $2) (reverse $5) }
   | if exp then exp else exp0 { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
-  | exptuple { fmap (\et -> Apply (Var (tuple et)) (reverse et)) $1 }
+  | arrow { fmap (\ (p,e) -> Lambda [p] e) $1 }
   | exp1 { $1 }
 
+arrow :: { Loc (Pattern,Exp) }
+  : exp1_ '->' exp0 {% pattern $1 >.= \p -> loc $1 $> (patLoc p,expLoc $3) }
+
 cases :: { [(Pattern,Exp)] }
-  : onecase { [$1] }
-  | cases ';' onecase { $3 : $1 }
-
-onecase :: { (Pattern,Exp) }
-  : pattern0 '->' exp { (patLoc $1,expLoc $3) }
-
-exps :: { [Exp] }
-  : exp1 { [expLoc $1] }
-  | exps ',' exp1 { expLoc $3 : $1 }
-
-exptuple :: { Loc [Exp] }
-  : exp1 ',' exp1 { loc $1 $> $ [expLoc $3,expLoc $1] }
-  | exptuple ',' exp1 { loc $1 $> $ expLoc $3 : unLoc $1 }
+  : arrow { [unLoc $1] }
+  | cases ';' arrow { unLoc $3 : $1 }
 
 exp1 :: { Loc Exp }
+  : commas { fmap tuple $1 }
+
+exp1_ :: { Loc Exp }
+  : commas_ { fmap tuple $1 }
+
+commas :: { Loc [Exp] }
+  : exp2 { loc1 $1 [expLoc $1] }
+  | commas_ ',' exp2 { loc $1 $> $ expLoc $3 : unLoc $1 }
+
+commas_ :: { Loc [Exp] }
+  : exp2_ { loc1 $1 [expLoc $1] }
+  | commas_ ',' exp2_ { loc $1 $> $ expLoc $3 : unLoc $1 }
+
+exp2 :: { Loc Exp }
   : ops { fmap Ops $1 }
 
+exp2_ :: { Loc Exp }
+  : ops_ { fmap Ops $1 }
+
 ops :: { Loc (Ops Exp) }
-  : ops asym unops { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
+  : ops_ asym unops { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
   | unops { $1 }
 
+ops_ :: { Loc (Ops Exp) }
+  : ops_ asym unops_ { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
+  | unops_ { $1 }
+
 unops :: { Loc (Ops Exp) }
-  : exp2 { loc1 $1 $ OpAtom (expLoc $1) }
+  : exp3 { loc1 $1 $ OpAtom (expLoc $1) }
   | '-' unops { loc $1 $> $ OpUn (V "-") (unLoc $2) }
+
+unops_ :: { Loc (Ops Exp) }
+  : exp3_ { loc1 $1 $ OpAtom (expLoc $1) }
+  | '-' unops_ { loc $1 $> $ OpUn (V "-") (unLoc $2) }
+
+exp3 :: { Loc Exp }
+  : exps { fmap apply $1 }
+
+exp3_ :: { Loc Exp }
+  : exps_ { fmap apply $1 }
+
+exps :: { Loc [Exp] }
+  : atom { fmap (:[]) $1 }
+  | exps_ atom { loc $1 $> $ expLoc $2 : unLoc $1 }
+
+exps_ :: { Loc [Exp] }
+  : atom_ { fmap (:[]) $1 }
+  | exps_ atom_ { loc $1 $> $ expLoc $2 : unLoc $1 }
+
+atom :: { Loc Exp }
+  : atom_ { $1 }
+  | '\\' exp0 { loc $1 $> (expLoc $2) }
+
+atom_ :: { Loc Exp }
+  : int { fmap (Int . tokInt) $1 }
+  | lvar { fmap Var $1 }
+  | cvar { fmap Var $ locVar $1 }
+  | '_' { loc1 $1 Any }
+  | '(' exp ')' { $2 }
+  | '(' exp error {% unmatched $1 }
+  | '(' ')' { loc $1 $> $ Var (V "()") }
+  | '[' ']' { loc $1 $> $ Var (V "[]") }
+  | '[' commas ']' { loc $1 $> $ List (reverse (unLoc $2)) }
+  | '[' commas error {% unmatched $1 }
+
+--- Variables ---
+
+lvar :: { Loc Var }
+  : var { locVar $1 }
+  | '(' sym ')' { loc $1 $> (var $2) }
+  | '(' '-' ')' { loc $1 $> (V "-") }
+  | '(' if ')' { loc $1 $> (V "if") }
+
+lvars :: { Loc [Var] }
+  : {--} { loc0 [] }
+  | lvars var { loc $1 $> $ var $2 : unLoc $1 }
+
+dvar :: { Loc Var }
+  : cvar { locVar $1 }
+  | '(' ')' { loc $1 $> $ V "()" } -- type ()
 
 asym :: { Loc Var }
   : sym { locVar $1 }
   | csym { locVar $1 }
   | '-' { loc1 $1 $ V "-" }
 
-exp2 :: { Loc Exp }
-  : apply { fmap ((\(f:a) -> Apply f a) . reverse) $1 }
-  | '\\' patterns '->' exp0 { loc $1 $> $ Lambda (reverse (unLoc $2)) (expLoc $4) }
-  | arg { $1 }
-
-apply :: { Loc [Exp] }
-  : apply arg { loc $1 $> $ expLoc $2 : unLoc $1 }
-  | arg arg { loc $1 $> $ [expLoc $2,expLoc $1] }
-
-arg :: { Loc Exp }
-  : int { fmap (Int . tokInt) $1 }
-  | avar { fmap Var $1 }
-  | cvar { fmap Var $ locVar $1 }
-  | '(' exp ')' { $2 }
-  | '(' exp error {% unmatched $1 }
-  | '(' ')' { loc $1 $> $ Var (V "()") }
-  | '[' ']' { loc $1 $> $ Var (V "[]") }
-  | '[' exps ']' { loc $1 $> $ List (reverse $2) }
-  | '[' exps error {% unmatched $1 }
-
---- Patterns ---
-
-pattern :: { Loc Pattern }
-  : pattern0 { $1 }
-  | pattern0 '::' ty { loc $1 $> $ PatType (patLoc $1) (unLoc $3) }
-
-pattern0 :: { Loc Pattern }
-  : pattern1 { $1 }
-  | pattuple { fmap (\pt -> PatCons (tuple pt) (reverse pt)) $1 }
-
-pattuple :: { Loc [Pattern] }
-  : pattern1 ',' pattern1 { loc $1 $> $ [patLoc $3,patLoc $1] }
-  | pattuple ',' pattern1 { loc $1 $> $ patLoc $3 : unLoc $1 }
-
-pattern1 :: { Loc Pattern }
-  : pattern2 { $1 }
-  | patternops { fmap PatOps $1 }
-
-patternops :: { Loc (Ops Pattern) }
-  : patternops csym pattern2 { loc $1 $> $ OpBin (var $2) (unLoc $1) (OpAtom (patLoc $3)) }
-  | pattern2 csym pattern2 { loc $1 $> $ OpBin (var $2) (OpAtom (patLoc $1)) (OpAtom (patLoc $3)) }
-
-pattern2 :: { Loc Pattern }
-  : pattern3 { $1 }
-  | cvar patterns { loc $1 $> $ PatCons (var $1) (reverse (unLoc $2)) }
-
-patterns :: { Loc [Pattern] }
-  : pattern3 { loc1 $1 $ [patLoc $1] }
-  | patterns pattern3 { loc $1 $> $ patLoc $2 : unLoc $1 }
-
-pattern3 :: { Loc Pattern }
-  : avar { fmap PatVar $1 }
-  | cvar { fmap (\v -> PatCons v []) (locVar $1) }
-  | '_' { loc1 $1 PatAny }
-  | '(' pattern ')' { $2 }
-  | '(' ')' { loc $1 $> $ PatCons (V "()") [] }
-  | '[' ']' { loc $1 $> $ PatCons (V "[]") [] }
+asyms :: { Loc [Var] }
+  : asym { fmap (:[]) $1 }
+  | asyms asym { loc $1 $> $ unLoc $2 : unLoc $1 }
 
 --- Types ---
 
 ty :: { Loc TypeSet }
   : ty1 { $1 }
-  | tytuple { fmap (\tt -> TsCons (tuple tt) (reverse tt)) $1 }
+  | tytuple { fmap (\tt -> TsCons (tupleCons tt) (reverse tt)) $1 }
 
 ty1 :: { Loc TypeSet }
   : ty2 { $1 }
@@ -260,9 +245,6 @@ parserError (Loc l t) = parseError (ParseError l ("syntax error "++showAt t))
 
 unmatched :: Loc Token -> P a
 unmatched (Loc l t) = parseError (ParseError l ("unmatched '"++show t++"' from "++show l))
-
-binop :: Exp -> Token -> Exp -> Exp
-binop e1 op e2 = Apply (Var $ V $ show op) [e1, e2]
 
 tycons :: CVar -> [TypeSet] -> TypeSet
 tycons (V "IO") [t] = TsIO t
@@ -298,6 +280,75 @@ expLoc (Loc l e)
   | otherwise = e
 
 patLoc :: Loc Pattern -> Pattern
-patLoc = unLoc -- no PatLoc (yet)
+patLoc (Loc l (PatLoc _ e)) = patLoc (Loc l e) -- shouldn't happen
+patLoc (Loc l p)
+  | hasLoc l = PatLoc l p
+  | otherwise = p
+
+apply :: [Exp] -> Exp
+apply [] = undefined
+apply [e] = e
+apply el | f:args <- reverse el = Apply f args
+
+tuple :: [Exp] -> Exp
+tuple [e] = e
+tuple el = Apply (Var (tupleCons el)) (reverse el)
+
+pattern :: Loc Exp -> P (Loc Pattern)
+pattern (Loc l e) = Loc l =.< patternExp l e
+
+patterns :: Loc [Exp] -> P (Loc [Pattern])
+patterns (Loc l el) = Loc l =.< mapM (patternExp l) el
+
+patternExp :: SrcLoc -> Exp -> P Pattern
+patternExp l (Apply e el) | Just c <- unVar e, isCons c = PatCons c =.< mapM (patternExp l) el
+patternExp l (Apply e _) = parseError (ParseError l ("only constructors can be applied in patterns, not '"++show (pretty e)++"'"))
+patternExp l (Var c) | isCons c = return $ PatCons c []
+patternExp l (Var v) = return $ PatVar v
+patternExp l Any = return $ PatAny
+patternExp l (List el) = PatList =.< mapM (patternExp l) el
+patternExp l (Ops ops) = PatOps =.< patternOps l ops
+patternExp l (Spec e t) = patternExp l e >.= \p -> PatSpec p t
+patternExp _ (ExpLoc l e) = PatLoc l =.< patternExp l e
+patternExp l (Int _) = parseError (ParseError l ("integer patterns aren't implemented yet"))
+patternExp l (Def _ _ _ _) = parseError (ParseError l ("let expression not allowed in pattern"))
+patternExp l (Let _ _ _) = parseError (ParseError l ("let expression not allowed in pattern"))
+patternExp l (Lambda _ _) = parseError (ParseError l ("'->' expression not allowed in pattern"))
+patternExp l (Case _ _) = parseError (ParseError l ("case expression not allowed in pattern"))
+patternExp l (If _ _ _) = parseError (ParseError l ("if expression not allowed in pattern"))
+
+patternOps :: SrcLoc -> Ops Exp -> P (Ops Pattern)
+patternOps l (OpAtom e) = OpAtom =.< patternExp l e
+patternOps l (OpBin v o1 o2) | isCons v = do
+  p1 <- patternOps l o1
+  p2 <- patternOps l o2
+  return $ OpBin v p1 p2
+patternOps l (OpBin v _ _) = parseError (ParseError l ("only constructor operators are allowed in patterns, not '"++show (pretty v)++"'"))
+patternOps l (OpUn v _) = parseError (ParseError l ("unary operator '"++show (pretty v)++"' not allowed in pattern"))
+
+-- Reparse an expression on the left side of an '=' into either a pattern
+-- (for a let) or a function declaraction (for a def).
+lefthandside :: Loc Exp -> P (Either Pattern (Var, [Pattern]))
+lefthandside (Loc _ (ExpLoc l e)) = lefthandside (Loc l e)
+lefthandside (Loc l (Ops (OpAtom e))) = lefthandside (Loc l e)
+lefthandside (Loc l (Apply e el)) | Just v <- unVar e, not (isCons v) = do
+  pl <- mapM (patternExp l) el
+  return $ Right (v,pl)
+lefthandside (Loc l (Ops (OpBin v o1 o2))) | not (isCons v) = do
+  p1 <- patternOps l o1
+  p2 <- patternOps l o2
+  return $ Right (v, map PatOps [p1,p2])
+lefthandside (Loc l p) = Left =.< patternExp l p
+
+unVar :: Exp -> Maybe Var
+unVar (Var v) = Just v
+unVar (ExpLoc _ e) = unVar e
+unVar (Ops (OpAtom e)) = unVar e
+unVar _ = Nothing
+
+-- Currently, specifications are only allowed to be single lowercase variables
+spec :: Loc Exp -> P Var
+spec (Loc l e) | Just v <- unVar e = return v
+spec (Loc l e) = parseError (ParseError l ("only variables are allowed in top level type specifications, not '"++show (pretty e)++"'"))
 
 }

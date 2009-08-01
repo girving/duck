@@ -17,7 +17,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Monad.State hiding (mapM)
+import Control.Monad.State hiding (mapM, guard)
 import Data.Traversable (mapM)
 
 import Var
@@ -50,11 +50,12 @@ data Exp
   | Cons CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
   | Binop Binop Exp Exp
+  | Spec Exp TypeSet
+  | ExpLoc SrcLoc Exp
     -- Monadic IO
   | Bind Var Exp Exp
   | Return Exp
   | PrimIO PrimIO [Exp]
-  | ExpLoc SrcLoc Exp
   deriving Show
 
 -- Lambda lifting: IR to Lifted IR conversion
@@ -111,7 +112,8 @@ statement vl e = modify $ \p -> p { statements = (vl,e) : statements p }
 
 -- |Add a global overload
 overload :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> State Prog ()
-overload v tl r vl e = modify $ \p -> p { functions = Map.insertWith (++) v [(tl,r,vl,e)] (functions p) }
+overload v tl r vl e | length vl == length tl = modify $ \p -> p { functions = Map.insertWith (++) v [(tl,r,vl,e)] (functions p) }
+overload v tl _ vl _ = error ("overload arity mismatch for "++show (pretty v)++": argument types "++show (prettylist tl)++", variables "++show (prettylist vl)) 
 
 -- |Add an unoverloaded global function
 function :: Var -> [Var] -> Exp -> State Prog ()
@@ -122,6 +124,7 @@ function v vl e = overload v tl r vl e where
 unwrapLambda :: Ir.Exp -> ([Var], Ir.Exp)
 unwrapLambda (Ir.Lambda v e) = (v:vl, e') where
   (vl, e') = unwrapLambda e
+unwrapLambda (Ir.ExpLoc _ e) = unwrapLambda e
 unwrapLambda e = ([], e)
 
 generalType :: [a] -> ([TypeSet], TypeSet)
@@ -169,6 +172,7 @@ expr locals (Ir.Bind v e rest) = do
   return $ Bind v e rest
 expr locals (Ir.Return e) = Return =.< expr locals e
 expr locals (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals) el
+expr locals (Ir.Spec e t) = expr locals e >.= \e -> Spec e t
 expr locals (Ir.ExpLoc l e) = ExpLoc l =.< expr locals e
 
 -- |Lift a single lambda expression
@@ -205,6 +209,7 @@ free locals e = Set.toList (Set.intersection locals (f e)) where
   f (Bind v e rest) = Set.union (f e) (Set.delete v (f rest))
   f (Return e) = f e
   f (PrimIO _ el) = Set.unions (map f el)
+  f (Spec e _) = f e
   f (ExpLoc _ e) = f e
 
 -- |Merge two programs into one
@@ -229,10 +234,10 @@ instance Pretty Prog where
     where
     function :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> Doc
     function v tl r vl e =
-      text "over" <+> pretty (foldr TsFun r tl) $$
-      text "let" <+> prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
+      pretty v <+> text "::" <+> hsep (intersperse (text "->") (map (guard 2) (tl++[r]))) $$
+      prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
     statement (vl,e) =
-      text "let" <+> hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
+      hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
 
 instance Pretty Exp where
   pretty' = pretty' . revert
@@ -248,4 +253,5 @@ revert (Binop op e1 e2) = Ir.Binop op (revert e1) (revert e2)
 revert (Bind v e rest) = Ir.Bind v (revert e) (revert rest)
 revert (Return e) = Ir.Return (revert e)
 revert (PrimIO p el) = Ir.PrimIO p (map revert el)
+revert (Spec e t) = Ir.Spec (revert e) t
 revert (ExpLoc l e) = Ir.ExpLoc l (revert e)

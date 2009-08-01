@@ -12,43 +12,43 @@ x = 3
 _ = 4
 a = f x x
 
-g = \x -> x
+g = x -> x
 
 -- tuples
 
-t1,t2,t3 = 1,2,(1,2) :: (Int,Int)
-test_tuple = assert $ (t1,t2,t3) == (1,2,(1,2))
+t1,t2,t3 = 1,2,(1,2) :: Int,Int,(Int,Int)
+test_tuple = assert \ (t1,t2,t3) == (1,2,(1,2))
 
 -- lists
 
 list = 1 : [2, 3, 4]
 one : two : _ = list
 
-test_sum = assert $ 10 == sum list
-test_cons = assert $ (one,two) == (1,2)
+test_sum = assert \ 10 == sum list
+test_cons = assert \ (one,two) == (1,2)
 
-test_eq1 = assert $ [1,1] == [1,1]
-test_eq2 = assert $ not $ [1,1] == [1,2]
+test_eq1 = assert \ [1,1] == [1,1]
+test_eq2 = assert \ not \ [1,1] == [1,2]
 
 -- test map overloading
 
-test_map1 = assert $ (map negate [3,4]) == [-3,-4]
-test_map2 = assert $ (map negate (Just 5)) == (Just $ -5)
+test_map1 = assert \ map negate [3,4] == [-3,-4]
+test_map2 = assert \ map negate (Just 5) == (Just $ -5)
 
 -- test the list monad
 
-test_join1 = assert $ join [[]] == []
-test_join2 = assert $ join [[1,2],[3,4]] == [1,2,3,4]
+test_join1 = assert \ join [[]] == []
+test_join2 = assert \ join [[1,2],[3,4]] == [1,2,3,4]
 
-test_monad = assert $ [11,101,22,202] == (
+test_monad = assert \ [11,101,22,202] == \
   [1,2] >>= \a ->
   [10 * a, 100 * a] >>= \b ->
-  b + a)
+  b + a
 
 -- test ops
 
-test_ops1 = assert $ 1 + 2 * 3 == 7
-test_ops2 = assert $ 5 == 1 * 2 + 3
+test_ops1 = assert \ 1 + 2 * 3 == 7
+test_ops2 = assert \ 5 == 1 * 2 + 3
 
 -- toplevel
 

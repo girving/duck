@@ -130,6 +130,13 @@ expr prog global env loc = exp where
     (dl,tl) <- unzip =.< mapM exp el
     t <- liftInfer $ Prims.primIOType loc p tl
     return (ValPrimIO p dl, TyIO t)
+  exp (Lir.Spec e ts) = do
+    (d,t) <- exp e
+    result <- runMaybeT $ unify (applyTry prog) ts t
+    case result of
+      Just (tenv,[]) -> return (d,substVoid tenv ts)
+      Nothing -> execError loc (show (pretty e)++" has type '"++show (pretty t)++"', which is incompatible with type specification '"++show (pretty ts))
+      Just (_,leftovers) -> execError loc ("type specification '"++show (pretty ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
   exp (Lir.ExpLoc l e) = expr prog global env l e
 
 apply :: Prog -> Globals -> TValue -> TValue -> SrcLoc -> Exec TValue
