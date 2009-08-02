@@ -105,10 +105,16 @@ exp :: { Loc Exp }
   | exp0 { $1 }
 
 exp0 :: { Loc Exp }
+  : arrows {% arrows $1 }
+
+arrows :: { Loc (Stack Exp Exp) }
+  : notarrow { loc1 $1 (Base (expLoc $1)) }
+  | exp1_ '->' arrows { loc $1 $> (expLoc $1 :. unLoc $3) }
+
+notarrow :: { Loc Exp }
   : let exp '=' exp in exp0 {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
   | case exp of '{' cases '}' { loc $1 $> $ Case (expLoc $2) (reverse $5) }
   | if exp then exp else exp0 { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
-  | arrow { fmap (\ (p,e) -> Lambda [p] e) $1 }
   | exp1 { $1 }
 
 arrow :: { Loc (Pattern,Exp) }
@@ -303,6 +309,11 @@ pattern (Loc l e) = Loc l =.< patternExp l e
 
 patterns :: Loc [Exp] -> P (Loc [Pattern])
 patterns (Loc l el) = Loc l =.< mapM (patternExp l) el
+
+arrows :: Loc (Stack Exp Exp) -> P (Loc Exp)
+arrows (Loc l stack) = case splitStack stack of
+  ([],e) -> return $ Loc l e
+  (el,e) -> patterns (Loc l el) >.= fmap (\pl -> Lambda pl e)
 
 patternExp :: SrcLoc -> Exp -> P Pattern
 patternExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
