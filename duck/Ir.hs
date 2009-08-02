@@ -205,7 +205,7 @@ matches env s pl = foldr f ([],s,\[] -> id) pl where
   f p (vl,s,m) = (v:vl, s', \ (e:el) -> m' e . m el) where
     (v,s',m') = match env s p
 
--- |cases turns a multilevel pattern match into iterated single level pattern match by
+-- |cases turns a multilevel pattern match into iterated single level pattern matches by
 --   (1) partitioning the cases by outer element,
 --   (2) performing the outer match, and
 --   (3) iteratively matching the components returned in the outer match
