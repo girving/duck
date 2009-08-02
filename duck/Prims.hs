@@ -46,30 +46,30 @@ primIOType _ ExitFailure [] = return $ TyCons (V "()") []
 primIOType _ TestAll [] = return $ TyCons (V "()") []
 primIOType loc p args = typeError loc ("invalid arguments"++show (prettylist args)++" to "++show p)
 
-prelude :: Lir.Prog
+prelude :: IO Lir.Prog
 prelude = Lir.prog $ decTuples ++ binops ++ io where
   [a,b] = take 2 standardVars
   ty = TsFun TsInt (TsFun TsInt (TsVar a))
   binops = map binop [IntAddOp, IntSubOp, IntMulOp, IntDivOp, IntEqOp, IntLessOp]
-  binop op = Ir.Over (V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
+  binop op = Ir.Over (Loc noLoc $ V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
 
   decTuples = map decTuple [2..5]
   decTuple i = Data c vars [(c, map TsVar vars)] where
-    c = tupleCons vars
+    c = Loc noLoc $ tupleCons vars
     vars = take i standardVars
 
 io :: [Decl]
 io = [map',join,exitFailure,testAll,returnIO] where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TsVar [a,b]
-  map' = Over (V "map") (TsFun (TsFun ta tb) (TsFun (TsIO ta) (TsIO tb)))
+  map' = Over (Loc noLoc $ V "map") (TsFun (TsFun ta tb) (TsFun (TsIO ta) (TsIO tb)))
     (Lambda f (Lambda c
       (Bind x (Var c)
       (Return (Apply (Var f) (Var x))))))
-  join = Over (V "join") (TsFun (TsIO (TsIO ta)) (TsIO ta))
+  join = Over (Loc noLoc $ V "join") (TsFun (TsIO (TsIO ta)) (TsIO ta))
     (Lambda c
       (Bind x (Var c)
       (Var x)))
-  returnIO = LetD (V "returnIO") (Lambda x (Return (Var x)))
-  exitFailure = LetD (V "exitFailure") (PrimIO ExitFailure [])
-  testAll = LetD (V "testAll") (PrimIO TestAll [])
+  returnIO = LetD (Loc noLoc $ V "returnIO") (Lambda x (Return (Var x)))
+  exitFailure = LetD (Loc noLoc $ V "exitFailure") (PrimIO ExitFailure [])
+  testAll = LetD (Loc noLoc $ V "testAll") (PrimIO TestAll [])

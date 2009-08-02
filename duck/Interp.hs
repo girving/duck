@@ -44,8 +44,8 @@ lookup prog global env loc v
 lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [TypeSet])
 lookupConstructor prog c
   | Just tc <- Map.lookup c (Lir.conses prog)
-  , Just (vl,cases) <- Map.lookup tc (Lir.datatypes prog)
-  , Just tl <- List.lookup c cases = return (tc,vl,tl)
+  , Just (_,vl,cases) <- Map.lookup tc (Lir.datatypes prog)
+  , Just tl <- Infer.lookupCons cases c = return (tc,vl,tl)
   | otherwise = execError noLoc ("unbound constructor " ++ show c)
 
 -- Process a list of definitions into the global environment.
@@ -55,14 +55,14 @@ lookupConstructor prog c
 prog :: Lir.Prog -> Exec Globals
 prog prog = foldM (statement prog) Map.empty (Lir.statements prog)
 
-statement :: Prog -> Globals -> ([Var], Lir.Exp) -> Exec Globals
+statement :: Prog -> Globals -> Lir.Statement -> Exec Globals
 statement prog env (vl,e) = do
   d <- expr prog env Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
           (_, (ValCons c dl, TyCons c' tl)) | istuple c, c == c', length vl == length dl, length vl == length tl -> return $ zip dl tl
           _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++show (pretty d))
-  return $ foldl (\g (v,d) -> Map.insert v d g) env (zip vl dl)
+  return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
 
 -- Perform a computation and then cast the result to a (more general) type.
 -- For now, this cast is a nop on the data, but in future it may not be.
@@ -91,8 +91,8 @@ expr prog global env loc = exp where
         case find (\ (c',_,_) -> c == c') pl of
           Just (_,vl,e') ->
             if a == length dl then do
-              (tvl, cases) <- liftInfer $ Infer.lookupDatatype prog loc tv
-              let Just tl = List.lookup c cases
+              (_, tvl, cases) <- liftInfer $ Infer.lookupDatatype prog loc tv
+              let Just tl = Infer.lookupCons cases c
                   tenv = Map.fromList (zip tvl types)
                   tl' = map (substVoid tenv) tl
               cast prog t $ expr prog global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl (zip dl tl'))) loc e'

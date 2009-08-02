@@ -22,10 +22,10 @@ import Data.List
 type Prog = [Loc Decl]
 
 data Decl
-  = SpecD Var TypeSet
-  | DefD Var [Pattern] Exp
+  = SpecD (Loc Var) TypeSet
+  | DefD (Loc Var) [Pattern] Exp
   | LetD Pattern Exp
-  | Data CVar [Var] [(CVar,[TypeSet])]
+  | Data (Loc CVar) [Var] [(Loc CVar,[TypeSet])]
   | Infix PrecFix [Var]
   deriving Show
 
@@ -67,9 +67,6 @@ opsPattern :: Ops Pattern -> Pattern
 opsPattern (OpAtom a) = a
 opsPattern (OpUn _ _) = parseThrow "unary operator in pattern"
 opsPattern (OpBin o l r) = PatCons o [opsPattern l, opsPattern r]
-
-instance Pretty (Loc Decl) where
-  pretty' (Loc _ d) = pretty' d
 
 instance Pretty Decl where
   pretty (SpecD f t) =

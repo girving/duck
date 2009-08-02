@@ -13,6 +13,7 @@ module SrcLoc
   ) where
 
 import Data.Monoid
+import Pretty
 
 data SrcLoc 
   = SrcNone
@@ -39,6 +40,13 @@ instance Show SrcLoc where
   show (SrcRng file line col line' col')
     | line == line' = file ++ ':' : shows line (':' : shows col ('-' : show col'))
     | otherwise = file ++ ':' : shows line (':' : shows col ('-' : shows line' (':' : show col')))
+
+-- By default, locations drop away when printing
+instance Show t => Show (Loc t) where
+  show (Loc _ x) = show x
+
+instance Pretty t => Pretty (Loc t) where
+  pretty' (Loc _ x) = pretty' x
 
 -- |The location immediately before another
 before :: SrcLoc -> SrcLoc

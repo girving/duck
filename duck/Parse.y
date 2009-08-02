@@ -78,22 +78,22 @@ decl :: { [Loc Decl] }
   | exp '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
   | import var {% let V file = var $2 in parseFile parse file }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
-  | data dvar lvars maybeConstructors { [loc $1 $> $ Data (unLoc $2) (reverse (unLoc $3)) (reverse (unLoc $4))] }
+  | data dvar lvars maybeConstructors { [loc $1 $> $ Data $2 (reverse (unLoc $3)) (reverse (unLoc $4))] }
 
-maybeConstructors :: { Loc [(CVar,[TypeSet])] }
+maybeConstructors :: { Loc [(Loc CVar,[TypeSet])] }
   : {--} { loc0 [] }
   | of '{' constructors '}' { loc $1 $> $ $3 }
 
-constructors :: { [(CVar,[TypeSet])] }
+constructors :: { [(Loc CVar,[TypeSet])] }
   : constructor { [$1] }
   | constructors ';'  constructor { $3 : $1 }
 
-constructor :: { (CVar,[TypeSet]) }
-  : cvar { (var $1,[]) }
-  | cvar ty3s { (var $1,reverse (unLoc $2)) }
-  | ty2 csym ty2 { (var $2,[unLoc $1,unLoc $3]) }
-  | '(' ')' { (V "()",[]) }
-  | '[' ']' { (V "[]",[]) }
+constructor :: { (Loc CVar,[TypeSet]) }
+  : cvar { (fmap tokVar $1,[]) }
+  | cvar ty3s { (fmap tokVar $1,reverse (unLoc $2)) }
+  | ty2 csym ty2 { (fmap tokVar $2,[unLoc $1,unLoc $3]) }
+  | '(' ')' { (loc $1 $> $ V "()",[]) }
+  | '[' ']' { (loc $1 $> $ V "[]",[]) }
 
 --- Expressions ---
 
@@ -105,7 +105,7 @@ exp :: { Loc Exp }
   | exp0 { $1 }
 
 exp0 :: { Loc Exp }
-  : let exp '=' exp in exp0 {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def v pl (expLoc $4) (expLoc $6)) l }
+  : let exp '=' exp in exp0 {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
   | case exp of '{' cases '}' { loc $1 $> $ Case (expLoc $2) (reverse $5) }
   | if exp then exp else exp0 { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
   | arrow { fmap (\ (p,e) -> Lambda [p] e) $1 }
@@ -305,7 +305,7 @@ patterns :: Loc [Exp] -> P (Loc [Pattern])
 patterns (Loc l el) = Loc l =.< mapM (patternExp l) el
 
 patternExp :: SrcLoc -> Exp -> P Pattern
-patternExp l (Apply e el) | Just c <- unVar e, isCons c = PatCons c =.< mapM (patternExp l) el
+patternExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
 patternExp l (Apply e _) = parseError (ParseError l ("only constructors can be applied in patterns, not '"++show (pretty e)++"'"))
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
@@ -332,25 +332,25 @@ patternOps l (OpUn v _) = parseError (ParseError l ("unary operator '"++show (pr
 
 -- Reparse an expression on the left side of an '=' into either a pattern
 -- (for a let) or a function declaraction (for a def).
-lefthandside :: Loc Exp -> P (Either Pattern (Var, [Pattern]))
+lefthandside :: Loc Exp -> P (Either Pattern (Loc Var, [Pattern]))
 lefthandside (Loc _ (ExpLoc l e)) = lefthandside (Loc l e)
-lefthandside (Loc l (Apply e el)) | Just v <- unVar e, not (isCons v) = do
+lefthandside (Loc l (Apply e el)) | Just v <- unVar l e, not (isCons (unLoc v)) = do
   pl <- mapM (patternExp l) el
   return $ Right (v,pl)
 lefthandside (Loc l (Ops (OpBin v o1 o2))) | not (isCons v) = do
   p1 <- patternOps l o1
   p2 <- patternOps l o2
-  return $ Right (v, map PatOps [p1,p2])
-lefthandside (Loc l p) = Left =.< patternExp l p
+  return $ Right (Loc l v, map PatOps [p1,p2])
+lefthandside (Loc l p) = Left . patLoc . Loc l =.< patternExp l p
 
-unVar :: Exp -> Maybe Var
-unVar (Var v) = Just v
-unVar (ExpLoc _ e) = unVar e
-unVar _ = Nothing
+unVar :: SrcLoc -> Exp -> Maybe (Loc Var)
+unVar l (Var v) = Just (Loc l v)
+unVar _ (ExpLoc l e) = unVar l e
+unVar _ _ = Nothing
 
 -- Currently, specifications are only allowed to be single lowercase variables
-spec :: Loc Exp -> P Var
-spec (Loc l e) | Just v <- unVar e = return v
+spec :: Loc Exp -> P (Loc Var)
+spec (Loc l e) | Just v <- unVar l e = return v
 spec (Loc l e) = parseError (ParseError l ("only variables are allowed in top level type specifications, not '"++show (pretty e)++"'"))
 
 }

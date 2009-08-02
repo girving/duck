@@ -8,6 +8,7 @@ module Infer
   , applyTry
   , resolve
   , lookupDatatype
+  , lookupCons
   ) where
 
 import Var
@@ -18,13 +19,12 @@ import Lir (Prog, Datatype, Overload)
 import qualified Lir
 import qualified Data.Map as Map
 import Data.List hiding (lookup, intersect)
-import qualified Data.List
+import qualified Data.List as List
 import Control.Monad.Error hiding (guard, join)
 import InferMonad
 import Prelude hiding (lookup)
 import qualified Prims
 import Data.Maybe
-import qualified Data.List as List
 import Text.PrettyPrint
 import SrcLoc
 
@@ -63,9 +63,12 @@ lookupOverloads prog loc f
 lookupConstructor :: Prog -> SrcLoc -> Var -> Infer (CVar, [Var], [TypeSet])
 lookupConstructor prog loc c
   | Just tc <- Map.lookup c (Lir.conses prog)
-  , Just (vl,cases) <- Map.lookup tc (Lir.datatypes prog)
-  , Just tl <- Data.List.lookup c cases = return (tc,vl,tl)
+  , Just (_,vl,cases) <- Map.lookup tc (Lir.datatypes prog)
+  , Just tl <- lookupCons cases c = return (tc,vl,tl)
   | otherwise = typeError loc ("unbound constructor " ++ show c)
+
+lookupCons :: [(Loc CVar, [TypeSet])] -> CVar -> Maybe [TypeSet]
+lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 
 -- Process a list of definitions into the global environment.
 -- The global environment is threaded through function calls, so that
@@ -74,14 +77,14 @@ lookupConstructor prog loc c
 prog :: Lir.Prog -> Infer Globals
 prog prog = foldM (statement prog) Map.empty (Lir.statements prog)
 
-statement :: Prog -> Globals -> ([Var], Lir.Exp) -> Infer Globals
+statement :: Prog -> Globals -> Lir.Statement -> Infer Globals
 statement prog env (vl,e) = do
   t <- expr prog env Map.empty noLoc e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
           (_, TyCons c tl) | istuple c, length vl == length tl -> return tl
           _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++show (pretty t))
-  return $ foldl (\g (v,t) -> Map.insert v t g) env (zip vl tl)
+  return $ foldl (\g (v,t) -> Map.insert (unLoc v) t g) env (zip vl tl)
 
 expr :: Prog -> Globals -> Locals -> SrcLoc -> Lir.Exp -> Infer Type
 expr prog global env loc = exp where
@@ -99,10 +102,10 @@ expr prog global env loc = exp where
     case t of
       TyVoid -> return TyVoid
       TyCons tv types -> do
-        (tvl, cases) <- lookupDatatype prog loc tv
+        (_, tvl, cases) <- lookupDatatype prog loc tv
         let tenv = Map.fromList (zip tvl types)
             caseType (c,vl,e')
-              | Just tl <- List.lookup c cases, a <- length tl =
+              | Just tl <- lookupCons cases c, a <- length tl =
                   if length vl == a then
                     let tl' = map (subst tenv) tl in
                     case mapM unsingleton tl' of

@@ -38,9 +38,9 @@ data Prog = Prog
   , conses :: Map Var CVar -- map constructors to datatypes (type inference will make this go away)
   , statements :: [Statement] }
 
-type Datatype = ([Var], [(CVar, [TypeSet])])
+type Datatype = (SrcLoc, [Var], [(Loc CVar, [TypeSet])])
 type Overload = ([TypeSet], TypeSet, [Var], Exp)
-type Statement = ([Var], Exp)
+type Statement = ([Loc Var], Exp)
 
 data Exp
   = Int Int
@@ -63,8 +63,8 @@ data Exp
 emptyProg :: Prog
 emptyProg = Prog Map.empty Map.empty Set.empty Map.empty []
 
-prog :: [Ir.Decl] -> Prog
-prog decls = flip execState emptyProg $ do
+prog :: [Ir.Decl] -> IO Prog
+prog decls = check $ flip execState emptyProg $ do
   modify $ \p -> p { globals = foldl decl_vars Set.empty decls }
   mapM_ decl decls
   modify $ \p -> p { statements = reverse (statements p) }
@@ -72,19 +72,27 @@ prog decls = flip execState emptyProg $ do
   mapM_ datatype (Map.toList (datatypes p))
   where
   datatype :: (CVar, Datatype) -> State Prog ()
-  datatype (tc, (_, cases)) = mapM_ f cases where
-    f :: (CVar, [TypeSet]) -> State Prog ()
+  datatype (tc, (_, _, cases)) = mapM_ f cases where
+    f :: (Loc CVar, [TypeSet]) -> State Prog ()
     f (c,tyl) = do
-      modify $ \p -> p { conses = Map.insert c tc (conses p) }
+      modify $ \p -> p { conses = Map.insert (unLoc c) tc (conses p) }
       case tyl of
-        [] -> statement [c] (Cons c [])
-        _ -> function c vl (Cons c (map Var vl)) where
+        [] -> statement [c] (Cons (unLoc c) [])
+        _ -> function (unLoc c) vl (Cons (unLoc c) (map Var vl)) where
           vl = take (length tyl) standardVars
 
+-- Check for duplicate statements
+check :: Prog -> IO Prog
+check prog = foldM st Map.empty (statements prog) >. prog where
+  st env (vl,_) = foldM sv env vl
+  sv env (Loc l v) = case Map.lookup v env of
+    Nothing -> return $ Map.insert v l env
+    Just l' -> die (show l++": duplicate definition of '"++show (pretty v)++"', previously declared at "++show l')
+
 decl_vars :: Set Var -> Ir.Decl -> Set Var
-decl_vars s (Ir.LetD v _) = Set.insert v s
-decl_vars s (Ir.LetM vl _) = foldl (flip Set.insert) s vl
-decl_vars s (Ir.Over v _ _) = Set.insert v s
+decl_vars s (Ir.LetD (Loc _ v) _) = Set.insert v s
+decl_vars s (Ir.LetM vl _) = foldl (flip Set.insert) s (map unLoc vl)
+decl_vars s (Ir.Over (Loc _ v) _ _) = Set.insert v s
 decl_vars s (Ir.Data _ _ _) = s
 
 -- |Statements are added in reverse order
@@ -92,22 +100,22 @@ decl :: Ir.Decl -> State Prog ()
 decl (Ir.LetD v e@(Ir.Lambda _ _)) = do
   let (vl,e') = unwrapLambda e
   e <- expr (Set.fromList vl) e'
-  function v vl e
+  function (unLoc v) vl e
 decl (Ir.Over v t e) = do
   let (tl,r,vl,e') = unwrapTypeLambda t e
   e <- expr (Set.fromList vl) e'
-  overload v tl r vl e
+  overload (unLoc v) tl r vl e
 decl (Ir.LetD v e) = do
   e <- expr Set.empty e
   statement [v] e
 decl (Ir.LetM vl e) = do
   e <- expr Set.empty e
   statement vl e
-decl (Ir.Data tc tvl cases) =
-  modify $ \p -> p { datatypes = Map.insert tc (tvl,cases) (datatypes p) }
+decl (Ir.Data (Loc l tc) tvl cases) =
+  modify $ \p -> p { datatypes = Map.insert tc (l,tvl,cases) (datatypes p) }
 
 -- |Add a toplevel statement
-statement :: [Var] -> Exp -> State Prog ()
+statement :: [Loc Var] -> Exp -> State Prog ()
 statement vl e = modify $ \p -> p { statements = (vl,e) : statements p }
 
 -- |Add a global overload
@@ -228,7 +236,7 @@ union p1 p2 = Prog
 
 instance Pretty Prog where
   pretty (Prog datatypes functions _ _ statements) = vcat $
-       [pretty (Ir.Data t vl c) | (t,(vl,c)) <- Map.toList datatypes]
+       [pretty (Ir.Data (Loc l t) vl c) | (t,(l,vl,c)) <- Map.toList datatypes]
     ++ [function v tl r vl e | (v,o) <- Map.toList functions, (tl,r,vl,e) <- o]
     ++ map statement statements
     where
