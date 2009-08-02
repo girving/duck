@@ -82,6 +82,8 @@ expr prog global env loc = exp where
   exp (Lir.Let v e body) = do
     d <- exp e
     expr prog global (Map.insert v d env) loc body
+  exp (Lir.Case _ [] Nothing) = execError loc ("pattern match failed: no cases")
+  exp (Lir.Case e [] (Just (v,body))) = exp (Lir.Let v e body) -- equivalent to a let
   exp ce@(Lir.Case e pl def) = do
     gt <- getGlobalTypes
     t <- liftInfer $ Infer.expr prog gt (Map.map snd env) loc ce

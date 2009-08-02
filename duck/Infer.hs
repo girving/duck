@@ -97,6 +97,8 @@ expr prog global env loc = exp where
   exp (Lir.Let v e body) = do
     t <- exp e
     expr prog global (Map.insert v t env) loc body
+  exp (Lir.Case _ [] Nothing) = return TyVoid
+  exp (Lir.Case e [] (Just (v,body))) = exp (Lir.Let v e body) -- equivalent to a let
   exp (Lir.Case e pl def) = do
     t <- exp e
     case t of
