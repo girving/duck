@@ -1,0 +1,33 @@
+import prelude
+main = testAll
+
+-- Verify that the first matching alternative is chosen
+
+f x = case x of
+  [], _ -> 1
+  _, [] -> 2
+
+g x = case x of
+  _, [] -> 1
+  [], _ -> 2
+
+test_f = assert \ f ([],[]) == 1
+test_g = assert \ g ([],[]) == 2
+
+-- Repeated default matches should be harmless
+
+r x = case x of
+  y -> 1
+  z -> 2
+  w -> 3
+
+test_r = assert \ r 4 == 1
+
+-- Verify that repeated variables become unification constraints
+
+h x = case x of
+  y,y -> y
+  y,z -> 10*y+z
+
+test_h1 = assert \ h (7,7) == 7
+test_h2 = assert \ h (2,3) == 23

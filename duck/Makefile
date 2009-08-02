@@ -5,24 +5,17 @@ HAPPYFLAGS = -agc
 ALEX = alex
 ALEXFLAGS = -g
 
+OTHERS = Parse.hs Lex.hs
+TESTS = basic layout curry match
+TESTS_C = apply prelude ops null
+
 all: duck
 
 info: Parse.info
 
 .PHONY: duck
-duck: Duck.hs others
+duck: Duck.hs $(OTHERS)
 	$(GHC) $(GHCFLAGS) --make $< -o $@
-
-others: Parse.hs Lex.hs
-
-test: duck test/basic.duck
-	./duck -c test/apply.duck
-	./duck test/basic.duck
-	./duck test/layout.duck
-	./duck test/curry.duck
-	./duck -c test/prelude.duck
-	./duck -c test/ops.duck
-	./duck -c test/null.duck
 
 %.hs: %.y
 	$(HAPPY) $(HAPPYFLAGS) $< -o $@
@@ -33,6 +26,13 @@ test: duck test/basic.duck
 %.hs: %.x
 	$(ALEX) $(ALEXFLAGS) $< -o $@
 
+.PHONY: test $(TESTS) $(TESTS_C)
+test: $(TESTS) $(TESTS_C)
+$(TESTS):
+	./duck test/$@.duck
+$(TESTS_C):
+	./duck -c test/$@.duck
+
 .PHONY: clean
 clean:
-	rm -f *.o *.hi *.info duck Parse.hs Lex.hs
+	rm -f *.o *.hi *.info duck $(OTHERS)
