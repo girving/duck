@@ -74,7 +74,7 @@ decls :: { [[Loc Decl]] }
   | decls ';' decl { $3 : $1 }
 
 decl :: { [Loc Decl] }
-  : exp0 '::' ty {% spec $1 >.= \v -> [loc $1 $> $SpecD v (unLoc $3)] }
+  : exp0 '::' exp0 {% spec $1 >>= \v -> ty $3 >.= \t -> [loc $1 $> $SpecD v (unLoc t)] }
   | exp '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
   | import var {% let V file = var $2 in parseFile parse file }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
@@ -89,11 +89,7 @@ constructors :: { [(Loc CVar,[TypeSet])] }
   | constructors ';'  constructor { $3 : $1 }
 
 constructor :: { (Loc CVar,[TypeSet]) }
-  : cvar { (fmap tokVar $1,[]) }
-  | cvar ty3s { (fmap tokVar $1,reverse (unLoc $2)) }
-  | ty2 csym ty2 { (fmap tokVar $2,[unLoc $1,unLoc $3]) }
-  | '(' ')' { (loc $1 $> $ V "()",[]) }
-  | '[' ']' { (loc $1 $> $ V "[]",[]) }
+  : exp2 {% constructor $1 }
 
 --- Expressions ---
 
@@ -101,7 +97,7 @@ constructor :: { (Loc CVar,[TypeSet]) }
 -- This duplication is unfortunately, but I finally got tired of the shift-reduce conflicts.
 
 exp :: { Loc Exp }
-  : exp0 '::' ty { loc $1 $> $ Spec (expLoc $1) (unLoc $3) }
+  : exp0 '::' exp0 {% ty $3 >.= \t -> loc $1 $> $ Spec (expLoc $1) (unLoc t) }
   | exp0 { $1 }
 
 exp0 :: { Loc Exp }
@@ -215,33 +211,6 @@ asyms :: { Loc [Var] }
   : asym { fmap (:[]) $1 }
   | asyms asym { loc $1 $> $ unLoc $2 : unLoc $1 }
 
---- Types ---
-
-ty :: { Loc TypeSet }
-  : ty1 { $1 }
-  | tytuple { fmap (\tt -> TsCons (tupleCons tt) (reverse tt)) $1 }
-
-ty1 :: { Loc TypeSet }
-  : ty2 { $1 }
-  | ty2 '->' ty1 { loc $1 $> $ TsFun (unLoc $1) (unLoc $3) }
-
-ty2 :: { Loc TypeSet }
-  : ty3 { $1 }
-  | cvar ty3s { loc $1 $> $ tycons (var $1) (reverse (unLoc $2)) }
-
-ty3 :: { Loc TypeSet }
-  : var { fmap (TsVar . tokVar) $1 }
-  | cvar { fmap (\t -> tycons (tokVar t) []) $1 }
-  | '(' ty ')' { $2 }
-
-tytuple :: { Loc [TypeSet] }
-  : ty1 ',' ty1 { loc $1 $> $ [unLoc $3,unLoc $1] }
-  | tytuple ',' ty1 { loc $1 $> $ unLoc $3 : unLoc $1 }
-
-ty3s :: { Loc [TypeSet] }
-  : ty3 { fmap (\t -> [t]) $1 }
-  | ty3s ty3 { loc $1 $> $ unLoc $2 : unLoc $1 }
-
 {
 
 parse :: P Prog
@@ -252,11 +221,11 @@ parserError (Loc l t) = parseError (ParseError l ("syntax error "++showAt t))
 unmatched :: Loc Token -> P a
 unmatched (Loc l t) = parseError (ParseError l ("unmatched '"++show t++"' from "++show l))
 
-tycons :: CVar -> [TypeSet] -> TypeSet
-tycons (V "IO") [t] = TsIO t
-tycons (V "Int") [] = TsInt
-tycons (V "Void") [] = TsVoid
-tycons c args = TsCons c args
+tscons :: CVar -> [TypeSet] -> TypeSet
+tscons (V "IO") [t] = TsIO t
+tscons (V "Int") [] = TsInt
+tscons (V "Void") [] = TsVoid
+tscons c args = TsCons c args
 
 var :: Loc Token -> Var
 var = tokVar . unLoc
@@ -320,15 +289,15 @@ patternExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = PatCons c =.
 patternExp l (Apply e _) = parseError (ParseError l ("only constructors can be applied in patterns, not '"++show (pretty e)++"'"))
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
-patternExp l Any = return $ PatAny
+patternExp l Any = return PatAny
 patternExp l (List el) = PatList =.< mapM (patternExp l) el
 patternExp l (Ops ops) = PatOps =.< patternOps l ops
 patternExp l (Spec e t) = patternExp l e >.= \p -> PatSpec p t
+patternExp l (Lambda pl e) = PatLambda pl =.< patternExp l e
 patternExp _ (ExpLoc l e) = PatLoc l =.< patternExp l e
 patternExp l (Int _) = parseError (ParseError l ("integer patterns aren't implemented yet"))
 patternExp l (Def _ _ _ _) = parseError (ParseError l ("let expression not allowed in pattern"))
 patternExp l (Let _ _ _) = parseError (ParseError l ("let expression not allowed in pattern"))
-patternExp l (Lambda _ _) = parseError (ParseError l ("'->' expression not allowed in pattern"))
 patternExp l (Case _ _) = parseError (ParseError l ("case expression not allowed in pattern"))
 patternExp l (If _ _ _) = parseError (ParseError l ("if expression not allowed in pattern"))
 
@@ -340,6 +309,45 @@ patternOps l (OpBin v o1 o2) | isCons v = do
   return $ OpBin v p1 p2
 patternOps l (OpBin v _ _) = parseError (ParseError l ("only constructor operators are allowed in patterns, not '"++show (pretty v)++"'"))
 patternOps l (OpUn v _) = parseError (ParseError l ("unary operator '"++show (pretty v)++"' not allowed in pattern"))
+
+ty :: Loc Exp -> P (Loc TypeSet)
+ty (Loc l e) = Loc l =.< typeExp l e
+
+tys :: Loc [Exp] -> P (Loc [TypeSet])
+tys (Loc l el) = Loc l =.< mapM (typeExp l) el
+
+typeExp :: SrcLoc -> Exp -> P TypeSet
+typeExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = tscons c =.< mapM (typeExp l) el
+typeExp l (Apply e _) = parseError (ParseError l ("only constructors can be applied in types, not '"++show (pretty e)++"'"))
+typeExp l (Var c) | isCons c = return $ tscons c []
+typeExp l (Var v) = return $ TsVar v
+typeExp l (Lambda pl e) = do
+  tl <- mapM (typePat l) pl
+  t <- typeExp l e 
+  return $ foldr TsFun t tl
+typeExp _ (ExpLoc l e) = typeExp l e
+typeExp l (Int _) = parseError (ParseError l ("integer types aren't implemented yet"))
+typeExp l Any = parseError (ParseError l ("'_' isn't implemented for types yet"))
+typeExp l (Def _ _ _ _) = parseError (ParseError l ("let expression not allowed in type"))
+typeExp l (Let _ _ _) = parseError (ParseError l ("let expression not allowed in type"))
+typeExp l (Case _ _) = parseError (ParseError l ("case expression not allowed in type"))
+typeExp l (If _ _ _) = parseError (ParseError l ("if expression not allowed in type"))
+typeExp l (Ops _) = parseError (ParseError l ("operator expression not allowed in type"))
+typeExp l (Spec _ _) = parseError (ParseError l ("type specifier expression not allowed in type"))
+typeExp l (List _) = parseError (ParseError l ("list expression not allowed in type"))
+
+typePat :: SrcLoc -> Pattern -> P TypeSet
+typePat l (PatCons c pl) = tscons c =.< mapM (typePat l) pl
+typePat l (PatVar v) = return $ TsVar v
+typePat l (PatLambda pl p) = do
+  tl <- mapM (typePat l) pl
+  t <- typePat l p 
+  return $ foldr TsFun t tl
+typePat _ (PatLoc l p) = typePat l p
+typePat l PatAny = parseError (ParseError l ("'_' isn't implemented for types yet"))
+typePat l (PatOps _) = parseError (ParseError l ("operator expression not allowed in type"))
+typePat l (PatSpec _ _) = parseError (ParseError l ("type specifier expression not allowed in type"))
+typePat l (PatList _) = parseError (ParseError l ("list expression not allowed in type"))
 
 -- Reparse an expression on the left side of an '=' into either a pattern
 -- (for a let) or a function declaraction (for a def).
@@ -363,5 +371,18 @@ unVar _ _ = Nothing
 spec :: Loc Exp -> P (Loc Var)
 spec (Loc l e) | Just v <- unVar l e = return v
 spec (Loc l e) = parseError (ParseError l ("only variables are allowed in top level type specifications, not '"++show (pretty e)++"'"))
+
+-- Reparse an expression into a constructor
+constructor :: Loc Exp -> P (Loc CVar,[TypeSet])
+constructor (Loc _ (ExpLoc l e)) = constructor (Loc l e)
+constructor (Loc l e) | Just v <- unVar l e, isCons (unLoc v) = return (v,[])
+constructor (Loc l (Apply e el)) | Just v <- unVar l e, isCons (unLoc v) = do
+  tl <- mapM (typeExp l) el
+  return (v,tl)
+constructor (Loc l (Ops (OpBin v (OpAtom e1) (OpAtom e2)))) | isCons v = do
+  t1 <- typeExp l e1
+  t2 <- typeExp l e2
+  return (Loc l v,[t1,t2])
+constructor (Loc l e) = parseError (ParseError l ("invalid constructor expression '"++show (pretty e)++"' (must be <constructor> <args>... or equivalent)"))
 
 }

@@ -142,16 +142,16 @@ cmp x y = case x,y of
 
 ---- tuples
 
-(==) :: (a,b) -> (a',b') -> Bool
+(==) :: a,b -> a',b' -> Bool
 (a,b) == (a',b') = a == a' && b == b'
 
-cmp :: (a,b) -> (a',b') -> Ordering
+cmp :: a,b -> a',b' -> Ordering
 cmp (a,b) (a',b') = cmp a a' || cmp b b'
 
-(==) :: (a,b,c) -> (a',b',c') -> Bool
+(==) :: a,b,c -> a',b',c' -> Bool
 (a,b,c) == (a',b',c') = a == a' && b == b' && c == c'
 
-cmp :: (a,b,c) -> (a',b',c') -> Ordering
+cmp :: a,b,c -> a',b',c' -> Ordering
 cmp (a,b,c) (a',b',c') = cmp a a' || cmp b b' || cmp c c'
 
 ---- orderings

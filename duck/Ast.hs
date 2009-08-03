@@ -51,6 +51,7 @@ data Pattern
   | PatCons CVar [Pattern]
   | PatList [Pattern]
   | PatOps (Ops Pattern)
+  | PatLambda [Pattern] Pattern
   | PatSpec Pattern TypeSet
   | PatLoc SrcLoc Pattern
   deriving Show
@@ -123,6 +124,7 @@ patToExp (PatCons c pl) = Apply (Var c) (map patToExp pl)
 patToExp (PatOps o) = Ops (fmap patToExp o)
 patToExp (PatVar v) = Var v
 patToExp (PatList pl) = List (map patToExp pl)
+patToExp (PatLambda pl p) = Lambda pl (patToExp p)
 patToExp PatAny = Any
 patToExp (PatLoc l p) = ExpLoc l (patToExp p)
 

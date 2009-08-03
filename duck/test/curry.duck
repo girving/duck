@@ -3,7 +3,7 @@ import prelude
 add :: Int -> Int -> Int
 add x = y -> x + y
 
-add :: (Int,Int) -> (Int,Int) -> (Int,Int)
+add :: Int,Int -> Int,Int -> Int,Int
 add (x,x') = y,y' -> x+y,x'+y'
 
 test_1 = assert \ add 1 2 == 3

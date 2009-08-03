@@ -95,6 +95,7 @@ pattern_vars l s (Ast.PatCons _ pl) = foldl' (pattern_vars l) s pl
 pattern_vars l s (Ast.PatOps o) = Fold.foldl' (pattern_vars l) s o
 pattern_vars l s (Ast.PatList pl) = foldl' (pattern_vars l) s pl
 pattern_vars l s (Ast.PatSpec p _) = pattern_vars l s p
+pattern_vars l s (Ast.PatLambda pl p) = foldl' (pattern_vars l) (pattern_vars l s p) pl
 pattern_vars _ s (Ast.PatLoc l p) = pattern_vars l s p
 
 prog_precs :: Ast.Prog -> PrecEnv
@@ -106,6 +107,9 @@ prog_precs = foldl' set_precs Map.empty where
 -- For now, we use the Either String monad to represent errors during Ast -> Ir conversion.
 -- TODO: This should be infused with location information and possibly replaced with a custom monad.
 type E = Either String
+
+irError :: String -> E a
+irError = Left
 
 prog :: [Loc Ast.Decl] -> IO [Decl]
 prog p = either die return (decls p) where
@@ -125,8 +129,8 @@ prog p = either die return (decls p) where
     Loc _ (Ast.DefD f' args body) : rest | unLoc f == unLoc f' -> do
       e <- expr env s (Ast.Lambda args body)
       (Over f t e :) =.< decls rest
-    Loc _ (Ast.DefD f' _ _) : _ -> Left ("Syntax error: type specification for '"++show (pretty f)++"' followed by definition of '"++show (pretty f')++"'") -- TODO: clean up error handling
-    _ -> Left ("Syntax error: type specification for '"++show (pretty f)++"' must be followed by a definition") -- TODO: clean up error handling
+    Loc _ (Ast.DefD f' _ _) : _ -> irError ("Syntax error: type specification for '"++show (pretty f)++"' followed by definition of '"++show (pretty f')++"'")
+    _ -> irError ("Syntax error: type specification for '"++show (pretty f)++"' must be followed by a definition")
   decls (Loc _ (Ast.LetD (Ast.PatLoc l p) e) : rest) = decls (Loc l (Ast.LetD p e) : rest)
   decls (Loc l (Ast.LetD Ast.PatAny e) : rest) = do
     e <- expr env s e
@@ -135,6 +139,7 @@ prog p = either die return (decls p) where
     e <- expr env s e
     (LetD (Loc l v) e :) =.< decls rest
   decls (Loc l (Ast.LetD p e) : rest) = do
+    (_,_,m) <- match env s p
     e <- expr env s e
     let d = case vars of
               [v] -> LetD v (m e (Var (unLoc v)))
@@ -142,32 +147,30 @@ prog p = either die return (decls p) where
     (d :) =.< decls rest
     where
     vars = map (uncurry (flip Loc)) (Map.toList (pattern_vars l Map.empty p))
-    (_,_,m) = match env s p
   decls (Loc _ (Ast.Data t args cons) : rest) = (Data t args cons :) =.< decls rest
   decls (Loc _ (Ast.Infix _ _) : rest) = decls rest
 
 expr :: Env -> InScopeSet -> Ast.Exp -> E Exp
 expr _ _ (Ast.Int i) = return $ Int i
 expr _ _ (Ast.Var v) = return $ Var v
-expr env s (Ast.Lambda pl e) = expr env s' e >.= \e -> foldr Lambda (m (map Var vl) e) vl where
-  (vl, s', m) = matches env s pl
+expr env s (Ast.Lambda pl e) = do
+  (vl, s, m) <- matches env s pl
+  e <- expr env s e
+  return $ foldr Lambda (m (map Var vl) e) vl
 expr env s (Ast.Apply f args) =do
   f <- expr env s f
   args <- mapM (expr env s) args
   return $ foldl' Apply f args
 expr env s (Ast.Let p e c) = do
   e <- expr env s e
+  (_,s',m) <- match env s p
   c <- expr env s' c
   return $ m e c
-  where
-  (_,s',m) = match env s p
 expr env s (Ast.Def f args body c) = do
+  (vl, s', m) <- matches env s args
   body <- expr env s' body
-  c <- expr env sc c
+  c <- expr env (Set.insert f s) c
   return $ Let f (foldr Lambda (m (map Var vl) body) vl) c
-  where
-  (vl, s', m) = matches env s args
-  sc = Set.insert f s
 expr env s (Ast.Case e cl) = expr env s e >>= \e -> cases env s e cl
 expr env s (Ast.Ops o) = expr env s $ Ast.opsExp $ sortOps (envPrecs env) o
 expr env s (Ast.Spec e t) = expr env s e >.= \e -> Spec e t
@@ -178,32 +181,36 @@ expr env s (Ast.If c e1 e2) = do
   e2 <- expr env s e2
   return $ Apply (Apply (Apply (Var (V "if")) c) e1) e2
 expr env s (Ast.ExpLoc l e) = ExpLoc l =.< expr env s e
-expr _ _ Ast.Any = Left "'_' not allowed in expressions"
+expr _ _ Ast.Any = irError "'_' not allowed in expressions"
 
 -- |match processes a single pattern into an input variable, a new in-scope set,
 -- and a transformer that converts an input expression and a result expression
 -- into new expression representing the match
-match :: Env -> InScopeSet -> Ast.Pattern -> (Var, InScopeSet, Exp -> Exp -> Exp)
-match _ s Ast.PatAny = (ignored, s, match_helper ignored)
-match _ s (Ast.PatVar v) = (v, Set.insert v s, match_helper v)
+match :: Env -> InScopeSet -> Ast.Pattern -> E (Var, InScopeSet, Exp -> Exp -> Exp)
+match _ s Ast.PatAny = return (ignored, s, match_helper ignored)
+match _ s (Ast.PatVar v) = return (v, Set.insert v s, match_helper v)
 match env s (Ast.PatSpec p _) = match env s p
 match env s (Ast.PatLoc _ p) = match env s p
 match env s (Ast.PatOps o) = match env s $ Ast.opsPattern $ sortOps (envPrecs env) o
-match env s (Ast.PatCons c args) = (x, s', m) where
-  x = fresh s
-  (vl, s', ms) = matches env s args
-  m em er = Case em [(c, vl, ms (map Var vl) er)] Nothing
+match env s (Ast.PatCons c args) = do
+  (vl, s', ms) <- matches env s args
+  let x = fresh s
+      m em er = Case em [(c, vl, ms (map Var vl) er)] Nothing
+  return (x, s', m)
 match env s (Ast.PatList pl) = match env s (patternList pl)
+match _ _ (Ast.PatLambda _ _) = irError "'->' (lambda) patterns not yet implemented"
 
 match_helper v em er = case em of
   Var v' | v == v' -> er
   _ -> Let v em er
 
 -- in spirit, matches = fold match
-matches :: Env -> InScopeSet -> [Ast.Pattern] -> ([Var], InScopeSet, [Exp] -> Exp -> Exp)
-matches env s pl = foldr f ([],s,\[] -> id) pl where
-  f p (vl,s,m) = (v:vl, s', \ (e:el) -> m' e . m el) where
-    (v,s',m') = match env s p
+matches :: Env -> InScopeSet -> [Ast.Pattern] -> E ([Var], InScopeSet, [Exp] -> Exp -> Exp)
+matches _ s [] = return ([],s,\[] -> id)
+matches env s (p:pl) = do
+  (v,s,m) <- match env s p
+  (vl,s,ml) <- matches env s pl
+  return (v:vl, s, \ (e:el) -> m e . ml el)
 
 -- |cases turns a multilevel pattern match into iterated single level pattern matches by
 --   (1) partitioning the cases by outer element,
@@ -220,42 +227,46 @@ cases env s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where
   reduce :: InScopeSet -> [Exp] -> [Stack Ast.Pattern Ast.Exp] -> E Exp
   reduce s [] (Base e:_) = expr env s e -- no more patterns to match, so just pick the first possibility
   reduce _ [] _ = undefined -- there will always be at least one possibility, so this never happens
-  reduce s (e:rest) alts = return (Case e) `ap` mapM cons groups `ap` fallback where
-
+  reduce s (e:rest) alts = do
     -- group alternatives by toplevel tag (along with arity)
     -- note: In future, the arity might be looked up in an environment
     -- (or maybe not, if constructors are overloaded based on arity?)
-    groups = groupPairs conses
-    (conses,others) = partitionEithers (map separate alts)
+    (conses,others) <- partitionEithers =.< mapM separate alts
+    let groups = groupPairs conses
 
-    -- cons processes each case of the toplevel match
-    -- If only one alternative remains, we break out of the 'reduce' recursion and switch
-    -- to 'matches', which avoids trivial matches of the form "case v of v -> ..."
-    cons :: ((Var,Int),[Stack Ast.Pattern Ast.Exp]) -> E (Var,[Var],Exp)
-    cons ((c,arity),alts') = case alts' of
-      [alt] -> expr env s' e >.= \e -> (c,vl',m ex e) where -- single alternative, use matches
-        (pl,e) = splitStack alt
-        (vl,s',m) = matches env s pl
-        vl' = take arity vl
-        ex = (map Var vl') ++ rest
-      _ -> ex >.= \ex -> (c,vl,ex) where -- many alernatives, use reduce
-        (s',vl) = freshVars s arity
-        ex = reduce s' (map Var vl ++ rest) alts'
-
-    fallback :: E (Maybe (Var,Exp))
-    fallback = case others of
+    fallback <- case others of
       [] -> return Nothing
       (v,e):_ -> reduce (Set.insert v s) rest [e] >.= \ex -> Just (v,ex)
 
+    arms <- mapM (cons s rest) groups
+    return $ Case e arms fallback
+
+  -- cons processes each case of the toplevel match
+  -- If only one alternative remains, we break out of the 'reduce' recursion and switch
+  -- to 'matches', which avoids trivial matches of the form "case v of v -> ..."
+  cons :: InScopeSet -> [Exp] -> ((Var,Int),[Stack Ast.Pattern Ast.Exp]) -> E (Var,[Var],Exp)
+  cons s rest ((c,arity),alts') = case alts' of
+    [alt] -> do -- single alternative, use matches
+      let (pl,e) = splitStack alt
+      (vl,s',m) <- matches env s pl
+      let vl' = take arity vl
+          ex = (map Var vl') ++ rest
+      e <- expr env s' e
+      return (c,vl',m ex e)
+    _ -> ex >.= \ex -> (c,vl,ex) where -- many alernatives, use reduce
+      (s',vl) = freshVars s arity
+      ex = reduce s' (map Var vl ++ rest) alts'
+
   -- peel off the outer level of the first pattern, and separate into conses and defaults
-  separate :: Stack Ast.Pattern Ast.Exp -> Either ((Var,Int), Stack Ast.Pattern Ast.Exp) (Var, Stack Ast.Pattern Ast.Exp)
-  separate (Ast.PatAny :. e) = Right (ignored,e)
-  separate (Ast.PatVar v :. e) = Right (v,e)
+  separate :: Stack Ast.Pattern Ast.Exp -> E (Either ((Var,Int), Stack Ast.Pattern Ast.Exp) (Var, Stack Ast.Pattern Ast.Exp))
+  separate (Ast.PatAny :. e) = return $ Right (ignored,e)
+  separate (Ast.PatVar v :. e) = return $ Right (v,e)
   separate (Ast.PatSpec p _ :. e) = separate (p:.e)
   separate (Ast.PatLoc _ p :. e) = separate (p:.e)
   separate (Ast.PatOps o :. e) = separate ((Ast.opsPattern $ sortOps (envPrecs env) o) :. e)
-  separate (Ast.PatCons c pl :. e) = Left ((c, length pl), pl++.e)
+  separate (Ast.PatCons c pl :. e) = return $ Left ((c, length pl), pl++.e)
   separate (Ast.PatList pl :. e) = separate (patternList pl :. e)
+  separate (Ast.PatLambda _ _ :. _) = irError "'->' (lambda) patterns not yet implemented"
   separate (Base _) = undefined -- will never happen, since here the stack is nonempty
 
 patternList :: [Ast.Pattern] -> Ast.Pattern
