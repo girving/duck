@@ -3,7 +3,7 @@
 
 module Lir
   ( Prog(..)
-  , Datatype, Overload, Statement
+  , Datatype(..), Overload(..), Definition(..)
   , Exp(..), Binop(..), Prim(..), PrimIO(..)
   , Ir.binopString
   , prog
@@ -32,18 +32,33 @@ import Ir (Prim, Binop, PrimIO)
 -- Lifted IR data structures
 
 data Prog = Prog
-  { datatypes :: Map CVar Datatype
-  , functions :: Map Var [Overload]
-  , globals :: Set Var -- used to generate fresh variables
-  , conses :: Map Var CVar -- map constructors to datatypes (type inference will make this go away)
-  , statements :: [Statement] }
+  { progDatatypes :: Map CVar Datatype
+  , progFunctions :: Map Var [Overload]
+  , progGlobals :: Set Var -- used to generate fresh variables
+  , progConses :: Map Var CVar -- map constructors to datatypes (type inference will make this go away)
+  , progDefinitions :: [Definition] }
 
-type Datatype = (SrcLoc, [Var], [(Loc CVar, [TypeSet])])
-type Overload = ([TypeSet], TypeSet, [Var], Exp)
-type Statement = ([Loc Var], Exp)
+data Datatype = Data
+  { dataLoc :: SrcLoc
+  , dataTyVars :: [Var]
+  , dataConses :: [(Loc CVar, [TypeSet])]
+  }
+
+data Overload = Over
+  { overArgs :: [TypeSet]
+  , overRet :: TypeSet
+  , overVars :: [Var]
+  , overBody :: Exp
+  }
+
+data Definition = Def
+  { defVars :: [Loc Var]
+  , defBody :: Exp
+  }
 
 data Exp
-  = Int Int
+  = ExpLoc SrcLoc Exp
+  | Int Int
   | Var Var
   | Apply Exp Exp
   | Let Var Exp Exp
@@ -51,7 +66,6 @@ data Exp
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
   | Prim Prim [Exp]
   | Spec Exp TypeSet
-  | ExpLoc SrcLoc Exp
     -- Monadic IO
   | Bind Var Exp Exp
   | Return Exp
@@ -65,26 +79,26 @@ emptyProg = Prog Map.empty Map.empty Set.empty Map.empty []
 
 prog :: [Ir.Decl] -> IO Prog
 prog decls = check $ flip execState emptyProg $ do
-  modify $ \p -> p { globals = foldl decl_vars Set.empty decls }
+  modify $ \p -> p { progGlobals = foldl decl_vars Set.empty decls }
   mapM_ decl decls
-  modify $ \p -> p { statements = reverse (statements p) }
+  modify $ \p -> p { progDefinitions = reverse (progDefinitions p) }
   p <- get
-  mapM_ datatype (Map.toList (datatypes p))
+  mapM_ datatype (Map.toList (progDatatypes p))
   where
   datatype :: (CVar, Datatype) -> State Prog ()
-  datatype (tc, (_, _, cases)) = mapM_ f cases where
+  datatype (tc, Data _ _ cases) = mapM_ f cases where
     f :: (Loc CVar, [TypeSet]) -> State Prog ()
     f (c,tyl) = do
-      modify $ \p -> p { conses = Map.insert (unLoc c) tc (conses p) }
+      modify $ \p -> p { progConses = Map.insert (unLoc c) tc (progConses p) }
       case tyl of
-        [] -> statement [c] (Cons (unLoc c) [])
+        [] -> definition [c] (Cons (unLoc c) [])
         _ -> function (unLoc c) vl (Cons (unLoc c) (map Var vl)) where
           vl = take (length tyl) standardVars
 
 -- Check for duplicate statements
 check :: Prog -> IO Prog
-check prog = foldM st Map.empty (statements prog) >. prog where
-  st env (vl,_) = foldM sv env vl
+check prog = foldM st Map.empty (progDefinitions prog) >. prog where
+  st env (Def vl _) = foldM sv env vl
   sv env (Loc l v) = case Map.lookup v env of
     Nothing -> return $ Map.insert v l env
     Just l' -> die (show l++": duplicate definition of '"++show (pretty v)++"', previously declared at "++show l')
@@ -107,20 +121,20 @@ decl (Ir.Over v t e) = do
   overload (unLoc v) tl r vl e
 decl (Ir.LetD v e) = do
   e <- expr Set.empty e
-  statement [v] e
+  definition [v] e
 decl (Ir.LetM vl e) = do
   e <- expr Set.empty e
-  statement vl e
+  definition vl e
 decl (Ir.Data (Loc l tc) tvl cases) =
-  modify $ \p -> p { datatypes = Map.insert tc (l,tvl,cases) (datatypes p) }
+  modify $ \p -> p { progDatatypes = Map.insert tc (Data l tvl cases) (progDatatypes p) }
 
 -- |Add a toplevel statement
-statement :: [Loc Var] -> Exp -> State Prog ()
-statement vl e = modify $ \p -> p { statements = (vl,e) : statements p }
+definition :: [Loc Var] -> Exp -> State Prog ()
+definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
 
 -- |Add a global overload
 overload :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> State Prog ()
-overload v tl r vl e | length vl == length tl = modify $ \p -> p { functions = Map.insertWith (++) v [(tl,r,vl,e)] (functions p) }
+overload v tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over tl r vl e] (progFunctions p) }
 overload v tl _ vl _ = error ("overload arity mismatch for "++show (pretty v)++": argument types "++show (prettylist tl)++", variables "++show (prettylist vl)) 
 
 -- |Add an unoverloaded global function
@@ -196,8 +210,8 @@ lambda locals v e = do
 freshenM :: Var -> State Prog Var
 freshenM v = do
   p <- get
-  let v' = freshen (globals p) v
-  put $ p { globals = Set.insert v' (globals p) }
+  let v' = freshen (progGlobals p) v
+  put $ p { progGlobals = Set.insert v' (progGlobals p) }
   return v'
 
 -- |Compute the list of free variables in an expression
@@ -223,27 +237,27 @@ free locals e = Set.toList (Set.intersection locals (f e)) where
 
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
-  { datatypes = Map.unionWithKey conflict (datatypes p2) (datatypes p1)
-  , functions = Map.unionWith (++) (functions p1) (functions p2)
-  , globals = Set.union (globals p1) (globals p2)
-  , conses = Map.unionWithKey conflict (conses p2) (conses p1)
-  , statements = (statements p1) ++ (statements p2) }
+  { progDatatypes = Map.unionWithKey conflict (progDatatypes p2) (progDatatypes p1)
+  , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
+  , progGlobals = Set.union (progGlobals p1) (progGlobals p2)
+  , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1)
+  , progDefinitions = progDefinitions p1 ++ progDefinitions p2 }
   where
   conflict v _ _ = error ("conflicting datatype declarations for "++show (pretty v))
 
 -- Pretty printing
 
 instance Pretty Prog where
-  pretty (Prog datatypes functions _ _ statements) = vcat $
-       [pretty (Ir.Data (Loc l t) vl c) | (t,(l,vl,c)) <- Map.toList datatypes]
-    ++ [function v tl r vl e | (v,o) <- Map.toList functions, (tl,r,vl,e) <- o]
-    ++ map statement statements
+  pretty (Prog datatypes functions _ _ definitions) = vcat $
+       [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c) <- Map.toList datatypes]
+    ++ [function v tl r vl e | (v,o) <- Map.toList functions, Over tl r vl e <- o]
+    ++ map definition definitions
     where
     function :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> Doc
     function v tl r vl e =
       pretty v <+> text "::" <+> hsep (intersperse (text "->") (map (guard 2) (tl++[r]))) $$
       prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
-    statement (vl,e) =
+    definition (Def vl e) =
       hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
 
 instance Pretty Exp where

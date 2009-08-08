@@ -38,25 +38,22 @@ lookup :: Prog -> Globals -> Locals -> SrcLoc -> Var -> Exec TValue
 lookup prog global env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
-  | Just _ <- Map.lookup v (Lir.functions prog) = return (ValClosure v [], TyClosure [(v,[])]) -- if we find overloads, make a new closure
+  | Just _ <- Map.lookup v (Lir.progFunctions prog) = return (ValClosure v [], TyClosure [(v,[])]) -- if we find overloads, make a new closure
   | otherwise = execError loc ("unbound variable " ++ show v)
 
 lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [TypeSet])
-lookupConstructor prog c
-  | Just tc <- Map.lookup c (Lir.conses prog)
-  , Just (_,vl,cases) <- Map.lookup tc (Lir.datatypes prog)
-  , Just tl <- Infer.lookupCons cases c = return (tc,vl,tl)
-  | otherwise = execError noLoc ("unbound constructor " ++ show c)
+lookupConstructor prog c = maybe (execError noLoc ("unbound constructor " ++ show c)) return $
+  Infer.lookupConstructor' prog c
 
 -- Process a list of definitions into the global environment.
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
 prog :: Lir.Prog -> Exec Globals
-prog prog = foldM (statement prog) Map.empty (Lir.statements prog)
+prog prog = foldM (definition prog) Map.empty (Lir.progDefinitions prog)
 
-statement :: Prog -> Globals -> Lir.Statement -> Exec Globals
-statement prog env (vl,e) = do
+definition :: Prog -> Globals -> Lir.Definition -> Exec Globals
+definition prog env (Lir.Def vl e) = do
   d <- expr prog env Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
@@ -93,9 +90,9 @@ expr prog global env loc = exp where
         case find (\ (c',_,_) -> c == c') pl of
           Just (_,vl,e') ->
             if a == length dl then do
-              (_, tvl, cases) <- liftInfer $ Infer.lookupDatatype prog loc tv
-              let Just tl = Infer.lookupCons cases c
-                  tenv = Map.fromList (zip tvl types)
+              td <- liftInfer $ Infer.lookupDatatype prog loc tv
+              let Just tl = Infer.lookupCons (Lir.dataConses td) c
+                  tenv = Map.fromList (zip (Lir.dataTyVars td) types)
                   tl' = map (substVoid tenv) tl
               cast prog t $ expr prog global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl (zip dl tl'))) loc e'
             else
@@ -164,7 +161,7 @@ apply' prog global f args loc = do
   overload <- resolve prog f types loc
   case overload of
     Nothing -> return (ValClosure f args, TyClosure [(f,types)])
-    Just (_,_,vl,e) -> withFrame f args loc $ expr prog global (Map.fromList (zip vl args)) loc e
+    Just o -> withFrame f args loc $ expr prog global (Map.fromList (zip (Lir.overVars o) args)) loc (Lir.overBody o)
 
 _typeof = typeof -- unused for now
 typeof :: Prog -> Value -> Exec Type

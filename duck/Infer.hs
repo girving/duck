@@ -9,14 +9,14 @@ module Infer
   , resolve
   , lookupDatatype
   , lookupCons
+  , lookupConstructor'
   ) where
 
 import Var
 import Type
 import Util
 import Pretty
-import Lir (Prog, Datatype, Overload)
-import qualified Lir
+import Lir hiding (prog)
 import qualified Data.Map as Map
 import Data.List hiding (lookup, intersect)
 import qualified Data.List as List
@@ -47,25 +47,31 @@ lookup :: Prog -> Globals -> Locals -> SrcLoc -> Var -> Infer Type
 lookup prog global env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
-  | Just _ <- Map.lookup v (Lir.functions prog) = return $ TyClosure [(v,[])] -- if we find overloads, make a new closure
+  | Just _ <- Map.lookup v (progFunctions prog) = return $ TyClosure [(v,[])] -- if we find overloads, make a new closure
   | otherwise = typeError loc ("unbound variable " ++ show v)
 
 lookupDatatype :: Prog -> SrcLoc -> CVar -> Infer Datatype
 lookupDatatype prog loc tv
-  | Just d <- Map.lookup tv (Lir.datatypes prog) = return d
+  | Just d <- Map.lookup tv (progDatatypes prog) = return d
   | otherwise = typeError loc ("unbound datatype constructor " ++ show tv)
 
 lookupOverloads :: Prog -> SrcLoc -> Var -> Infer [Overload]
 lookupOverloads prog loc f
-  | Just o <- Map.lookup f (Lir.functions prog) = return o
+  | Just o <- Map.lookup f (progFunctions prog) = return o
   | otherwise = typeError loc ("unbound function " ++ show f)
 
+lookupConstructor' :: Prog -> Var -> Maybe (CVar, [Var], [TypeSet])
+lookupConstructor' prog c
+  | Just tc <- Map.lookup c (progConses prog)
+  , Just td <- Map.lookup tc (progDatatypes prog)
+  , Just tl <- lookupCons (dataConses td) c 
+  = Just (tc,dataTyVars td,tl)
+  | otherwise = Nothing
+
 lookupConstructor :: Prog -> SrcLoc -> Var -> Infer (CVar, [Var], [TypeSet])
-lookupConstructor prog loc c
-  | Just tc <- Map.lookup c (Lir.conses prog)
-  , Just (_,vl,cases) <- Map.lookup tc (Lir.datatypes prog)
-  , Just tl <- lookupCons cases c = return (tc,vl,tl)
-  | otherwise = typeError loc ("unbound constructor " ++ show c)
+lookupConstructor prog loc c = 
+  maybe (typeError loc ("unbound constructor " ++ show c)) return $
+    lookupConstructor' prog c
 
 lookupCons :: [(Loc CVar, [TypeSet])] -> CVar -> Maybe [TypeSet]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
@@ -74,11 +80,11 @@ lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
-prog :: Lir.Prog -> Infer Globals
-prog prog = foldM (statement prog) Map.empty (Lir.statements prog)
+prog :: Prog -> Infer Globals
+prog prog = foldM (definition prog) Map.empty (progDefinitions prog)
 
-statement :: Prog -> Globals -> Lir.Statement -> Infer Globals
-statement prog env (vl,e) = do
+definition :: Prog -> Globals -> Definition -> Infer Globals
+definition prog env (Def vl e) = do
   t <- expr prog env Map.empty noLoc e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
@@ -86,28 +92,28 @@ statement prog env (vl,e) = do
           _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++show (pretty t))
   return $ foldl (\g (v,t) -> Map.insert (unLoc v) t g) env (zip vl tl)
 
-expr :: Prog -> Globals -> Locals -> SrcLoc -> Lir.Exp -> Infer Type
+expr :: Prog -> Globals -> Locals -> SrcLoc -> Exp -> Infer Type
 expr prog global env loc = exp where
-  exp (Lir.Int _) = return TyInt
-  exp (Lir.Var v) = lookup prog global env loc v
-  exp (Lir.Apply e1 e2) = do
+  exp (Int _) = return TyInt
+  exp (Var v) = lookup prog global env loc v
+  exp (Apply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
     apply prog global t1 t2 loc
-  exp (Lir.Let v e body) = do
+  exp (Let v e body) = do
     t <- exp e
     expr prog global (Map.insert v t env) loc body
-  exp (Lir.Case _ [] Nothing) = return TyVoid
-  exp (Lir.Case e [] (Just (v,body))) = exp (Lir.Let v e body) -- equivalent to a let
-  exp (Lir.Case e pl def) = do
+  exp (Case _ [] Nothing) = return TyVoid
+  exp (Case e [] (Just (v,body))) = exp (Let v e body) -- equivalent to a let
+  exp (Case e pl def) = do
     t <- exp e
     case t of
       TyVoid -> return TyVoid
       TyCons tv types -> do
-        (_, tvl, cases) <- lookupDatatype prog loc tv
-        let tenv = Map.fromList (zip tvl types)
+        td <- lookupDatatype prog loc tv
+        let tenv = Map.fromList (zip (dataTyVars td) types)
             caseType (c,vl,e')
-              | Just tl <- lookupCons cases c, a <- length tl =
+              | Just tl <- lookupCons (dataConses td) c, a <- length tl =
                   if length vl == a then
                     let tl' = map (subst tenv) tl in
                     case mapM unsingleton tl' of
@@ -123,7 +129,7 @@ expr prog global env loc = exp where
         defaultResults <- defaultType def
         joinList prog global loc (caseResults ++ defaultResults)
       _ -> typeError loc ("expected datatype, got "++show (pretty t))
-  exp (Lir.Cons c el) = do
+  exp (Cons c el) = do
     args <- mapM exp el
     (tv,vl,tl) <- lookupConstructor prog loc c
     result <- runMaybeT $ unifyList (applyTry prog global) tl args
@@ -131,22 +137,22 @@ expr prog global env loc = exp where
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       _ -> typeError loc (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args))
-  exp (Lir.Prim op el) = do
+  exp (Prim op el) = do
     Prims.primType loc op =<< mapM exp el
-  exp (Lir.Bind v e1 e2) = do
+  exp (Bind v e1 e2) = do
     t <- runIO =<< exp e1
     t <- expr prog global (Map.insert v t env) loc e2
     checkIO t
-  exp (Lir.Return e) = exp e >.= TyIO
-  exp (Lir.PrimIO p el) = mapM exp el >>= Prims.primIOType loc p >.= TyIO
-  exp (Lir.Spec e ts) = do
+  exp (Return e) = exp e >.= TyIO
+  exp (PrimIO p el) = mapM exp el >>= Prims.primIOType loc p >.= TyIO
+  exp (Spec e ts) = do
     t <- exp e
     result <- runMaybeT $ unify (applyTry prog global) ts t
     case result of
       Just (tenv,[]) -> return $ substVoid tenv ts
       Nothing -> typeError loc (show (pretty e)++" has type '"++show (pretty t)++"', which is incompatible with type specification '"++show (pretty ts))
       Just (_,leftovers) -> typeError loc ("type specification '"++show (pretty ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
-  exp (Lir.ExpLoc l e) = expr prog global env l e
+  exp (ExpLoc l e) = expr prog global env l e
 
 join :: Prog -> Globals -> SrcLoc -> Type -> Type -> Infer Type
 join prog global loc t1 t2 = do
@@ -185,19 +191,19 @@ resolve :: Prog -> Globals -> Var -> [Type] -> SrcLoc -> Infer (Maybe Overload)
 resolve prog global f args loc = do
   rawOverloads <- lookupOverloads prog loc f -- look up possibilities
   let call = show (pretty f <+> prettylist args)
-      prune o@(tl,_,_,_) = runMaybeT $ unifyList (applyTry prog global) tl args >. o
+      prune o = runMaybeT $ unifyList (applyTry prog global) (overArgs o) args >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
   let isSpecOf :: [TypeSet] -> [TypeSet] -> Infer Bool
       isSpecOf a b = isJust =.< runMaybeT (unifyListSkolem (applyTry prog global) b a)
-      isMinimal (tl,_,_,_) = allM (\ (tl',_,_,_) -> do
+      isMinimal (Over { overArgs = tl }) = allM (\ Over { overArgs = tl' } -> do
         less <- isSpecOf tl tl'
         more <- isSpecOf tl' tl
         return $ less || not more) overloads
-      options overs = concatMap (\ (tl,r,_,_) -> "\n  "++show (pretty (foldr TsFun r tl))) overs
+      options overs = concatMap (\ o -> "\n  "++show (pretty (foldr TsFun (overRet o) (overArgs o)))) overs
   filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
   case filtered of
     [] -> typeError loc (call++" doesn't match any overload, possibilities are"++options rawOverloads)
-    os -> case partition (\ (_,_,l,_) -> length l == length args) os of
+    os -> case partition ((length args ==) . length . overVars) os of
       ([],_) -> return Nothing -- all overloads are still partially applied
       ([o],[]) -> return (Just o) -- exactly one fully applied option
       (fully@(_:_),partially@(_:_)) -> typeError loc (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
@@ -218,7 +224,7 @@ apply' prog global f args loc = do
 -- TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
 cache :: Prog -> Globals -> Var -> [Type] -> Overload -> SrcLoc -> Infer Type
-cache prog global f args (types,r,vl,e) loc = do
+cache prog global f args (Over types r vl e) loc = do
   Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog global) types args
   let call = show (pretty f <+> prettylist args)
   unless (null leftovers) $ typeError loc (call++" uses invalid overload "++show (pretty (foldr TsFun r types))++"; can't overload on contravariant "++showContravariantVars leftovers)

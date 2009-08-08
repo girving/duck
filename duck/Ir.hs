@@ -40,7 +40,8 @@ data Decl
   deriving Show
 
 data Exp
-  = Int Int
+  = ExpLoc SrcLoc Exp
+  | Int Int
   | Var Var
   | Lambda Var Exp
   | Apply Exp Exp
@@ -49,7 +50,6 @@ data Exp
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
   | Prim Prim [Exp]
   | Spec Exp TypeSet
-  | ExpLoc SrcLoc Exp
     -- Monadic IO
   | Bind Var Exp Exp
   | Return Exp
