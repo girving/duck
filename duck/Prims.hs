@@ -19,23 +19,31 @@ import qualified Lir
 import ExecMonad
 import InferMonad
 
-prim :: SrcLoc -> Binop -> Value -> Value -> Exec Value
-prim _ IntAddOp (ValInt i) (ValInt j) = return $ ValInt (i+j)
-prim _ IntSubOp (ValInt i) (ValInt j) = return $ ValInt (i-j)
-prim _ IntMulOp (ValInt i) (ValInt j) = return $ ValInt (i*j)
-prim _ IntDivOp (ValInt i) (ValInt j) = return $ ValInt (div i j)
-prim _ IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True" else "False")) []
-prim _ IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
-prim loc op v1 v2 = execError loc ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
+binop :: SrcLoc -> Binop -> Value -> Value -> Exec Value
+binop _ IntAddOp (ValInt i) (ValInt j) = return $ ValInt (i+j)
+binop _ IntSubOp (ValInt i) (ValInt j) = return $ ValInt (i-j)
+binop _ IntMulOp (ValInt i) (ValInt j) = return $ ValInt (i*j)
+binop _ IntDivOp (ValInt i) (ValInt j) = return $ ValInt (div i j)
+binop _ IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True" else "False")) []
+binop _ IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
+binop loc op v1 v2 = execError loc ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
 
-primType :: SrcLoc -> Binop -> Type -> Type -> Infer Type
-primType _ IntAddOp TyInt TyInt = return TyInt
-primType _ IntSubOp TyInt TyInt = return TyInt
-primType _ IntMulOp TyInt TyInt = return TyInt
-primType _ IntDivOp TyInt TyInt = return TyInt
-primType _ IntEqOp TyInt TyInt = return $ TyCons (V "Bool") []
-primType _ IntLessOp TyInt TyInt = return $ TyCons (V "Bool") []
-primType loc op t1 t2 = typeError loc ("invalid arguments "++show (pretty t1)++", "++show (pretty t2)++" to "++show op)
+prim :: SrcLoc -> Prim -> [Value] -> Exec Value
+prim loc (Binop op) [v1,v2] = binop loc op v1 v2
+prim loc op vl = execError loc ("invailid primitive application: " ++ show op ++ " " ++ show (pretty vl))
+
+binopType :: SrcLoc -> Binop -> Type -> Type -> Infer Type
+binopType _ IntAddOp TyInt TyInt = return TyInt
+binopType _ IntSubOp TyInt TyInt = return TyInt
+binopType _ IntMulOp TyInt TyInt = return TyInt
+binopType _ IntDivOp TyInt TyInt = return TyInt
+binopType _ IntEqOp TyInt TyInt = return $ TyCons (V "Bool") []
+binopType _ IntLessOp TyInt TyInt = return $ TyCons (V "Bool") []
+binopType loc op t1 t2 = typeError loc ("invalid arguments "++show (pretty t1)++", "++show (pretty t2)++" to "++show op)
+
+primType :: SrcLoc -> Prim -> [Type] -> Infer Type
+primType loc (Binop op) [t1,t2] = binopType loc op t1 t2
+primType loc op t = typeError loc ("invalid primitive application: " ++ show op ++ " " ++ show (pretty t))
 
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError noLoc "exit failure"
@@ -47,11 +55,12 @@ primIOType _ TestAll [] = return $ TyCons (V "()") []
 primIOType loc p args = typeError loc ("invalid arguments"++show (prettylist args)++" to "++show p)
 
 prelude :: IO Lir.Prog
-prelude = Lir.prog $ decTuples ++ binops ++ io where
+prelude = Lir.prog $ decTuples ++ prims ++ io where
   [a,b] = take 2 standardVars
   ty = TsFun TsInt (TsFun TsInt (TsVar a))
   binops = map binop [IntAddOp, IntSubOp, IntMulOp, IntDivOp, IntEqOp, IntLessOp]
-  binop op = Ir.Over (Loc noLoc $ V (binopString op)) ty (Lambda a (Lambda b (Binop op (Var a) (Var b))))
+  binop op = Ir.Over (Loc noLoc $ V (binopString op)) ty (Lambda a (Lambda b (Prim (Binop op) [Var a, Var b])))
+  prims = binops
 
   decTuples = map decTuple [2..5]
   decTuple i = Data c vars [(c, map TsVar vars)] where

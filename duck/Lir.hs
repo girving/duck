@@ -4,7 +4,7 @@
 module Lir
   ( Prog(..)
   , Datatype, Overload, Statement
-  , Exp(..), Binop(..), PrimIO(..)
+  , Exp(..), Binop(..), Prim(..), PrimIO(..)
   , Ir.binopString
   , prog
   , union
@@ -27,7 +27,7 @@ import Pretty
 import Text.PrettyPrint
 import Data.List hiding (union)
 import qualified Ir
-import Ir (Binop, PrimIO)
+import Ir (Prim, Binop, PrimIO)
 
 -- Lifted IR data structures
 
@@ -49,7 +49,7 @@ data Exp
   | Let Var Exp Exp
   | Cons CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
-  | Binop Binop Exp Exp
+  | Prim Prim [Exp]
   | Spec Exp TypeSet
   | ExpLoc SrcLoc Exp
     -- Monadic IO
@@ -170,10 +170,9 @@ expr locals (Ir.Case e pl def) = do
   pl <- mapM (\ (c,vl,e) -> expr (foldl (flip Set.insert) locals vl) e >.= \e -> (c,vl,e)) pl
   def <- mapM (\ (v,e) -> expr (Set.insert v locals) e >.= \e -> (v,e)) def
   return $ Case e pl def
-expr locals (Ir.Binop op e1 e2) = do
-  e1 <- expr locals e1
-  e2 <- expr locals e2
-  return $ Binop op e1 e2
+expr locals (Ir.Prim prim el) = do
+  el <- mapM (expr locals) el
+  return $ Prim prim el
 expr locals (Ir.Bind v e rest) = do
   e <- expr locals e
   rest <- expr (Set.insert v locals) rest
@@ -213,7 +212,7 @@ free locals e = Set.toList (Set.intersection locals (f e)) where
   f (Case e pl def) = Set.unions (f e
     : maybe [] (\ (v,e) -> [Set.delete v (f e)]) def
     ++ [f e Set.\\ Set.fromList vl | (_,vl,e) <- pl])
-  f (Binop _ e1 e2) = Set.union (f e1) (f e2)
+  f (Prim _ el) = Set.unions (map f el)
   f (Bind v e rest) = Set.union (f e) (Set.delete v (f rest))
   f (Return e) = f e
   f (PrimIO _ el) = Set.unions (map f el)
@@ -257,7 +256,7 @@ revert (Apply e1 e2) = Ir.Apply (revert e1) (revert e2)
 revert (Let v e rest) = Ir.Let v (revert e) (revert rest)
 revert (Cons c el) = Ir.Cons c (map revert el)
 revert (Case e pl def) = Ir.Case (revert e) [(c,vl,revert e) | (c,vl,e) <- pl] (fmap (\ (v,e) -> (v,revert e)) def)
-revert (Binop op e1 e2) = Ir.Binop op (revert e1) (revert e2)
+revert (Prim prim el) = Ir.Prim prim (map revert el)
 revert (Bind v e rest) = Ir.Bind v (revert e) (revert rest)
 revert (Return e) = Ir.Return (revert e)
 revert (PrimIO p el) = Ir.PrimIO p (map revert el)

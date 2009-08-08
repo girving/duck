@@ -131,10 +131,8 @@ expr prog global env loc = exp where
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       _ -> typeError loc (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args))
-  exp (Lir.Binop op e1 e2) = do
-    t1 <- exp e1
-    t2 <- exp e2
-    Prims.primType loc op t1 t2
+  exp (Lir.Prim op el) = do
+    Prims.primType loc op =<< mapM exp el
   exp (Lir.Bind v e1 e2) = do
     t <- runIO =<< exp e1
     t <- expr prog global (Map.insert v t env) loc e2

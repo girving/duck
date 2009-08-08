@@ -114,11 +114,10 @@ expr prog global env loc = exp where
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       _ -> execError loc (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) 
-  exp (Lir.Binop op e1 e2) = do
-    (d1,t1) <- exp e1
-    (d2,t2) <- exp e2
-    d <- Prims.prim loc op d1 d2
-    t <- liftInfer $ Prims.primType loc op t1 t2
+  exp (Lir.Prim op el) = do
+    (dl,tl) <- unzip =.< mapM exp el
+    d <- Prims.prim loc op dl
+    t <- liftInfer $ Prims.primType loc op tl
     return (d,t)
   exp (Lir.Bind v e1 e2) = do
     d <- exp e1

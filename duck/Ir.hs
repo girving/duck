@@ -5,6 +5,7 @@ module Ir
   ( Decl(..)
   , Exp(..)
   , Binop(..)
+  , Prim(..)
   , PrimIO(..)
   , prog
   , binopString
@@ -46,7 +47,7 @@ data Exp
   | Let Var Exp Exp
   | Cons CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
-  | Binop Binop Exp Exp
+  | Prim Prim [Exp]
   | Spec Exp TypeSet
   | ExpLoc SrcLoc Exp
     -- Monadic IO
@@ -62,6 +63,10 @@ data Binop
   | IntDivOp
   | IntEqOp
   | IntLessOp
+  deriving Show
+
+data Prim
+  = Binop Binop
   deriving Show
 
 data PrimIO
@@ -157,7 +162,7 @@ expr env s (Ast.Lambda pl e) = do
   (vl, s, m) <- matches env s pl
   e <- expr env s e
   return $ foldr Lambda (m (map Var vl) e) vl
-expr env s (Ast.Apply f args) =do
+expr env s (Ast.Apply f args) = do
   f <- expr env s f
   args <- mapM (expr env s) args
   return $ foldl' Apply f args
@@ -321,8 +326,10 @@ instance Pretty Exp where
   pretty' (Cons c args) | istuple c = (1,
     hcat $ intersperse (text ", ") $ map (guard 2) args)
   pretty' (Cons c args) = (50, pretty c <+> sep (map (guard 51) args))
-  pretty' (Binop op e1 e2) | prec <- binopPrecedence op = (prec,
+  pretty' (Prim (Binop op) [e1,e2]) | prec <- binopPrecedence op = (prec,
     guard prec e1 <+> text (binopString op) <+> guard prec e2)
+  pretty' (Prim prim el) = (50,
+    pretty prim <+> prettylist el)
   pretty' (Bind v e1 e2) = (6,
     pretty v <+> text "<-" <+> guard 0 e1 $$ guard 0 e2)
   pretty' (Return e) = (6, text "return" <+> guard 7 e)
@@ -330,6 +337,9 @@ instance Pretty Exp where
   pretty' (PrimIO p args) = (50, guard 50 p <+> prettylist args)
   pretty' (ExpLoc _ e) = pretty' e
   -- pretty' (ExpLoc l e) = fmap (text "{-@" <+> text (show l) <+> text "-}" <+>) $ pretty' e
+
+instance Pretty Prim where
+  pretty' p = (100, text (show p))
 
 instance Pretty PrimIO where
   pretty' p = (100, text (show p))
