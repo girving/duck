@@ -30,7 +30,6 @@ import Data.Function
 import qualified Data.Foldable as Fold
 import GHC.Exts
 import Control.Monad hiding (guard)
-import Data.Monoid
 
 data Decl
   = LetD (Loc Var) Exp
@@ -80,41 +79,58 @@ data Env = Env
   { envPrecs :: PrecEnv
   }
 
-prog_vars :: Ast.Prog -> InScopeSet
-prog_vars = foldl' decl_vars Set.empty . map unLoc
-
-decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
-decl_vars s (Ast.SpecD (Loc _ v) _) = Set.insert v s 
-decl_vars s (Ast.DefD (Loc _ v) _ _) = Set.insert v s 
-decl_vars s (Ast.LetD p _) = pattern_vars' s p
-decl_vars s (Ast.Data _ _ _) = s
-decl_vars s (Ast.Infix _ _) = s
-
-pattern_vars' :: InScopeSet -> Ast.Pattern -> InScopeSet
-pattern_vars' s p = Set.union s (Map.keysSet $ pattern_vars noLoc Map.empty p)
-
-pattern_vars :: SrcLoc -> Map Var SrcLoc -> Ast.Pattern -> Map Var SrcLoc
-pattern_vars _ s Ast.PatAny = s
-pattern_vars l s (Ast.PatVar v) = Map.alter (Just . maybe l (flip mappend l)) v s
-pattern_vars l s (Ast.PatCons _ pl) = foldl' (pattern_vars l) s pl
-pattern_vars l s (Ast.PatOps o) = Fold.foldl' (pattern_vars l) s o
-pattern_vars l s (Ast.PatList pl) = foldl' (pattern_vars l) s pl
-pattern_vars l s (Ast.PatSpec p _) = pattern_vars l s p
-pattern_vars l s (Ast.PatLambda pl p) = foldl' (pattern_vars l) (pattern_vars l s p) pl
-pattern_vars _ s (Ast.PatLoc l p) = pattern_vars l s p
-
-prog_precs :: Ast.Prog -> PrecEnv
-prog_precs = foldl' set_precs Map.empty where
-  -- TODO: error on duplicates
-  set_precs s (Loc _ (Ast.Infix p vl)) = foldl' (\s v -> Map.insert v p s) s vl
-  set_precs s _ = s
-
 -- For now, we use the Either String monad to represent errors during Ast -> Ir conversion.
 -- TODO: This should be infused with location information and possibly replaced with a custom monad.
 type E = Either String
 
 irError :: String -> E a
 irError = Left
+
+prog_vars :: Ast.Prog -> InScopeSet
+prog_vars = foldl' decl_vars Set.empty . map unLoc
+
+decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
+decl_vars s (Ast.SpecD (Loc _ v) _) = Set.insert v s 
+decl_vars s (Ast.DefD (Loc _ v) _ _) = Set.insert v s 
+decl_vars s (Ast.LetD p _) = pattern_vars s p
+decl_vars s (Ast.Data _ _ _) = s
+decl_vars s (Ast.Infix _ _) = s
+
+pattern_vars :: InScopeSet -> Ast.Pattern -> InScopeSet
+pattern_vars s Ast.PatAny = s
+pattern_vars s (Ast.PatVar v) = Set.insert v s
+pattern_vars s (Ast.PatCons _ pl) = foldl' pattern_vars s pl
+pattern_vars s (Ast.PatOps o) = Fold.foldl' pattern_vars s o
+pattern_vars s (Ast.PatList pl) = foldl' pattern_vars s pl
+pattern_vars s (Ast.PatSpec p _) = pattern_vars s p
+pattern_vars s (Ast.PatLambda pl p) = foldl' pattern_vars (pattern_vars s p) pl
+pattern_vars s (Ast.PatLoc _ p) = pattern_vars s p
+
+unique_pattern_vars :: SrcLoc -> Ast.Pattern -> E (Map Var SrcLoc)
+unique_pattern_vars l p = unique_pattern_vars' l Map.empty p
+
+unique_patterns_vars :: SrcLoc -> [Ast.Pattern] -> E (Map Var SrcLoc)
+unique_patterns_vars l pl = foldM (unique_pattern_vars' l) Map.empty pl
+
+unique_pattern_vars' :: SrcLoc -> Map Var SrcLoc -> Ast.Pattern -> E (Map Var SrcLoc)
+unique_pattern_vars' _ s Ast.PatAny = return s
+unique_pattern_vars' l s (Ast.PatVar v) = case Map.lookup v s of
+  Nothing -> return $ Map.insert v l s
+  Just l' -> irError (show l++": duplicate definition of '"++show (pretty v)++"', previously declared at "++show l')
+unique_pattern_vars' l s (Ast.PatCons _ pl) = foldM (unique_pattern_vars' l) s pl
+unique_pattern_vars' l s (Ast.PatOps o) = Fold.foldlM (unique_pattern_vars' l) s o
+unique_pattern_vars' l s (Ast.PatList pl) = foldM (unique_pattern_vars' l) s pl
+unique_pattern_vars' l s (Ast.PatSpec p _) = unique_pattern_vars' l s p
+unique_pattern_vars' l s (Ast.PatLambda pl p) =do
+  s <- unique_pattern_vars' l s p
+  foldM (unique_pattern_vars' l) s pl
+unique_pattern_vars' _ s (Ast.PatLoc l p) = unique_pattern_vars' l s p
+
+prog_precs :: Ast.Prog -> PrecEnv
+prog_precs = foldl' set_precs Map.empty where
+  -- TODO: error on duplicates
+  set_precs s (Loc _ (Ast.Infix p vl)) = foldl' (\s v -> Map.insert v p s) s vl
+  set_precs s _ = s
 
 prog :: [Loc Ast.Decl] -> IO [Decl]
 prog p = either die return (decls p) where
@@ -144,14 +160,13 @@ prog p = either die return (decls p) where
     e <- expr env s e
     (LetD (Loc l v) e :) =.< decls rest
   decls (Loc l (Ast.LetD p e) : rest) = do
+    vars <- unique_pattern_vars l p
     (_,_,m) <- match env s p
     e <- expr env s e
-    let d = case vars of
+    let d = case map (\ (v,l) -> Loc l v) (Map.toList vars) of
               [v] -> LetD v (m e (Var (unLoc v)))
-              vl -> LetM vl (m e (Cons (tupleCons vars) (map (Var . unLoc) vars)))
+              vl -> LetM vl (m e (Cons (tupleCons vl) (map (Var . unLoc) vl)))
     (d :) =.< decls rest
-    where
-    vars = map (uncurry (flip Loc)) (Map.toList (pattern_vars l Map.empty p))
   decls (Loc _ (Ast.Data t args cons) : rest) = (Data t args cons :) =.< decls rest
   decls (Loc _ (Ast.Infix _ _) : rest) = decls rest
 
@@ -159,6 +174,7 @@ expr :: Env -> InScopeSet -> Ast.Exp -> E Exp
 expr _ _ (Ast.Int i) = return $ Int i
 expr _ _ (Ast.Var v) = return $ Var v
 expr env s (Ast.Lambda pl e) = do
+  unique_patterns_vars noLoc pl
   (vl, s, m) <- matches env s pl
   e <- expr env s e
   return $ foldr Lambda (m (map Var vl) e) vl
@@ -168,10 +184,12 @@ expr env s (Ast.Apply f args) = do
   return $ foldl' Apply f args
 expr env s (Ast.Let p e c) = do
   e <- expr env s e
+  unique_pattern_vars noLoc p
   (_,s',m) <- match env s p
   c <- expr env s' c
   return $ m e c
 expr env s (Ast.Def f args body c) = do
+  unique_patterns_vars noLoc args
   (vl, s', m) <- matches env s args
   body <- expr env s' body
   c <- expr env (Set.insert f s) c
@@ -224,7 +242,11 @@ matches env s (p:pl) = do
 -- Part (3) is handled by building up a stack of unprocessed expressions and an associated
 -- set of pattern stacks, and then iteratively reducing the set of possibilities.
 cases :: Env -> InScopeSet -> Exp -> [(Ast.Pattern, Ast.Exp)] -> E Exp
-cases env s e arms = reduce s [e] (map (\ (p,e) -> p :. Base e) arms) where 
+cases env s e arms = do
+  mapM_ (unique_pattern_vars noLoc . fst) arms -- check for duplicate variables
+  reduce s [e] (map (\ (p,e) -> p :. Base e) arms)
+
+  where 
 
   -- reduce takes n unmatched expressions and a list of n-tuples (lists) of patterns, and
   -- iteratively reduces the list of possibilities by matching each expression in turn.  This is

@@ -6,7 +6,7 @@ ALEX = alex
 ALEXFLAGS = -g
 
 OTHERS = Parse.hs Lex.hs
-TESTS = basic layout curry #match
+TESTS = basic layout curry match
 TESTS_C = apply prelude ops null
 
 all: duck

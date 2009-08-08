@@ -22,12 +22,3 @@ r x = case x of
   w -> 3
 
 test_r = assert \ r 4 == 1
-
--- Verify that repeated variables become unification constraints
-
-h x = case x of
-  y,y -> y
-  y,z -> 10*y+z
-
-test_h1 = assert \ h (7,7) == 7
-test_h2 = assert \ h (2,3) == 23
