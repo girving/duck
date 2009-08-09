@@ -19,11 +19,25 @@ id x = x
 
 f $ x = f x
 
+-------- macros
+
+-- macro Delayed a = ...
+-- type Delay a = () -> a
+
+force :: (() -> a) -> a
+force x = x ()
+
+delay :: Delayed a -> (() -> a)
+delay x = x
+
 --------- basic types and related functions
 
 ---- unit
 
 data () of ()
+
+(==) :: () -> () -> Bool
+(==) _ _ = True
 
 ---- bool
 
@@ -32,20 +46,19 @@ data Bool of False ; True
 bool :: Bool -> Bool
 bool x = x
 
-(if) :: a -> b -> b -> b
-(if) c x y = case bool c of
+(if) :: a -> Delayed b -> Delayed b -> b
+(if) c x y = force \ case bool c of
   True -> x
   False -> y
 
 not :: a -> Bool
 not x = if x then False else True
 
--- TODO: && needs to be short circuiting
-(&&) :: a -> a -> a
-x && y = if x then y else x
+(&&) :: a -> Delayed a -> a
+x && y = if x then force y else x
 
-(||) :: a -> a -> a
-x || y = if x then x else y
+(||) :: a -> Delayed a -> a
+x || y = if x then x else force y
 
 (==) :: Bool -> Bool -> Bool
 x == y = case x of

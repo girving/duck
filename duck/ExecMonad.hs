@@ -7,8 +7,6 @@ module ExecMonad
   , runExec
   , execError
   , liftInfer
-  , GlobalTypes
-  , getGlobalTypes
   ) where
 
 -- Execution tracing monad.  This accomplishes
@@ -21,41 +19,35 @@ import Value
 import SrcLoc
 import Control.Monad.State hiding (guard)
 import Control.Exception
-import Control.Arrow hiding ((<+>))
 import Util
 import CallStack
 import InferMonad hiding (withFrame)
-import Type
+import qualified Lir
 
-type GlobalTypes = TypeEnv
-type ExecState = (CallStack TValue, (GlobalTypes, FunctionInfo))
-
-newtype Exec a = Exec { unExec :: StateT ExecState IO a }
+newtype Exec a = Exec { unExec :: StateT (CallStack TValue) IO a }
   deriving (Monad, MonadIO, MonadInterrupt)
 
 withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
 withFrame f args loc e =
   handleE (\ (e :: AsyncException) -> execError loc (show e))
   (Exec (do
-    (s,_) <- get
-    modify (first (CallFrame f args loc :))
+    s <- get
+    put (CallFrame f args loc : s)
     r <- unExec e
-    modify (first (const s))
+    put s
     return r))
 
-runExec :: (GlobalTypes, FunctionInfo) -> Exec a -> IO a
-runExec info e = evalStateT (unExec e) ([],info)
+runExec :: Exec a -> IO a
+runExec e = evalStateT (unExec e) []
 
 execError :: SrcLoc -> String -> Exec a
-execError loc msg = Exec $ get >>= \ (s,_) ->
+execError loc msg = Exec $ get >>= \s ->
   liftIO (die (showStack s ++ "RuntimeError: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
 
-liftInfer :: Infer a -> Exec a
-liftInfer infer = Exec $ do
-  (_,(_,info)) <- get
-  (r,info) <- liftIO $ runInfer info infer
-  modify (second (second (const info)))
+liftInfer :: Lir.Prog -> Infer a -> Exec a
+liftInfer prog infer = Exec $ do
+  s <- get
+  let info = Lir.progOverloads prog
+  (r,_info') <- liftIO $ runInfer (mapStackArgs snd s) info infer
+  -- when (info /= info') $ die (showStack s ++ "RuntimeError: inference changed overload table")
   return r
-
-getGlobalTypes :: Exec GlobalTypes
-getGlobalTypes = Exec $ get >.= fst. snd

@@ -94,12 +94,12 @@ main = do
   ir <- phase PIr (Ir.prog ast)
   lir <- phase PLir (Lir.prog ir)
   lir <- phase' PLink (Lir.union prelude lir)
-  info <- phase PInfer (runInfer Map.empty $ Infer.prog lir)
-  env <- phase PEnv (runExec info $ Interp.prog lir)
+  lir <- phase PInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
+  env <- phase PEnv (runExec $ Interp.prog lir)
 
   unless (compileOnly flags) $ do
     unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
-    Interp.main lir env info
+    Interp.main lir env
 
 -- for ghci use
 run :: String -> IO ()

@@ -225,6 +225,7 @@ tscons :: CVar -> [TypeSet] -> TypeSet
 tscons (V "IO") [t] = TsIO t
 tscons (V "Int") [] = TsInt
 tscons (V "Void") [] = TsVoid
+tscons (V "Delayed") [t] = TsTrans Delayed t
 tscons c args = TsCons c args
 
 var :: Loc Token -> Var

@@ -35,6 +35,9 @@ instance Pretty t => Pretty [t] where
 instance (Pretty s, Pretty t) => Pretty (s,t) where
   pretty (s,t) = pretty s $$ pretty t
 
+instance Pretty () where
+  pretty' () = (100, empty)
+
 instance Pretty Int where
   pretty' i = (100, int i)
 

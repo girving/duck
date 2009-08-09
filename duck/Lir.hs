@@ -1,10 +1,12 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | Duck Lifted Intermediate Representation
 
 module Lir
   ( Prog(..)
   , Datatype(..), Overload(..), Definition(..)
+  , Overloads
   , Exp(..), Binop(..), Prim(..), PrimIO(..)
+  , overTypes
   , Ir.binopString
   , prog
   , union
@@ -23,6 +25,8 @@ import Data.Traversable (mapM)
 import Var
 import Util
 import SrcLoc
+import Ptrie (Ptrie)
+import qualified Ptrie
 import Pretty
 import Text.PrettyPrint
 import Data.List hiding (union)
@@ -33,9 +37,11 @@ import Ir (Prim, Binop, PrimIO)
 
 data Prog = Prog
   { progDatatypes :: Map CVar Datatype
-  , progFunctions :: Map Var [Overload]
+  , progFunctions :: Map Var [Overload TypeSet]
   , progGlobals :: Set Var -- used to generate fresh variables
   , progConses :: Map Var CVar -- map constructors to datatypes (type inference will make this go away)
+  , progOverloads :: Map Var Overloads -- set after inference
+  , progGlobalTypes :: TypeEnv -- set after inference
   , progDefinitions :: [Definition] }
 
 data Datatype = Data
@@ -44,12 +50,14 @@ data Datatype = Data
   , dataConses :: [(Loc CVar, [TypeSet])]
   }
 
-data Overload = Over
-  { overArgs :: [TypeSet]
-  , overRet :: TypeSet
+data Overload t = Over
+  { overArgs :: [TransType t]
+  , overRet :: t
   , overVars :: [Var]
-  , overBody :: Exp
+  , overBody :: Maybe Exp
   }
+
+type Overloads = Ptrie Type (Maybe Trans) (Overload Type)
 
 data Definition = Def
   { defVars :: [Loc Var]
@@ -64,18 +72,21 @@ data Exp
   | Let Var Exp Exp
   | Cons CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
-  | Prim Prim [Exp]
   | Spec Exp TypeSet
+  | Prim Prim [Exp]
     -- Monadic IO
   | Bind Var Exp Exp
   | Return Exp
   | PrimIO PrimIO [Exp]
   deriving Show
 
+overTypes :: Overload t -> [t]
+overTypes = map snd . overArgs
+
 -- Lambda lifting: IR to Lifted IR conversion
 
 emptyProg :: Prog
-emptyProg = Prog Map.empty Map.empty Set.empty Map.empty []
+emptyProg = Prog Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
 
 prog :: [Ir.Decl] -> IO Prog
 prog decls = check $ flip execState emptyProg $ do
@@ -133,13 +144,13 @@ definition :: [Loc Var] -> Exp -> State Prog ()
 definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
 
 -- |Add a global overload
-overload :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> State Prog ()
-overload v tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over tl r vl e] (progFunctions p) }
+overload :: Var -> [TypeSetArg] -> TypeSet -> [Var] -> Exp -> State Prog ()
+overload v tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over tl r vl (Just e)] (progFunctions p) }
 overload v tl _ vl _ = error ("overload arity mismatch for "++show (pretty v)++": argument types "++show (prettylist tl)++", variables "++show (prettylist vl)) 
 
 -- |Add an unoverloaded global function
 function :: Var -> [Var] -> Exp -> State Prog ()
-function v vl e = overload v tl r vl e where
+function v vl e = overload v (map ((,) Nothing) tl) r vl e where
   (tl,r) = generalType vl
 
 -- |Unwrap a lambda as far as we can
@@ -154,8 +165,8 @@ generalType vl = (tl,r) where
   r : tl = map TsVar (take (length vl + 1) standardVars)
 
 -- |Unwrap a type/lambda combination as far as we can
-unwrapTypeLambda :: TypeSet -> Ir.Exp -> ([TypeSet], TypeSet, [Var], Ir.Exp)
-unwrapTypeLambda (TsFun t tl) (Ir.Lambda v e) = (t:tl', r, v:vl, e') where
+unwrapTypeLambda :: TypeSet -> Ir.Exp -> ([TypeSetArg], TypeSet, [Var], Ir.Exp)
+unwrapTypeLambda (TsFun t tl) (Ir.Lambda v e) = (typeArg t:tl', r, v:vl, e') where
   (tl', r, vl, e') = unwrapTypeLambda tl e
 unwrapTypeLambda t e = ([], t, [], e)
 
@@ -241,6 +252,8 @@ union p1 p2 = Prog
   , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
   , progGlobals = Set.union (progGlobals p1) (progGlobals p2)
   , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1)
+  , progOverloads = Map.unionWithKey conflict (progOverloads p2) (progOverloads p1)
+  , progGlobalTypes = Map.unionWithKey conflict (progGlobalTypes p2) (progGlobalTypes p1)
   , progDefinitions = progDefinitions p1 ++ progDefinitions p2 }
   where
   conflict v _ _ = error ("conflicting datatype declarations for "++show (pretty v))
@@ -248,20 +261,33 @@ union p1 p2 = Prog
 -- Pretty printing
 
 instance Pretty Prog where
-  pretty (Prog datatypes functions _ _ definitions) = vcat $
-       [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c) <- Map.toList datatypes]
-    ++ [function v tl r vl e | (v,o) <- Map.toList functions, Over tl r vl e <- o]
-    ++ map definition definitions
+  pretty prog = vcat $
+       [text "-- datatypes"]
+    ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c) <- Map.toList (progDatatypes prog)]
+    ++ [text "-- functions"]
+    ++ [function v tl r vl e | (v,o) <- Map.toList (progFunctions prog), Over tl r vl e <- o]
+    ++ [text "-- overloads"]
+    ++ [pretty (progOverloads prog)]
+    ++ [text "-- definitions"]
+    ++ map definition (progDefinitions prog)
     where
-    function :: Var -> [TypeSet] -> TypeSet -> [Var] -> Exp -> Doc
-    function v tl r vl e =
-      pretty v <+> text "::" <+> hsep (intersperse (text "->") (map (guard 2) (tl++[r]))) $$
+    function :: Var -> [TypeSetArg] -> TypeSet -> [Var] -> Maybe Exp -> Doc
+    function v tl r _ Nothing =
+      pretty v <+> text "::" <+> hsep (intersperse (text "->") (map (guard 2) (tl++[(Nothing,r)])))
+    function v tl r vl (Just e) =
+      function v tl r vl Nothing $$
       prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
     definition (Def vl e) =
       hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
 
 instance Pretty Exp where
   pretty' = pretty' . revert
+
+instance Pretty (Map Var Overloads) where
+  pretty info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
+    pr f tl (Over _ r _ Nothing) = pretty f <+> prettylist tl <+> text "::" <+> pretty r
+    pr f tl o@(Over _ _ vl (Just e)) = pr f tl o{ overBody = Nothing } $$
+      prettylist (f : vl) <+> equals <+> nest 2 (pretty e)
 
 revert :: Exp -> Ir.Exp
 revert (Int i) = Ir.Int i

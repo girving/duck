@@ -1,0 +1,48 @@
+import prelude
+
+exec :: Delayed a -> a
+exec x = force x
+
+loop :: Int -> Bool
+loop x = loop x
+
+bad_if :: Bool -> a -> a -> a
+bad_if c x y = (if) c x y
+
+ss_if :: Bool -> Delayed a -> Delayed a -> a
+ss_if b x y = force (bad_if b x y)
+
+ss_and :: Bool -> Delayed Bool -> Bool
+ss_and c x = case c of 
+  True -> force x
+  False -> c
+
+ss_or :: Bool -> Delayed Bool -> Bool
+ss_or c x = case c of
+  True -> c
+  False -> force x
+
+ambiguous :: Delayed Bool -> ()
+ambiguous x = ()
+ambiguous :: Delayed Int -> ()
+ambiguous x = ()
+
+depend :: Bool -> Delayed Bool -> Bool
+depend x y = x
+
+depend :: Int -> Int -> Int
+depend x y = x + y
+
+lift_or x = ss_or x
+
+test_exec = assert \ 3 == exec 3
+test_delayed = assert \ 3 == force (delay 3)
+test_if = assert \ ss_if True True (loop 0)
+test_or = assert \ ss_or True (loop 1)
+test_ambig1 = assert \ ambiguous 5 == ()
+test_ambig2 = assert \ ambiguous (loop 0) == ()
+test_depend1 = assert \ depend True (loop 1)
+test_depend2 = assert \ depend 1 2 == 3
+test_liftor = assert \ lift_or True (loop 1)
+
+main = testAll

@@ -4,6 +4,7 @@ module CallStack
   ( CallStack
   , CallFrame(..)
   , showStack
+  , mapStackArgs
   ) where
 
 import Prelude hiding (catch)
@@ -23,3 +24,6 @@ showStack :: Pretty a => CallStack a -> String
 showStack s = unlines (h : reverse (map p s)) where
   h = "Traceback (most recent call last):"
   p (CallFrame f args loc) = "  " ++ show loc ++ " in "++show (pretty f)++' ' : show (prettylist args)
+
+mapStackArgs :: (a -> b) -> CallStack a -> CallStack b
+mapStackArgs f = map (\c -> c { callArgs = map f (callArgs c) })

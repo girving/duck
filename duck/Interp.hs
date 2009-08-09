@@ -17,13 +17,12 @@ import Type
 import Value
 import SrcLoc
 import Pretty
-import qualified Lir
-import Lir (Overload, Prog)
+import Lir hiding (prog)
+import qualified Ptrie
 import qualified Prims
 import qualified Data.Map as Map
 import Util
 import ExecMonad
-import InferMonad hiding (withFrame)
 import Control.Monad hiding (guard)
 import Control.Monad.Trans
 import qualified Infer
@@ -38,7 +37,12 @@ lookup :: Prog -> Globals -> Locals -> SrcLoc -> Var -> Exec TValue
 lookup prog global env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
-  | Just _ <- Map.lookup v (Lir.progFunctions prog) = return (ValClosure v [], TyClosure [(v,[])]) -- if we find overloads, make a new closure
+  | Just o <- Map.lookup v (progOverloads prog) = return (
+      ValClosure v [] o, -- if we find overloads, make a new closure
+      TyClosure [(v,[])])
+  | Just (o:_) <- Map.lookup v (progFunctions prog) = let tt = fst $ head $ overArgs o in return (
+      ValClosure v [] (Ptrie.empty tt), -- this should never be used
+      TyClosure [(v,[])])
   | otherwise = execError loc ("unbound variable " ++ show v)
 
 lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [TypeSet])
@@ -49,11 +53,11 @@ lookupConstructor prog c = maybe (execError noLoc ("unbound constructor " ++ sho
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
-prog :: Lir.Prog -> Exec Globals
-prog prog = foldM (definition prog) Map.empty (Lir.progDefinitions prog)
+prog :: Prog -> Exec Globals
+prog prog = foldM (definition prog) Map.empty (progDefinitions prog)
 
-definition :: Prog -> Globals -> Lir.Definition -> Exec Globals
-definition prog env (Lir.Def vl e) = do
+definition :: Prog -> Globals -> Definition -> Exec Globals
+definition prog env (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head vl) $ do -- XXX head
   d <- expr prog env Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
@@ -68,31 +72,29 @@ cast _ t x = do
   (d,_) <- x
   return (d,t)
 
-expr :: Prog -> Globals -> Locals -> SrcLoc -> Lir.Exp -> Exec TValue
+expr :: Prog -> Globals -> Locals -> SrcLoc -> Exp -> Exec TValue
 expr prog global env loc = exp where
-  exp (Lir.Int i) = return $ (ValInt i, TyInt)
-  exp (Lir.Var v) = lookup prog global env loc v
-  exp (Lir.Apply e1 e2) = do
+  exp (Int i) = return $ (ValInt i, TyInt)
+  exp (Var v) = lookup prog global env loc v
+  exp (Apply e1 e2) = do
     v1 <- exp e1
-    v2 <- exp e2
-    apply prog global v1 v2 loc
-  exp (Lir.Let v e body) = do
+    trans prog global env loc v1 e2
+  exp (Let v e body) = do
     d <- exp e
     expr prog global (Map.insert v d env) loc body
-  exp (Lir.Case _ [] Nothing) = execError loc ("pattern match failed: no cases")
-  exp (Lir.Case e [] (Just (v,body))) = exp (Lir.Let v e body) -- equivalent to a let
-  exp ce@(Lir.Case e pl def) = do
-    gt <- getGlobalTypes
-    t <- liftInfer $ Infer.expr prog gt (Map.map snd env) loc ce
+  exp (Case _ [] Nothing) = execError loc ("pattern match failed: no cases")
+  exp (Case e [] (Just (v,body))) = exp (Let v e body) -- equivalent to a let
+  exp ce@(Case e pl def) = do
+    t <- liftInfer prog $ Infer.expr prog (Map.map snd env) loc ce
     d <- exp e
     case d of
       (ValCons c dl, TyCons tv types) -> do
         case find (\ (c',_,_) -> c == c') pl of
           Just (_,vl,e') ->
             if a == length dl then do
-              td <- liftInfer $ Infer.lookupDatatype prog loc tv
-              let Just tl = Infer.lookupCons (Lir.dataConses td) c
-                  tenv = Map.fromList (zip (Lir.dataTyVars td) types)
+              td <- liftInfer prog $ Infer.lookupDatatype prog loc tv
+              let Just tl = Infer.lookupCons (dataConses td) c
+                  tenv = Map.fromList (zip (dataTyVars td) types)
                   tl' = map (substVoid tenv) tl
               cast prog t $ expr prog global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl (zip dl tl'))) loc e'
             else
@@ -103,7 +105,7 @@ expr prog global env loc = exp where
             Nothing -> execError loc ("pattern match failed: exp = " ++ show (pretty d) ++ ", cases = " ++ show pl)
             Just (v,e') -> cast prog t $ expr prog global (Map.insert v d env) loc e' 
       _ -> execError loc ("expected block, got " ++ show (pretty d))
-  exp (Lir.Cons c el) = do
+  exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el
     (tv,vl,tl) <- lookupConstructor prog c
     result <- runMaybeT $ unifyList (applyTry prog) tl types
@@ -111,57 +113,75 @@ expr prog global env loc = exp where
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       _ -> execError loc (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) 
-  exp (Lir.Prim op el) = do
+  exp (Prim op el) = do
     (dl,tl) <- unzip =.< mapM exp el
     d <- Prims.prim loc op dl
-    t <- liftInfer $ Prims.primType loc op tl
+    t <- liftInfer prog $ Prims.primType loc op tl
     return (d,t)
-  exp (Lir.Bind v e1 e2) = do
+  exp (Bind v e1 e2) = do
     d <- exp e1
-    global <- getGlobalTypes
-    t <- liftInfer $ Infer.expr prog global (Map.insert v (snd d) (Map.map snd env)) loc e2
+    t <- liftInfer prog $ Infer.expr prog (Map.insert v (snd d) (Map.map snd env)) loc e2
     return (ValBindIO v d e2, t)
-  exp (Lir.Return e) = do
+  exp (Return e) = do
     (d,t) <- exp e
     return (ValLiftIO d, TyIO t)
-  exp (Lir.PrimIO p el) = do
+  exp (PrimIO p el) = do
     (dl,tl) <- unzip =.< mapM exp el
-    t <- liftInfer $ Prims.primIOType loc p tl
+    t <- liftInfer prog $ Prims.primIOType loc p tl
     return (ValPrimIO p dl, TyIO t)
-  exp (Lir.Spec e ts) = do
+  exp (Spec e ts) = do
     (d,t) <- exp e
     result <- runMaybeT $ unify (applyTry prog) ts t
     case result of
       Just (tenv,[]) -> return (d,substVoid tenv ts)
       Nothing -> execError loc (show (pretty e)++" has type '"++show (pretty t)++"', which is incompatible with type specification '"++show (pretty ts))
       Just (_,leftovers) -> execError loc ("type specification '"++show (pretty ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
-  exp (Lir.ExpLoc l e) = expr prog global env l e
+  exp (ExpLoc l e) = expr prog global env l e
 
-apply :: Prog -> Globals -> TValue -> TValue -> SrcLoc -> Exec TValue
-apply prog global (ValClosure f args, ft) v2 loc = do
-  gt <- getGlobalTypes
-  t <- liftInfer $ Infer.apply prog gt ft (snd v2) loc
-  cast prog t $ apply' prog global f (args ++ [v2]) loc
-apply _ _ v1 _ loc = execError loc ("expected a -> b, got " ++ show (pretty v1))
+transExpr :: Locals -> Trans -> Exp -> Exec Value
+transExpr env Delayed e = return $ ValDelay env e
+
+trans :: Prog -> Globals -> Locals -> SrcLoc -> TValue -> Exp -> Exec TValue
+trans prog global env loc f@(ValClosure _ _ ov, _) e
+  | Left (Just tt) <- Ptrie.unPtrie ov = do
+  t <- liftInfer prog $ Infer.expr prog (Map.map snd env) loc e
+  a <- transExpr env tt e
+  let at = (a, transType tt t)
+  apply prog global f at t loc
+trans prog global env loc f e = do
+  a <- expr prog global env loc e
+  apply prog global f a (snd a) loc
+
+apply :: Prog -> Globals -> TValue -> TValue -> Type -> SrcLoc -> Exec TValue
+apply prog global (ValClosure f args ov, ft) a at loc = do
+  let args' = args ++ [a]
+  t <- case ft of
+    TyClosure tl -> return $ TyClosure (map (fmap (++ [at])) tl)
+    _ -> liftInfer prog $ Infer.apply prog ft at loc
+  case Ptrie.lookup [at] ov of 
+    Nothing -> execError loc ("unresolved overload: " ++ show (pretty f) ++ " " ++ show (prettylist (map snd args ++ [at])))
+    Just ov -> case Ptrie.unPtrie ov of
+      Left _ -> return (ValClosure f args' ov, t)
+      Right (Over _ t _ Nothing) -> return (ValClosure f args' ov, t)
+      Right (Over _ t vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList (zip vl args')) loc e
+apply prog global (ValDelay env e, TyFun (TyCons (V "()") []) t) (ValCons (V "()") [], TyCons (V "()") []) _ loc =
+  cast prog t $ expr prog global env loc e
+apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ show (pretty v) ++ " :: " ++ show (pretty t))
 
 applyTry :: Prog -> Type -> Type -> MaybeT Exec Type
 applyTry prog t1 t2 = do
-  global <- lift getGlobalTypes
-  mapMaybeT liftInfer (Infer.applyTry prog global t1 t2)
+  mapMaybeT (liftInfer prog) (Infer.applyTry prog t1 t2)
 
-resolve :: Prog -> Var -> [Type] -> SrcLoc -> Exec (Maybe Overload)
-resolve prog f args loc = do
-  global <- getGlobalTypes
-  liftInfer $ Infer.resolve prog global f args loc
-
+{- further resolution no longer necessary
 -- Overloaded function application
 apply' :: Prog -> Globals -> Var -> [TValue] -> SrcLoc -> Exec TValue
 apply' prog global f args loc = do
   let types = map snd args
-  overload <- resolve prog f types loc
+  overload <- liftInfer prog $ Infer.resolve prog f types loc
   case overload of
-    Nothing -> return (ValClosure f args, TyClosure [(f,types)])
-    Just o -> withFrame f args loc $ expr prog global (Map.fromList (zip (Lir.overVars o) args)) loc (Lir.overBody o)
+    Left _ -> return (ValClosure f args undefined, TyClosure [(f,types)])
+    Right o -> withFrame f args loc $ expr prog global (Map.fromList (zip (overVars o) args)) loc (overBody o)
+-}
 
 _typeof = typeof -- unused for now
 typeof :: Prog -> Value -> Exec Type
@@ -174,21 +194,22 @@ typeof prog (ValCons c args) = do
     Just (tenv,[]) -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
     _ -> execError noLoc ("failed to unify types "++show (prettylist tl)++" with "++show (prettylist tl'))
-typeof _ (ValClosure _ _) = return $ TyFun TyVoid TyVoid
+typeof _ (ValClosure _ _ _) = return $ TyFun TyVoid TyVoid
+typeof _ (ValDelay _ _) = return $ TyFun tyUnit TyVoid
 typeof _ (ValBindIO _ _ _) = return $ TyIO TyVoid
 typeof _ (ValPrimIO _ _) = return $ TyIO TyVoid
 typeof _ (ValLiftIO _) = return $ TyIO TyVoid
 
 -- IO and main
-main :: Prog -> Globals -> (GlobalTypes, FunctionInfo) -> IO ()
-main prog global info = runExec info $ do
+main :: Prog -> Globals -> IO ()
+main prog global = runExec $ do
   main <- lookup prog global Map.empty noLoc (V "main")
   _ <- runIO prog global Map.empty main
   return ()
 
 runIO :: Prog -> Globals -> Locals -> TValue -> Exec TValue
 runIO _ _ _ (ValLiftIO d, TyIO t) = return (d,t)
-runIO prog global _ (ValPrimIO Lir.TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
+runIO prog global _ (ValPrimIO TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
 runIO _ _ _ (ValPrimIO p args, TyIO t) = Prims.primIO p args >.= \d -> (d,t)
 runIO prog global env (ValBindIO v m e, TyIO t) = do
   d <- runIO prog global env m

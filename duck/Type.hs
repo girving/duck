@@ -1,10 +1,16 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | Duck Types
 
 module Type
   ( Type(..)
   , TypeSet(..)
+  , Trans(..)
+  , TransType, TypeArg, TypeSetArg
   , TypeEnv
+  , tyUnit
+  , transType
+  , typeArg
+  , argType
   , unify
   , unify''
   , unifyList
@@ -34,7 +40,7 @@ import Util
 -- |A concrete type (the types of values are always concrete)
 data Type
   = TyCons CVar [Type]
-  | TyClosure [(Var,[Type])] -- an intersection of one or more closures
+  | TyClosure [(Var,[Type])] -- ^ an intersection of one or more closures
   | TyFun Type Type
   | TyIO Type
   | TyInt
@@ -46,17 +52,41 @@ data Type
 data TypeSet
   = TsVar Var
   | TsCons CVar [TypeSet]
-  | TsClosure [(Var,[TypeSet])] -- an intersection of one or more closures
+  | TsClosure [(Var,[TypeSet])] -- ^ an intersection of one or more closures
   | TsFun TypeSet TypeSet
   | TsIO TypeSet
   | TsInt
   | TsVoid
+  | TsTrans Trans TypeSet -- ^ a (temporary) transparent macro transformer type
   deriving (Eq, Ord, Show)
+
+-- |Possible kinds of type macro transformers.
+data Trans 
+  = Delayed -- :: Delay
+  deriving (Eq, Ord, Show)
+
+type TransType t = (Maybe Trans, t)
+type TypeArg = TransType Type
+type TypeSetArg = TransType TypeSet
 
 type TypeEnv = Map Var Type
 
 -- |The type of functions which say how to apply closure types to types
 type Apply m = Type -> Type -> m Type
+
+tyUnit :: Type
+tyUnit = TyCons (V "()") []
+
+transType :: Trans -> Type -> Type
+transType Delayed = TyFun tyUnit
+
+typeArg :: TypeSet -> TypeSetArg
+typeArg (TsTrans c t) = (Just c, t)
+typeArg t = (Nothing, t)
+
+argType :: (Maybe Trans, Type) -> Type
+argType (Nothing, t) = t
+argType (Just c, t) = transType c t
 
 -- |Symmetric unify: @z <- intersect x y@ means that a value of type x or y
 -- can be safely viewed as having type z.
@@ -232,6 +262,7 @@ subst env (TsCons c tl) = TsCons c (map (subst env) tl)
 subst env (TsClosure fl) = TsClosure (map (second (map (subst env))) fl)
 subst env (TsFun t1 t2) = TsFun (subst env t1) (subst env t2)
 subst env (TsIO t) = TsIO (subst env t)
+subst env (TsTrans c t) = TsTrans c (subst env t)
 subst _ TsInt = TsInt
 subst _ TsVoid = TsVoid
 
@@ -242,6 +273,7 @@ substVoid env (TsCons c tl) = TyCons c (map (substVoid env) tl)
 substVoid env (TsClosure fl) = TyClosure (map (second (map (substVoid env))) fl)
 substVoid env (TsFun t1 t2) = TyFun (substVoid env t1) (substVoid env t2)
 substVoid env (TsIO t) = TyIO (substVoid env t)
+substVoid env (TsTrans c t) = transType c (substVoid env t)
 substVoid _ TsInt = TyInt
 substVoid _ TsVoid = TyVoid
 
@@ -253,6 +285,7 @@ occurs env v (TsCons _ tl) = any (occurs env v) tl
 occurs env v (TsClosure fl) = any (any (occurs env v) . snd) fl
 occurs env v (TsFun t1 t2) = occurs env v t1 || occurs env v t2
 occurs env v (TsIO t) = occurs env v t
+occurs env v (TsTrans _ t) = occurs env v t
 occurs _ _ TsInt = False
 occurs _ _ TsVoid = False
 
@@ -283,6 +316,7 @@ unsingleton' env (TsFun s t) = do
   t <- unsingleton' env t
   return $ TyFun s t
 unsingleton' env (TsIO t) = TyIO =.< unsingleton' env t
+unsingleton' env (TsTrans c t) = transType c =.< unsingleton' env t
 unsingleton' _ TsInt = return TyInt
 unsingleton' _ TsVoid = return TyVoid
 
@@ -296,6 +330,7 @@ skolemize (TsCons c tl) = TyCons c (map skolemize tl)
 skolemize (TsClosure fl) = TyClosure (map (second (map skolemize)) fl)
 skolemize (TsFun t1 t2) = TyFun (skolemize t1) (skolemize t2)
 skolemize (TsIO t) = TyIO (skolemize t)
+skolemize (TsTrans _ t) = skolemize t
 skolemize TsInt = TyInt
 skolemize TsVoid = TyVoid
 
@@ -310,6 +345,7 @@ contravariantVars = concatMap cv where
   vars (TsClosure fl) = concatMap (concatMap vars . snd) fl
   vars (TsFun t1 t2) = vars t1 ++ vars t2
   vars (TsIO t) = vars t
+  vars (TsTrans _ t) = vars t
   vars TsInt = []
   vars TsVoid = []
 
@@ -329,8 +365,13 @@ instance Pretty TypeSet where
   pretty' (TsClosure fl) = (50, hsep (List.intersperse (text "&") (map (\ (f,tl) -> guard 50 f <+> prettylist tl) fl)))
   pretty' (TsFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
   pretty' (TsIO t) = (1, text "IO" <+> guard 2 t)
+  pretty' (TsTrans c t) = (1, text (show c) <+> guard 2 t)
   pretty' TsInt = (100, text "Int")
   pretty' TsVoid = (100, text "Void")
 
 instance Pretty Type where
   pretty' = pretty' . singleton
+
+instance Pretty t => Pretty (Maybe Trans, t) where
+  pretty' (Nothing, t) = pretty' t
+  pretty' (Just c, t) = (1, text (show c) <+> guard 2 t)

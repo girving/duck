@@ -7,6 +7,7 @@ module Infer
   , apply
   , applyTry
   , resolve
+  , lookupOver
   , lookupDatatype
   , lookupCons
   , lookupConstructor'
@@ -22,6 +23,7 @@ import Data.List hiding (lookup, intersect)
 import qualified Data.List as List
 import Control.Monad.Error hiding (guard, join)
 import InferMonad
+import qualified Ptrie
 import Prelude hiding (lookup)
 import qualified Prims
 import Data.Maybe
@@ -38,15 +40,32 @@ import SrcLoc
 
 -- Some aliases for documentation purposes
 
-type Globals = TypeEnv
 type Locals = TypeEnv
 
 -- Utility functions
 
-lookup :: Prog -> Globals -> Locals -> SrcLoc -> Var -> Infer Type
-lookup prog global env loc v
+insertOver :: Var -> Overload Type -> Infer ()
+insertOver f o = do
+  --liftIO (putStrLn ("recorded "++show (pretty f)++" "++show (prettylist (overArgs o))++" = "++show (pretty (overRet o))))
+  updateInfer $ Ptrie.mapInsert f (overArgs o) o
+
+lookupOver :: Var -> [Type] -> Infer (Maybe (Either (Maybe Trans) (Overload Type)))
+lookupOver f tl = getInfer >.=
+  (fmap Ptrie.unPtrie . Ptrie.lookup tl <=< Map.lookup f)
+
+lookupOverTrans :: Var -> [Type] -> Infer [Maybe Trans]
+lookupOverTrans f tl = getInfer >.=
+  maybe [] (Ptrie.assocs tl) . Map.lookup f
+
+transOvers :: [Overload t] -> Int -> Maybe [Maybe Trans]
+transOvers [] _ = Nothing
+transOvers os n = if all (tt ==) tts then Just tt else Nothing 
+  where tt:tts = map (map fst . (take n) . overArgs) os
+
+lookup :: Prog -> Locals -> SrcLoc -> Var -> Infer Type
+lookup prog env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
-  | Just r <- Map.lookup v global = return r -- fall back to global definitions
+  | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
   | Just _ <- Map.lookup v (progFunctions prog) = return $ TyClosure [(v,[])] -- if we find overloads, make a new closure
   | otherwise = typeError loc ("unbound variable " ++ show v)
 
@@ -55,7 +74,7 @@ lookupDatatype prog loc tv
   | Just d <- Map.lookup tv (progDatatypes prog) = return d
   | otherwise = typeError loc ("unbound datatype constructor " ++ show tv)
 
-lookupOverloads :: Prog -> SrcLoc -> Var -> Infer [Overload]
+lookupOverloads :: Prog -> SrcLoc -> Var -> Infer [Overload TypeSet]
 lookupOverloads prog loc f
   | Just o <- Map.lookup f (progFunctions prog) = return o
   | otherwise = typeError loc ("unbound function " ++ show f)
@@ -80,29 +99,32 @@ lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
-prog :: Prog -> Infer Globals
-prog prog = foldM (definition prog) Map.empty (progDefinitions prog)
+prog :: Prog -> Infer Prog
+prog prog = do
+  prog <- foldM definition prog (progDefinitions prog)
+  info <- getInfer
+  return $ prog{ progOverloads = info }
 
-definition :: Prog -> Globals -> Definition -> Infer Globals
-definition prog env (Def vl e) = do
-  t <- expr prog env Map.empty noLoc e
+definition :: Prog -> Definition -> Infer Prog
+definition prog (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head vl) $ do -- XXX head
+  t <- expr prog Map.empty noLoc e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
           (_, TyCons c tl) | istuple c, length vl == length tl -> return tl
           _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++show (pretty t))
-  return $ foldl (\g (v,t) -> Map.insert (unLoc v) t g) env (zip vl tl)
+  return $ prog { progGlobalTypes = foldl (\g (v,t) -> Map.insert (unLoc v) t g) (progGlobalTypes prog) (zip vl tl) }
 
-expr :: Prog -> Globals -> Locals -> SrcLoc -> Exp -> Infer Type
-expr prog global env loc = exp where
+expr :: Prog -> Locals -> SrcLoc -> Exp -> Infer Type
+expr prog env loc = exp where
   exp (Int _) = return TyInt
-  exp (Var v) = lookup prog global env loc v
+  exp (Var v) = lookup prog env loc v
   exp (Apply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
-    apply prog global t1 t2 loc
+    apply prog t1 t2 loc
   exp (Let v e body) = do
     t <- exp e
-    expr prog global (Map.insert v t env) loc body
+    expr prog (Map.insert v t env) loc body
   exp (Case _ [] Nothing) = return TyVoid
   exp (Case e [] (Just (v,body))) = exp (Let v e body) -- equivalent to a let
   exp (Case e pl def) = do
@@ -118,104 +140,115 @@ expr prog global env loc = exp where
                     let tl' = map (subst tenv) tl in
                     case mapM unsingleton tl' of
                       Nothing -> typeError loc ("datatype declaration "++show (pretty tv)++" is invalid, constructor "++show (pretty c)++" has nonconcrete types "++show (prettylist tl'))
-                      Just tl -> expr prog global (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
+                      Just tl -> expr prog (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
                   else
                     typeError loc ("arity mismatch in pattern: "++show (pretty c)++" expected "++show a++" argument"++(if a == 1 then "" else "s")
                       ++" but got ["++concat (intersperse ", " (map (show . pretty) vl))++"]")
               | otherwise = typeError loc ("datatype "++show (pretty tv)++" has no constructor "++show (pretty c))
             defaultType Nothing = return []
-            defaultType (Just (v,e')) = expr prog global (Map.insert v t env) loc e' >.= \t -> [t]
+            defaultType (Just (v,e')) = expr prog (Map.insert v t env) loc e' >.= \t -> [t]
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
-        joinList prog global loc (caseResults ++ defaultResults)
+        joinList prog loc (caseResults ++ defaultResults)
       _ -> typeError loc ("expected datatype, got "++show (pretty t))
   exp (Cons c el) = do
     args <- mapM exp el
     (tv,vl,tl) <- lookupConstructor prog loc c
-    result <- runMaybeT $ unifyList (applyTry prog global) tl args
+    result <- runMaybeT $ unifyList (applyTry prog) tl args
     case result of
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       _ -> typeError loc (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args))
-  exp (Prim op el) = do
+  exp (Lir.Prim op el) =
     Prims.primType loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
     t <- runIO =<< exp e1
-    t <- expr prog global (Map.insert v t env) loc e2
+    t <- expr prog (Map.insert v t env) loc e2
     checkIO t
   exp (Return e) = exp e >.= TyIO
   exp (PrimIO p el) = mapM exp el >>= Prims.primIOType loc p >.= TyIO
   exp (Spec e ts) = do
     t <- exp e
-    result <- runMaybeT $ unify (applyTry prog global) ts t
+    result <- runMaybeT $ unify (applyTry prog) ts t
     case result of
       Just (tenv,[]) -> return $ substVoid tenv ts
       Nothing -> typeError loc (show (pretty e)++" has type '"++show (pretty t)++"', which is incompatible with type specification '"++show (pretty ts))
       Just (_,leftovers) -> typeError loc ("type specification '"++show (pretty ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
-  exp (ExpLoc l e) = expr prog global env l e
+  exp (ExpLoc l e) = expr prog env l e
 
-join :: Prog -> Globals -> SrcLoc -> Type -> Type -> Infer Type
-join prog global loc t1 t2 = do
-  result <- runMaybeT $ intersect (applyTry prog global) t1 t2
+join :: Prog -> SrcLoc -> Type -> Type -> Infer Type
+join prog loc t1 t2 = do
+  result <- runMaybeT $ intersect (applyTry prog) t1 t2
   case result of
     Just t -> return t
     _ -> typeError loc ("failed to unify types "++show (pretty t1)++" and "++show (pretty t2))
 
 -- In future, we might want this to produce more informative error messages
-joinList :: Prog -> Globals -> SrcLoc -> [Type] -> Infer Type
-joinList prog global loc = foldM1 (join prog global loc)
+joinList :: Prog -> SrcLoc -> [Type] -> Infer Type
+joinList prog loc = foldM1 (join prog loc)
 
-apply :: Prog -> Globals -> Type -> Type -> SrcLoc -> Infer Type
-apply _ _ TyVoid _ _ = return TyVoid
-apply _ _ _ TyVoid _ = return TyVoid
-apply prog global (TyClosure fl) t2 loc = joinList prog global loc =<< mapM ap fl where
+apply :: Prog -> Type -> Type -> SrcLoc -> Infer Type
+apply _ TyVoid _ _ = return TyVoid
+apply _ _ TyVoid _ = return TyVoid
+apply prog (TyClosure fl) t2 loc = joinList prog loc =<< mapM ap fl where
   ap :: (Var,[Type]) -> Infer Type
   ap (f,args) = do
-    r <- lookupInfo f args'
+    r <- lookupOver f args'
     case r of
-      Just t -> return t
-      Nothing -> apply' prog global f args' loc
+      Nothing -> apply' prog f args' loc -- no match, type not yet inferred
+      Just (Right t) -> return (overRet t) -- fully applied
+      Just (Left _) -> return $ TyClosure [(f,args')] -- partially applied
     where args' = args ++ [t2]
-apply prog global (TyFun a r) t2 loc = do
-  result <- runMaybeT $ unify'' (applyTry prog global) a t2
+apply prog (TyFun a r) t2 loc = do
+  result <- runMaybeT $ unify'' (applyTry prog) a t2
   case result of
     Just () -> return r
     _ -> typeError loc ("cannot apply '"++show (pretty (TyFun a r))++"' to '"++show (pretty t2)++"'")
-apply _ _ t1 _ loc = typeError loc ("expected a -> b, got " ++ show (pretty t1))
+apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ show (pretty t1))
 
-applyTry :: Prog -> Globals -> Type -> Type -> MaybeT Infer Type
-applyTry prog global f t = catchError (lift $ apply prog global f t noLoc) (\_ -> nothing)
+applyTry :: Prog -> Type -> Type -> MaybeT Infer Type
+applyTry prog f t = catchError (lift $ apply prog f t noLoc) (\_ -> nothing)
 
 -- Resolve an overload.  A result of Nothing means all overloads are still partially applied.
-resolve :: Prog -> Globals -> Var -> [Type] -> SrcLoc -> Infer (Maybe Overload)
-resolve prog global f args loc = do
+resolve :: Prog -> Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overload TypeSet))
+resolve prog f args loc = do
   rawOverloads <- lookupOverloads prog loc f -- look up possibilities
   let call = show (pretty f <+> prettylist args)
-      prune o = runMaybeT $ unifyList (applyTry prog global) (overArgs o) args >. o
+      prune o = runMaybeT $ unifyList (applyTry prog) (overTypes o) args >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
-  let isSpecOf :: [TypeSet] -> [TypeSet] -> Infer Bool
-      isSpecOf a b = isJust =.< runMaybeT (unifyListSkolem (applyTry prog global) b a)
-      isMinimal (Over { overArgs = tl }) = allM (\ Over { overArgs = tl' } -> do
-        less <- isSpecOf tl tl'
-        more <- isSpecOf tl' tl
+  let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Infer Bool
+      isSpecOf a b = isJust =.< runMaybeT (unifyListSkolem (applyTry prog) (overTypes b) (overTypes a))
+      isMinimal o = allM (\o' -> do
+        less <- isSpecOf o o'
+        more <- isSpecOf o' o
         return $ less || not more) overloads
-      options overs = concatMap (\ o -> "\n  "++show (pretty (foldr TsFun (overRet o) (overArgs o)))) overs
+      options overs = concatMap (\ o -> "\n  "++show (pretty (foldr TsFun (overRet o) (overTypes o)))) overs
   filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
   case filtered of
     [] -> typeError loc (call++" doesn't match any overload, possibilities are"++options rawOverloads)
     os -> case partition ((length args ==) . length . overVars) os of
-      ([],_) -> return Nothing -- all overloads are still partially applied
-      ([o],[]) -> return (Just o) -- exactly one fully applied option
-      (fully@(_:_),partially@(_:_)) -> typeError loc (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
-      (fully@(_:_:_),[]) -> typeError loc (call++" is ambiguous, possibilities are"++options fully)
+      ([],os) -> maybe -- all overloads are still partially applied
+        (typeError loc (call ++ " has conflicting type transforms with other overloads"))
+        (return . Left)
+        $ transOvers os (succ $ length args) -- one day the succ might be able to go away
+      ([o],[]) -> return (Right o) -- exactly one fully applied option
+      (fully,[]) -> typeError loc (call++" is ambiguous, possibilities are"++options fully)
+      (fully,partially) -> typeError loc (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
 
 -- Overloaded function application
-apply' :: Prog -> Globals -> Var -> [Type] -> SrcLoc -> Infer Type
-apply' prog global f args loc = do
-  overload <- resolve prog global f args loc
+apply' :: Prog -> Var -> [Type] -> SrcLoc -> Infer Type
+apply' prog f args loc = do
+  overload <- resolve prog f args loc
+  let tt = either id (map fst . overArgs) overload
+  ctt <- lookupOverTrans f args
+  unless (and $ zipWith (==) tt ctt) $
+    typeError loc (show (pretty f <+> prettylist args) ++ " has conflicting type transforms with other overloads")
   case overload of
-    Nothing -> return $ TyClosure [(f,args)]
-    Just o -> cache prog global f args o loc
+    Left tt -> do
+      let t = TyClosure [(f,args)]
+      insertOver f (Over (zip tt args) t [] Nothing)
+      return t
+    Right o -> cache prog f args o loc
 
 -- Type infer a function call and cache the results
 -- The overload is assumed to match, since this is handled by apply.
@@ -223,25 +256,27 @@ apply' prog global f args loc = do
 -- TODO: cache currently infers every nonvoid function call at least twice, regardless of recursion.  Fix this.
 -- TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
-cache :: Prog -> Globals -> Var -> [Type] -> Overload -> SrcLoc -> Infer Type
-cache prog global f args (Over types r vl e) loc = do
-  Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog global) types args
+cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
+cache prog f args (Over atypes r vl e) loc = do
+  let types = map snd atypes
+  Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog) types args
   let call = show (pretty f <+> prettylist args)
-  unless (null leftovers) $ typeError loc (call++" uses invalid overload "++show (pretty (foldr TsFun r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
-  let tl = map (substVoid tenv) types
+  unless (null leftovers) $ 
+    typeError loc (call++" uses invalid overload "++show (pretty (foldr TsFun r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
+  let tl = zipWith (\(a,_) t -> (a,t)) atypes args -- use the original argument types so this overload can be found by them again
+      -- tl = map (fmap $ substVoid tenv) atypes -- rather than the unified ones. XXX is this okay?
+      al = map argType tl
       rs = substVoid tenv r
-      fix prev = do
-        r' <- withFrame f tl loc (expr prog global (Map.fromList (zip vl tl)) loc e)
-        result <- runMaybeT $ intersect (applyTry prog global) r' rs
+      fix prev e = do
+        insertOver f (Over tl prev vl (Just e))
+        r' <- withFrame f al loc (expr prog (Map.fromList (zip vl al)) loc e)
+        result <- runMaybeT $ intersect (applyTry prog) r' rs
         case result of
           Nothing -> typeError loc ("in call "++call++", failed to unify result "++show (pretty r')++" with return signature "++show (pretty rs))
-          Just r -> do
-            insertInfo f tl r
-            if prev == r
-              then return r
-              else fix r
-  insertInfo f tl TyVoid -- recursive function calls are initially assumed to be void
-  fix TyVoid
+          Just r 
+            | r == prev -> return prev
+            | otherwise -> fix r e
+  maybe (return TyVoid) (fix TyVoid) e -- recursive function calls are initially assumed to be void
 
 -- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type

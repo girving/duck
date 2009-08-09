@@ -1,28 +1,25 @@
+{-# LANGUAGE RelaxedPolyRec #-}
 -- | Duck prefix trie data structure
 --
 -- A prefix trie represents a partial map [k] -> v with the property that no
--- key is a proper prefix of any other key.  For example, a prefix trie can
--- be used to represent the types of overloaded curried functions.
---
--- Prefix tries are either nonempty (Ptrie') or possibly empty (Ptrie).
--- Trailing quotes (') denote functions operating on nonempty prefix tries.
+-- key is a proper prefix of any other key.  This version additionaly maps
+-- every strict prefix [k] -> a.
+-- 
+-- For example, a prefix trie can be used to represent the types of overloaded
+-- curried functions.
 
 module Ptrie
   ( Ptrie
-  , Ptrie'
   , empty
   , isEmpty
   , leaf
-  , unleaf
-  , unleaf'
+  , unPtrie
   , singleton
-  , singleton'
   , insert
-  , insert'
-  , insert''
+  , mapInsert
   , lookup
+  , assocs
   , toList
-  , toList'
   ) where
 
 import Prelude hiding (lookup)
@@ -30,63 +27,51 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 -- In order to make the representation canonical, the Maps in a Ptrie are never empty
-data Ptrie' k v
+data Ptrie k a v
   = Leaf v
-  | Node (Map k (Ptrie' k v))
+  | Node a (Map k (Ptrie k a v))
+  deriving (Eq)
 
-type Ptrie k v = Maybe (Ptrie' k v)
+-- |A very special ptrie that is an exception to the nonempty rule.
+empty :: a -> Ptrie k a v
+empty a = Node a Map.empty
 
-empty :: Ptrie k v
-empty = Nothing
+leaf :: v -> Ptrie k a v
+leaf = Leaf
 
-leaf :: v -> Ptrie k v
-leaf = Just . Leaf
-
-unleaf :: Ptrie k v -> Maybe v
-unleaf = (>>= unleaf')
-
-unleaf' :: Ptrie' k v -> Maybe v
-unleaf' (Leaf v) = Just v
-unleaf' _ = Nothing
-
-isEmpty :: Ptrie k v -> Bool
-isEmpty Nothing = True
+isEmpty :: Ptrie k a v -> Bool
+isEmpty (Node _ m) | Map.null m = True
 isEmpty _ = False
 
-singleton :: [k] -> v -> Ptrie k v
-singleton k v = Just (singleton' k v)
+unPtrie :: Ptrie k a v -> Either a v
+unPtrie (Node a _) = Left a
+unPtrie (Leaf v) = Right v
 
-singleton' :: [k] -> v -> Ptrie' k v
-singleton' [] v = Leaf v
-singleton' (x:k) v = Node (Map.singleton x (singleton' k v))
+singleton :: [(a,k)] -> v -> Ptrie k a v
+singleton [] v = Leaf v
+singleton ((a,x):k) v = Node a (Map.singleton x (singleton k v))
 
--- |Inserting with a key k has no effect if there is an existing key which
--- is a proper prefix of k.  If insertion succeeds, all entries which contain
--- k as a prefix are clobbered.
-insert :: Ord k => [k] -> v -> Ptrie k v -> Ptrie k v
-insert k v t = Just (insert' k v t)
+-- |Insertion is purely destructive, both of existing prefixes of k and
+-- of existing associated a values.
+insert :: Ord k => [(a,k)] -> v -> Ptrie k a v -> Ptrie k a v
+insert [] v _ = Leaf v
+insert ((a,x):k) v (Node _ m) = Node a $ mapInsert x k v m
+insert k v _ = singleton k v
 
-insert' :: Ord k => [k] -> v -> Ptrie k v -> Ptrie' k v
-insert' k v Nothing = singleton' k v
-insert' k v (Just t) = insert'' k v t
+mapInsert :: (Ord f, Ord k) => f -> [(a,k)] -> v -> Map f (Ptrie k a v) -> Map f (Ptrie k a v)
+-- I'm so lazy
+mapInsert f k v m = Map.insertWith (const $ insert k v) f (singleton k v) m
 
-insert'' :: Ord k => [k] -> v -> Ptrie' k v -> Ptrie' k v
-insert'' [] v _ = Leaf v
-insert'' (_:_) _ t@(Leaf _) = t
-insert'' (x:k) v (Node m) = Node (Map.alter (insert k v) x m)
+lookup :: Ord k => [k] -> Ptrie k a v -> Maybe (Ptrie k a v)
+lookup [] t = Just t
+lookup (_:_) (Leaf _) = Nothing
+lookup (x:k) (Node _ t) = lookup k =<< Map.lookup x t
 
-lookup :: Ord k => [k] -> Ptrie k v -> Ptrie k v
-lookup _ Nothing = Nothing
-lookup k (Just t) = lookup' k t
+assocs :: Ord k => [k] -> Ptrie k a v -> [a]
+assocs _ (Leaf _) = []
+assocs [] (Node a _) = [a]
+assocs (x:k) (Node a t) = a : (maybe [] (assocs k) $ Map.lookup x t)
 
-lookup' :: Ord k => [k] -> Ptrie' k v -> Ptrie k v
-lookup' [] t = Just t
-lookup' (_:_) (Leaf _) = Nothing
-lookup' (x:k) (Node t) = lookup k (Map.lookup x t)
-
-toList :: Ptrie k v -> [([k],v)]
-toList = maybe [] toList'
-
-toList' :: Ptrie' k v -> [([k],v)]
-toList' (Leaf v) = [([],v)]
-toList' (Node t) = [(x:k,v) | (x,p) <- Map.toList t, (k,v) <- toList' p]
+toList :: Ptrie k a v -> [([(a,k)],v)]
+toList (Leaf v) = [([],v)]
+toList (Node a t) = [((a,x):k,v) | (x,p) <- Map.toList t, (k,v) <- toList p]
