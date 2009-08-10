@@ -112,7 +112,7 @@ check prog = foldM st Map.empty (progDefinitions prog) >. prog where
   st env (Def vl _) = foldM sv env vl
   sv env (Loc l v) = case Map.lookup v env of
     Nothing -> return $ Map.insert v l env
-    Just l' -> die (show l++": duplicate definition of '"++show (pretty v)++"', previously declared at "++show l')
+    Just l' -> die (show l++": duplicate definition of '"++(pshow v)++"', previously declared at "++show l')
 
 decl_vars :: Set Var -> Ir.Decl -> Set Var
 decl_vars s (Ir.LetD (Loc _ v) _) = Set.insert v s
@@ -146,7 +146,7 @@ definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefiniti
 -- |Add a global overload
 overload :: Var -> [TypeSetArg] -> TypeSet -> [Var] -> Exp -> State Prog ()
 overload v tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over tl r vl (Just e)] (progFunctions p) }
-overload v tl _ vl _ = error ("overload arity mismatch for "++show (pretty v)++": argument types "++show (prettylist tl)++", variables "++show (prettylist vl)) 
+overload v tl _ vl _ = error ("overload arity mismatch for "++(pshow v)++": argument types "++show (prettylist tl)++", variables "++show (prettylist vl)) 
 
 -- |Add an unoverloaded global function
 function :: Var -> [Var] -> Exp -> State Prog ()
@@ -256,7 +256,7 @@ union p1 p2 = Prog
   , progGlobalTypes = Map.unionWithKey conflict (progGlobalTypes p2) (progGlobalTypes p1)
   , progDefinitions = progDefinitions p1 ++ progDefinitions p2 }
   where
-  conflict v _ _ = error ("conflicting datatype declarations for "++show (pretty v))
+  conflict v _ _ = error ("conflicting datatype declarations for "++(pshow v))
 
 -- Pretty printing
 

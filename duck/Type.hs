@@ -351,7 +351,7 @@ contravariantVars = concatMap cv where
 
 showContravariantVars :: Leftovers -> String
 showContravariantVars leftovers = case contravariantVars leftovers of
-  [v] -> "variable "++show (pretty v)
+  [v] -> "variable "++(pshow v)
   vl -> "variables "++concat (List.intersperse ", " (map (show . pretty) vl))
  
 -- Pretty printing

@@ -26,11 +26,11 @@ binop _ IntMulOp (ValInt i) (ValInt j) = return $ ValInt (i*j)
 binop _ IntDivOp (ValInt i) (ValInt j) = return $ ValInt (div i j)
 binop _ IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True" else "False")) []
 binop _ IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
-binop loc op v1 v2 = execError loc ("invalid arguments "++show (pretty v1)++", "++show (pretty v2)++" to "++show op)
+binop loc op v1 v2 = execError loc ("invalid arguments "++(pshow v1)++", "++(pshow v2)++" to "++show op)
 
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
 prim loc (Binop op) [v1,v2] = binop loc op v1 v2
-prim loc op vl = execError loc ("invailid primitive application: " ++ show op ++ " " ++ show (pretty vl))
+prim loc op vl = execError loc ("invailid primitive application: " ++ show op ++ " " ++ (pshow vl))
 
 binopType :: SrcLoc -> Binop -> Type -> Type -> Infer Type
 binopType _ IntAddOp TyInt TyInt = return TyInt
@@ -39,11 +39,11 @@ binopType _ IntMulOp TyInt TyInt = return TyInt
 binopType _ IntDivOp TyInt TyInt = return TyInt
 binopType _ IntEqOp TyInt TyInt = return $ TyCons (V "Bool") []
 binopType _ IntLessOp TyInt TyInt = return $ TyCons (V "Bool") []
-binopType loc op t1 t2 = typeError loc ("invalid arguments "++show (pretty t1)++", "++show (pretty t2)++" to "++show op)
+binopType loc op t1 t2 = typeError loc ("invalid arguments "++(pshow t1)++", "++(pshow t2)++" to "++show op)
 
 primType :: SrcLoc -> Prim -> [Type] -> Infer Type
 primType loc (Binop op) [t1,t2] = binopType loc op t1 t2
-primType loc op t = typeError loc ("invalid primitive application: " ++ show op ++ " " ++ show (pretty t))
+primType loc op t = typeError loc ("invalid primitive application: " ++ show op ++ " " ++ (pshow t))
 
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError noLoc "exit failure"

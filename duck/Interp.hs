@@ -62,7 +62,7 @@ definition prog env (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head v
   dl <- case (vl,d) of
           ([_],_) -> return [d]
           (_, (ValCons c dl, TyCons c' tl)) | istuple c, c == c', length vl == length dl, length vl == length tl -> return $ zip dl tl
-          _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++show (pretty d))
+          _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++(pshow d))
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
 
 -- Perform a computation and then cast the result to a (more general) type.
@@ -98,13 +98,13 @@ expr prog global env loc = exp where
                   tl' = map (substVoid tenv) tl
               cast prog t $ expr prog global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl (zip dl tl'))) loc e'
             else
-              execError loc ("arity mismatch in pattern: "++show (pretty c)++" expected "++show a++" argument"++(if a == 1 then "" else "s")
+              execError loc ("arity mismatch in pattern: "++(pshow c)++" expected "++show a++" argument"++(if a == 1 then "" else "s")
                 ++" but got ["++concat (intersperse "," (map (show . pretty) vl))++"]")
             where a = length vl
           Nothing -> case def of
-            Nothing -> execError loc ("pattern match failed: exp = " ++ show (pretty d) ++ ", cases = " ++ show pl)
+            Nothing -> execError loc ("pattern match failed: exp = " ++ (pshow d) ++ ", cases = " ++ show pl)
             Just (v,e') -> cast prog t $ expr prog global (Map.insert v d env) loc e' 
-      _ -> execError loc ("expected block, got " ++ show (pretty d))
+      _ -> execError loc ("expected block, got " ++ (pshow d))
   exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el
     (tv,vl,tl) <- lookupConstructor prog c
@@ -112,7 +112,7 @@ expr prog global env loc = exp where
     case result of
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      _ -> execError loc (show (pretty c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) 
+      _ -> execError loc ((pshow c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) 
   exp (Prim op el) = do
     (dl,tl) <- unzip =.< mapM exp el
     d <- Prims.prim loc op dl
@@ -134,8 +134,8 @@ expr prog global env loc = exp where
     result <- runMaybeT $ unify (applyTry prog) ts t
     case result of
       Just (tenv,[]) -> return (d,substVoid tenv ts)
-      Nothing -> execError loc (show (pretty e)++" has type '"++show (pretty t)++"', which is incompatible with type specification '"++show (pretty ts))
-      Just (_,leftovers) -> execError loc ("type specification '"++show (pretty ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
+      Nothing -> execError loc ((pshow e)++" has type '"++(pshow t)++"', which is incompatible with type specification '"++(pshow ts))
+      Just (_,leftovers) -> execError loc ("type specification '"++(pshow ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
   exp (ExpLoc l e) = expr prog global env l e
 
 transExpr :: Locals -> Trans -> Exp -> Exec Value
@@ -159,14 +159,14 @@ apply prog global (ValClosure f args ov, ft) a at loc = do
     TyClosure tl -> return $ TyClosure (map (fmap (++ [at])) tl)
     _ -> liftInfer prog $ Infer.apply prog ft at loc
   case Ptrie.lookup [at] ov of 
-    Nothing -> execError loc ("unresolved overload: " ++ show (pretty f) ++ " " ++ show (prettylist (map snd args ++ [at])))
+    Nothing -> execError loc ("unresolved overload: " ++ (pshow f) ++ " " ++ show (prettylist (map snd args ++ [at])))
     Just ov -> case Ptrie.unPtrie ov of
       Left _ -> return (ValClosure f args' ov, t)
       Right (Over _ t _ Nothing) -> return (ValClosure f args' ov, t)
       Right (Over _ t vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList (zip vl args')) loc e
 apply prog global (ValDelay env e, TyFun (TyCons (V "()") []) t) (ValCons (V "()") [], TyCons (V "()") []) _ loc =
   cast prog t $ expr prog global env loc e
-apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ show (pretty v) ++ " :: " ++ show (pretty t))
+apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ (pshow v) ++ " :: " ++ (pshow t))
 
 applyTry :: Prog -> Type -> Type -> MaybeT Exec Type
 applyTry prog t1 t2 = do
@@ -217,7 +217,7 @@ runIO prog global env (ValBindIO v m e, TyIO t) = do
   d' <- expr prog global env' noLoc e
   cast prog t $ runIO prog global env' d'
 runIO _ _ _ d =
-  execError noLoc ("expected IO computation, got "++show (pretty d))
+  execError noLoc ("expected IO computation, got "++(pshow d))
 
 testAll :: Prog -> Globals -> Exec Value
 testAll prog global = do
