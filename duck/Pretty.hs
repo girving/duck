@@ -4,6 +4,7 @@
 module Pretty 
   ( Pretty(..)
   , pprint
+  , pshow
   , guard
   , vjoin
   ) where
@@ -22,6 +23,9 @@ class Pretty t where
 
 pprint :: Pretty t => t -> IO ()
 pprint = print . pretty
+
+pshow :: Pretty t => t -> String
+pshow = render . pretty
 
 guard :: Pretty t => Int -> t -> Doc
 guard prec x

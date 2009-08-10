@@ -50,8 +50,8 @@ primIO ExitFailure [] = execError noLoc "exit failure"
 primIO p args = execError noLoc ("invalid arguments "++show (prettylist args)++" to "++show p)
 
 primIOType :: SrcLoc -> PrimIO -> [Type] -> Infer Type
-primIOType _ ExitFailure [] = return $ TyCons (V "()") []
-primIOType _ TestAll [] = return $ TyCons (V "()") []
+primIOType _ ExitFailure [] = return tyUnit
+primIOType _ TestAll [] = return tyUnit
 primIOType loc p args = typeError loc ("invalid arguments"++show (prettylist args)++" to "++show p)
 
 prelude :: IO Lir.Prog

@@ -95,6 +95,7 @@ decl_vars s (Ast.DefD (Loc _ v) _ _) = Set.insert v s
 decl_vars s (Ast.LetD p _) = pattern_vars s p
 decl_vars s (Ast.Data _ _ _) = s
 decl_vars s (Ast.Infix _ _) = s
+decl_vars s (Ast.Import _) = s
 
 pattern_vars :: InScopeSet -> Ast.Pattern -> InScopeSet
 pattern_vars s Ast.PatAny = s
@@ -116,7 +117,7 @@ unique_pattern_vars' :: SrcLoc -> Map Var SrcLoc -> Ast.Pattern -> E (Map Var Sr
 unique_pattern_vars' _ s Ast.PatAny = return s
 unique_pattern_vars' l s (Ast.PatVar v) = case Map.lookup v s of
   Nothing -> return $ Map.insert v l s
-  Just l' -> irError (show l++": duplicate definition of '"++show (pretty v)++"', previously declared at "++show l')
+  Just l' -> irError (show l++": duplicate definition of '"++(pshow v)++"', previously declared at "++show l')
 unique_pattern_vars' l s (Ast.PatCons _ pl) = foldM (unique_pattern_vars' l) s pl
 unique_pattern_vars' l s (Ast.PatOps o) = Fold.foldlM (unique_pattern_vars' l) s o
 unique_pattern_vars' l s (Ast.PatList pl) = foldM (unique_pattern_vars' l) s pl
@@ -150,8 +151,8 @@ prog p = either die return (decls p) where
     Loc _ (Ast.DefD f' args body) : rest | unLoc f == unLoc f' -> do
       e <- expr env s (Ast.Lambda args body)
       (Over f t e :) =.< decls rest
-    Loc _ (Ast.DefD f' _ _) : _ -> irError ("Syntax error: type specification for '"++show (pretty f)++"' followed by definition of '"++show (pretty f')++"'")
-    _ -> irError ("Syntax error: type specification for '"++show (pretty f)++"' must be followed by a definition")
+    Loc _ (Ast.DefD f' _ _) : _ -> irError ("Syntax error: type specification for '"++(pshow f)++"' followed by definition of '"++(pshow f')++"'")
+    _ -> irError ("Syntax error: type specification for '"++(pshow f)++"' must be followed by a definition")
   decls (Loc _ (Ast.LetD (Ast.PatLoc l p) e) : rest) = decls (Loc l (Ast.LetD p e) : rest)
   decls (Loc l (Ast.LetD Ast.PatAny e) : rest) = do
     e <- expr env s e
@@ -169,6 +170,7 @@ prog p = either die return (decls p) where
     (d :) =.< decls rest
   decls (Loc _ (Ast.Data t args cons) : rest) = (Data t args cons :) =.< decls rest
   decls (Loc _ (Ast.Infix _ _) : rest) = decls rest
+  decls (Loc _ (Ast.Import _) : rest) = decls rest
 
 expr :: Env -> InScopeSet -> Ast.Exp -> E Exp
 expr _ _ (Ast.Int i) = return $ Int i

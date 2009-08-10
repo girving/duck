@@ -76,7 +76,7 @@ decls :: { [[Loc Decl]] }
 decl :: { [Loc Decl] }
   : exp0 '::' exp0 {% spec $1 >>= \v -> ty $3 >.= \t -> [loc $1 $> $SpecD v (unLoc t)] }
   | exp '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
-  | import var {% let V file = var $2 in parseFile parse file }
+  | import var { [loc $1 $> $ Import (var $2)] }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
   | data dvar lvars maybeConstructors { [loc $1 $> $ Data $2 (reverse (unLoc $3)) (reverse (unLoc $4))] }
 

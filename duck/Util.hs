@@ -20,6 +20,7 @@ module Util
   , MaybeT(..)
   , MonadMaybe(..)
   , success
+  , returnIf
   , MonadInterrupt(..)
   , mapMaybeT
   ) where
@@ -127,14 +128,19 @@ instance MonadTrans MaybeT where
 class Monad m => MonadMaybe m where
   nothing :: m a
 
-instance MonadMaybe Maybe where
-  nothing = Nothing
+instance MonadPlus m => MonadMaybe m where
+  nothing = mzero
 
-instance Monad m => MonadMaybe (MaybeT m) where
-  nothing = MaybeT (return Nothing)
+instance Monad m => MonadPlus (MaybeT m) where
+  mzero = MaybeT (return Nothing)
+  mplus f g = MaybeT (runMaybeT f >>= maybe (runMaybeT g) (return . Just))
 
 success :: Monad m => m ()
 success = return ()
+
+returnIf :: MonadMaybe m => a -> Bool -> m a
+returnIf x True = return x
+returnIf _ False = nothing
 
 instance MonadError e m => MonadError e (MaybeT m) where
   throwError = lift . throwError
