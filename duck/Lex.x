@@ -1,9 +1,11 @@
 -- | Duck lexer
 
 {
-{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches #-}
+{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches -fno-warn-unused-binds #-}
 
-module Lex where
+module Lex 
+  ( lexer
+  ) where
 
 import Var
 import Token
@@ -21,8 +23,14 @@ $symbol = [! \# \$ \% & \* \+ \. \\ \/ \< = > \? @ \^ \| \- \~ :]
 
 tokens :-
 
-  $white+ ;
-  \-\-.*  ;
+\{\-       { c TokComment }
+\-\}       { c TokCommentEnd }
+<comment>. ;
+<0>\-\-.*  ;
+
+$white+    ;
+
+<0> {
   import  { c TokImport }
   infixl  { c (TokInfix LeftFix) }
   infixr  { c (TokInfix RightFix) }
@@ -49,6 +57,7 @@ tokens :-
   $lower $alphanum* { v (TokVar . V) }
   $upper $alphanum* { v (TokCVar . V) }
   $symbol+          { v sym }
+}
 
 {
 
@@ -89,7 +98,8 @@ alexGetChar s = case ps_rest s of
 lexer :: P (Loc Token)
 lexer = do
   s <- get
-  case alexScan s 0 of
+  let mode = if null (ps_comment s) then 0 else comment
+  case alexScan s mode of
     AlexEOF -> return $ Loc (ps_loc s) TokEOF
     AlexError _ -> fail "lexical error"
     AlexSkip s' _ -> do

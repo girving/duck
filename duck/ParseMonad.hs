@@ -51,6 +51,7 @@ data ParseState = ParseState
   , ps_layout :: [Context] -- ^ stack of layout contexts
   , ps_start  :: !Bool     -- ^ True if we're at the start of a new layout context (after SOF or 'of')
   , ps_last   :: SrcLoc    -- ^ the location of the last token processed by layout (in order to detect new lines)
+  , ps_comment :: [SrcLoc] -- ^ start of current multiline comments, so length is nesting level
   }
 
 newtype P a = P { unP :: ParseState -> ParseResult a }
@@ -101,7 +102,9 @@ runP parse file input =
     , ps_prev = '\n'
     , ps_layout = []
     , ps_start = True
-    , ps_last = noLoc }
+    , ps_last = noLoc
+    , ps_comment = []
+    }
 
 instance MonadState ParseState P where
   get = P $ \s -> ParseOk s s

@@ -41,6 +41,8 @@ data Token
   | TokMinus
   | TokImport
   | TokInfix { tokFix :: Fixity }
+  | TokComment
+  | TokCommentEnd
   | TokEOF
   deriving Eq
 
@@ -79,6 +81,8 @@ instance Show Token where
     TokArrow -> "->"
     TokOr -> "|"
     TokMinus -> "-"
+    TokComment -> "{-"
+    TokCommentEnd -> "-}"
     TokEOF -> "<eof>"
 
 showAt :: Token -> String

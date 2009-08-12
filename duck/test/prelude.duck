@@ -198,14 +198,17 @@ bool x = x != EQ
 
 -------- comparison
 
+{-
 -- Most comparison operators are defined in terms of (==) and (<),
 -- which are in turn defined for the types which support them
+-}
 
 x != y = not (x == y)
 x > y = y < x
 x <= y = not (y < x)
 x >= y = not (x < y)
 
+{-
 -- For large types, using cmp can be more efficient.  cmp and (<)
 -- are recursively defined in terms of each other.
 
@@ -216,6 +219,7 @@ x >= y = not (x < y)
 --
 --   cmp :: ((<) :: a -> b -> Bool) -> a -> b -> Ordering
 --   (<) :: (cmp :: a -> b -> Ordering) -> a -> b -> Bool
+-}
 
 cmp x y =
   if x < y then LT
@@ -235,18 +239,21 @@ product = fold (*) 1
 
 -------- monads
 
--- TODO: join0 should look something like
---   over a -> a
---   join0 x = x
---
---   over (join :: a -> b) => a -> b
---   join0 x = join x
+{- TODO: join0 should look something like
+over a -> a
+join0 x = x
+
+over (join :: a -> b) => a -> b
+join0 x = join x
+-}
 
 join0 :: a -> a
 join0 x = x
 
+{-
 -- In Haskell, join0 would be replaced with join.  The use
 -- of join0 here avoids the need for return as a separate construct
+-}
 
 -- (>>=) :: m a -> (a -> b) -> join0 (m b)
 m >>= f = join0 (map f m)
@@ -255,17 +262,19 @@ a >> b = a >>= \_ -> b
 
 -------- IO!
 
------ Since IO is magical, we mention the types here but don't actually declare them.
---
--- type IO a = ... 
--- join :: IO (IO a) -> IO a
--- map :: (a -> b) -> IO a -> IO b
--- 
------ And here are some primitives:
---
--- exitFailure :: IO Void 
--- returnIO :: a -> IO a
--- testAll :: IO Void
+{-
+-- Since IO is magical, we mention the types here but don't actually declare them.
+
+type IO a = ... 
+join :: IO (IO a) -> IO a
+map :: (a -> b) -> IO a -> IO b
+
+-- And here are some primitives:
+
+exitFailure :: IO Void 
+returnIO :: a -> IO a
+testAll :: IO Void
+-}
 
 assert x =
   if x then returnIO ()

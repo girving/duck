@@ -28,10 +28,20 @@ layout :: P (Loc Token) -> P (Loc Token)
 layout lex = do
   state <- get
   Loc loc token <- lex -- grab the next token
-  layout' state loc token
-  where
+  case (token, ps_comment state) of
+    (TokComment, c) -> do
+      modify $ \s -> s{ ps_comment = loc : c }
+      layout lex
+    (TokCommentEnd, _:c) -> do
+      modify $ \s -> s{ ps_comment = c }
+      layout lex
+    _ -> do
+      layout' state loc token
 
+  where
   layout' :: ParseState -> SrcLoc -> Token -> P (Loc Token)
+  layout' (ParseState{ ps_comment = c:_ }) _ TokEOF = fail ("unterminated comment at " ++ show c)
+  layout' (ParseState{ ps_comment = _:_ }) _ tok = fail ("internal error: token '" ++ show tok ++ "' in comment")
   layout' state loc token = (if ps_start state then start else normal) token (ps_layout state) where
 
     push :: Context -> P ()
@@ -95,4 +105,4 @@ layout lex = do
     top [] = -1
 
     layoutError :: String -> P a
-    layoutError s = parseError (ParseError loc ("layout error: "++s))
+    layoutError s = fail ("layout error: "++s)
