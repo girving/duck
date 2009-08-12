@@ -159,11 +159,11 @@ apply prog global (ValClosure f args ov, ft) a at loc = do
     TyClosure tl -> return $ TyClosure (map (fmap (++ [at])) tl)
     _ -> liftInfer prog $ Infer.apply prog ft at loc
   case Ptrie.lookup [at] ov of 
-    Nothing -> execError loc ("unresolved overload: " ++ (pshow f) ++ " " ++ show (prettylist (map snd args ++ [at])))
+    Nothing -> execError loc ("unresolved overload: " ++ (pshow f) ++ " " ++ show (prettylist (map snd args')))
     Just ov -> case Ptrie.unPtrie ov of
       Left _ -> return (ValClosure f args' ov, t)
       Right (Over _ t _ Nothing) -> return (ValClosure f args' ov, t)
-      Right (Over _ t vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList (zip vl args')) loc e
+      Right (Over at t vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) loc e
 apply prog global (ValDelay env e, TyFun (TyCons (V "()") []) t) (ValCons (V "()") [], TyCons (V "()") []) _ loc =
   cast prog t $ expr prog global env loc e
 apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ (pshow v) ++ " :: " ++ (pshow t))

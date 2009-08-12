@@ -44,10 +44,10 @@ type Locals = TypeEnv
 
 -- Utility functions
 
-insertOver :: Var -> Overload Type -> Infer ()
-insertOver f o = do
+insertOver :: Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
+insertOver f a o = do
   --liftIO (putStrLn ("recorded "++(pshow f)++" "++show (prettylist (overArgs o))++" = "++(pshow (overRet o))))
-  updateInfer $ Ptrie.mapInsert f (overArgs o) o
+  updateInfer $ Ptrie.mapInsert f a o
 
 lookupOver :: Var -> [Type] -> Infer (Maybe (Either (Maybe Trans) (Overload Type)))
 lookupOver f tl = getInfer >.=
@@ -246,7 +246,7 @@ apply' prog f args loc = do
   case overload of
     Left tt -> do
       let t = TyClosure [(f,args)]
-      insertOver f (Over (zip tt args) t [] Nothing)
+      insertOver f (zip tt args) (Over [] t [] Nothing)
       return t
     Right o -> cache prog f args o loc
 
@@ -258,18 +258,17 @@ apply' prog f args loc = do
 -- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
 cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
 cache prog f args (Over atypes r vl e) loc = do
-  let types = map snd atypes
+  let (tt,types) = unzip atypes
   Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog) types args
   let call = show (pretty f <+> prettylist args)
   unless (null leftovers) $ 
     typeError loc (call++" uses invalid overload "++(pshow (foldr TsFun r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
-  let tl = zipWith (\(a,_) t -> (a,t)) atypes args -- use the original argument types so this overload can be found by them again
-      -- tl = map (fmap $ substVoid tenv) atypes -- rather than the unified ones. XXX is this okay?
-      al = map argType tl
+  let al = zip tt args
+      tl = map (argType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv r
       fix prev e = do
-        insertOver f (Over tl prev vl (Just e))
-        r' <- withFrame f al loc (expr prog (Map.fromList (zip vl al)) loc e)
+        insertOver f al (Over (zip tt tl) prev vl (Just e))
+        r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) loc e)
         result <- runMaybeT $ intersect (applyTry prog) r' rs
         case result of
           Nothing -> typeError loc ("in call "++call++", failed to unify result "++(pshow r')++" with return signature "++(pshow rs))
