@@ -12,6 +12,9 @@ import Token
 import SrcLoc
 import ParseMonad
 import Data.Monoid (mappend)
+import Numeric
+import Control.Arrow (first)
+import qualified Data.Char as Char
 }
 
 $white = [\ \n\r] -- No tabs!
@@ -20,6 +23,8 @@ $lower = [a-z_]
 $upper = [A-Z]
 $alphanum = [a-zA-Z0-9_']
 $symbol = [! \# \$ \% & \* \+ \. \\ \/ \< = > \? @ \^ \| \- \~ :]
+
+@char  = [^\\] | \\ ( [\\abtnvfr\"\'] | \^[@-_] | [o0] [0-7]{1,3} | x [0-9a-fA-F]{1,2} )
 
 tokens :-
 
@@ -57,6 +62,7 @@ $white+    ;
   $lower $alphanum* { v (TokVar . V) }
   $upper $alphanum* { v (TokCVar . V) }
   $symbol+          { v sym }
+  \' @char \'       { v chr }
 }
 
 {
@@ -78,6 +84,27 @@ sym "|" = TokOr
 sym "-" = TokMinus
 sym s@(':':_) = TokCSym (V s)
 sym s = TokSym (V s)
+
+readsChr :: ReadS Char
+readsChr ('\\':'0':s) = map (first Char.chr) $ readOct s
+readsChr ('\\':'o':s) = map (first Char.chr) $ readOct s
+readsChr ('\\':'x':s) = map (first Char.chr) $ readHex s
+readsChr ('\\':'^':a:s) = [(Char.chr (Char.ord a - Char.ord '@'),s)]
+readsChr ('\\':'a':s) = [('\a',s)]
+readsChr ('\\':'b':s) = [('\b',s)]
+readsChr ('\\':'t':s) = [('\t',s)]
+readsChr ('\\':'n':s) = [('\n',s)]
+readsChr ('\\':'v':s) = [('\v',s)]
+readsChr ('\\':'f':s) = [('\f',s)]
+readsChr ('\\':'r':s) = [('\r',s)]
+readsChr ('\\':c:s) = [(c,s)]
+readsChr ('\\':_) = []
+readsChr (c:s) = [(c,s)]
+readsChr [] = []
+
+chr :: Action
+chr ('\'':s) | [(c,"'")] <- readsChr s = TokChr c
+chr s = error ("bad character: " ++ s) -- should not happen
 
 -- Each action has type :: String -> Token
 

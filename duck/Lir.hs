@@ -66,6 +66,7 @@ data Definition = Def
 data Exp
   = ExpLoc SrcLoc Exp
   | Int Int
+  | Chr Char
   | Var Var
   | Apply Exp Exp
   | Let Var Exp Exp
@@ -177,6 +178,7 @@ expr locals (Ir.Let v e@(Ir.Lambda _ _) rest) = do
   return $ Let v e rest
 expr locals e@(Ir.Lambda _ _) = lambda locals (V "f") e
 expr _ (Ir.Int i) = return $ Int i
+expr _ (Ir.Chr c) = return $ Chr c
 expr _ (Ir.Var v) = return $ Var v
 expr locals (Ir.Apply e1 e2) = do
   e1 <- expr locals e1
@@ -229,6 +231,7 @@ free :: Set Var -> Exp -> [Var]
 free locals e = Set.toList (Set.intersection locals (f e)) where
   f :: Exp -> Set Var
   f (Int _) = Set.empty
+  f (Chr _) = Set.empty
   f (Var v) = Set.singleton v
   f (Apply e1 e2) = Set.union (f e1) (f e2)
   f (Let v e rest) = Set.union (f e) (Set.delete v (f rest))
@@ -290,6 +293,7 @@ instance Pretty (Map Var Overloads) where
 
 revert :: Exp -> Ir.Exp
 revert (Int i) = Ir.Int i
+revert (Chr c) = Ir.Chr c
 revert (Var v) = Ir.Var v
 revert (Apply e1 e2) = Ir.Apply (revert e1) (revert e2)
 revert (Let v e rest) = Ir.Let v (revert e) (revert rest)

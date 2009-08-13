@@ -34,6 +34,7 @@ import Util
   sym  { Loc _ (TokSym _) }
   csym { Loc _ (TokCSym _) }
   int  { Loc _ (TokInt _) }
+  chr  { Loc _ (TokChr _) }
   data { Loc _ (TokData) }
   let  { Loc _ (TokLet) }
   in   { Loc _ (TokIn) }
@@ -176,6 +177,7 @@ atom :: { Loc Exp }
 
 atom_ :: { Loc Exp }
   : int { fmap (Int . tokInt) $1 }
+  | chr { fmap (Chr . tokChr) $1 }
   | lvar { fmap Var $1 }
   | cvar { fmap Var $ locVar $1 }
   | '_' { loc1 $1 Any }
@@ -224,6 +226,7 @@ unmatched (Loc l t) = parseError (ParseError l ("unmatched '"++show t++"' from "
 tscons :: CVar -> [TypeSet] -> TypeSet
 tscons (V "IO") [t] = TsIO t
 tscons (V "Int") [] = TsInt
+tscons (V "Chr") [] = TsChr
 tscons (V "Void") [] = TsVoid
 tscons (V "Delayed") [t] = TsTrans Delayed t
 tscons c args = TsCons c args

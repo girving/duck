@@ -40,6 +40,7 @@ data Decl
 data Exp
   = ExpLoc SrcLoc Exp
   | Int Int
+  | Chr Char
   | Var Var
   | Lambda Var Exp
   | Apply Exp Exp
@@ -60,17 +61,23 @@ data Binop
   | IntMulOp
   | IntDivOp
   | IntEqOp
-  | IntLessOp
-  deriving Show
+  | IntLTOp
+  | IntGTOp
+  | IntLEOp
+  | IntGEOp
+  deriving (Eq, Ord, Show)
 
 data Prim
   = Binop Binop
-  deriving Show
+  | ChrIntOrd
+  | IntChrChr
+  deriving (Eq, Ord, Show)
 
 data PrimIO
   = ExitFailure
+  | IOPutChr
   | TestAll
-  deriving Show
+  deriving (Eq, Ord, Show)
 
 -- Ast to IR conversion
 
@@ -173,6 +180,7 @@ prog p = either die return (decls p) where
 
 expr :: Env -> InScopeSet -> Ast.Exp -> E Exp
 expr _ _ (Ast.Int i) = return $ Int i
+expr _ _ (Ast.Chr c) = return $ Chr c
 expr _ _ (Ast.Var v) = return $ Var v
 expr env s (Ast.Lambda pl e) = do
   unique_patterns_vars noLoc pl
@@ -330,6 +338,7 @@ instance Pretty Exp where
     def Nothing = []
     def (Just (v, e)) = [pretty v <+> pretty "->" <+> pretty e]
   pretty' (Int i) = pretty' i
+  pretty' (Chr c) = (100, pretty (show c))
   pretty' (Var v) = pretty' v
   pretty' (Lambda v e) = (1, pretty v <+> pretty "->" <+> nest 2 (guard 1 e))
   pretty' (Apply e1 e2) = case (apply e1 [e2]) of
@@ -374,7 +383,10 @@ binopPrecedence op = case op of
   IntMulOp -> 30
   IntDivOp -> 30
   IntEqOp -> 10
-  IntLessOp -> 10
+  IntLTOp -> 10
+  IntLEOp -> 10
+  IntGTOp -> 10
+  IntGEOp -> 10
 
 binopString :: Binop -> String
 binopString op = case op of
@@ -383,4 +395,7 @@ binopString op = case op of
   IntMulOp -> "*"
   IntDivOp -> "/"
   IntEqOp -> "=="
-  IntLessOp -> "<"
+  IntLTOp -> "<"
+  IntGTOp -> ">"
+  IntLEOp -> "<="
+  IntGEOp -> ">="

@@ -9,6 +9,7 @@ module Prims
   , primIOType
   ) where
 
+import Util
 import Var
 import Type
 import Value
@@ -18,49 +19,77 @@ import Ir
 import qualified Lir
 import ExecMonad
 import InferMonad
+import Control.Monad
+import Control.Monad.Trans (liftIO)
+import qualified Control.Exception as Exn
+import qualified Data.Char as Char
+import qualified Data.Map as Map
 
-binop :: SrcLoc -> Binop -> Value -> Value -> Exec Value
-binop _ IntAddOp (ValInt i) (ValInt j) = return $ ValInt (i+j)
-binop _ IntSubOp (ValInt i) (ValInt j) = return $ ValInt (i-j)
-binop _ IntMulOp (ValInt i) (ValInt j) = return $ ValInt (i*j)
-binop _ IntDivOp (ValInt i) (ValInt j) = return $ ValInt (div i j)
-binop _ IntEqOp (ValInt i) (ValInt j) = return $ ValCons (V (if i == j then "True" else "False")) []
-binop _ IntLessOp (ValInt i) (ValInt j) = return $ ValCons (V (if i < j then "True" else "False")) []
-binop loc op v1 v2 = execError loc ("invalid arguments "++(pshow v1)++", "++(pshow v2)++" to "++show op)
+
+data PrimOp = PrimOp
+  { primPrim :: Prim
+  , primName :: String
+  , primArgs :: [Type]
+  , primRet :: Type
+  , primBody :: [Value] -> Value
+  }
+
+intOp :: Binop -> Type -> (Int -> Int -> Value) -> PrimOp
+intOp op rt fun = PrimOp (Binop op) (binopString op) [TyInt, TyInt] rt $ \[ValInt i, ValInt j] -> fun i j
+
+intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
+intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> ValCons (V $ if fun i j then "True" else "False") []
+
+intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
+intBinOp op fun = intOp op TyInt $ \i -> ValInt . fun i
+
+primOps :: Map.Map Prim PrimOp
+primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
+  [ intBinOp IntAddOp (+)
+  , intBinOp IntSubOp (-)
+  , intBinOp IntMulOp (*)
+  , intBinOp IntDivOp div
+  , intBoolOp IntEqOp (==)
+  , intBoolOp IntLTOp (<)
+  , intBoolOp IntLEOp (<=)
+  , intBoolOp IntGTOp (>)
+  , intBoolOp IntGEOp (>=)
+  , PrimOp ChrIntOrd "ord" [TyChr] TyInt $ \[ValChr c] -> ValInt (Char.ord c)
+  , PrimOp IntChrChr "chr" [TyInt] TyChr $ \[ValInt c] -> ValChr (Char.chr c)
+  ]
 
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
-prim loc (Binop op) [v1,v2] = binop loc op v1 v2
-prim loc op vl = execError loc ("invailid primitive application: " ++ show op ++ " " ++ (pshow vl))
-
-binopType :: SrcLoc -> Binop -> Type -> Type -> Infer Type
-binopType _ IntAddOp TyInt TyInt = return TyInt
-binopType _ IntSubOp TyInt TyInt = return TyInt
-binopType _ IntMulOp TyInt TyInt = return TyInt
-binopType _ IntDivOp TyInt TyInt = return TyInt
-binopType _ IntEqOp TyInt TyInt = return $ TyCons (V "Bool") []
-binopType _ IntLessOp TyInt TyInt = return $ TyCons (V "Bool") []
-binopType loc op t1 t2 = typeError loc ("invalid arguments "++(pshow t1)++", "++(pshow t2)++" to "++show op)
+prim loc prim args
+  | Just primop <- Map.lookup prim primOps = do
+    join $ liftIO $ (Exn.catch . Exn.evaluate) (return $ (primBody primop) args) $
+      \(Exn.PatternMatchFail _) -> return $ execError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
+  | otherwise = execError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
 
 primType :: SrcLoc -> Prim -> [Type] -> Infer Type
-primType loc (Binop op) [t1,t2] = binopType loc op t1 t2
-primType loc op t = typeError loc ("invalid primitive application: " ++ show op ++ " " ++ (pshow t))
+primType loc prim args
+  | Just primop <- Map.lookup prim primOps
+  , args == primArgs primop = return $ primRet primop
+  | otherwise = typeError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
 
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError noLoc "exit failure"
+primIO IOPutChr [ValChr c] = liftIO (putChar c) >. valUnit
 primIO p args = execError noLoc ("invalid arguments "++show (prettylist args)++" to "++show p)
 
 primIOType :: SrcLoc -> PrimIO -> [Type] -> Infer Type
 primIOType _ ExitFailure [] = return tyUnit
+primIOType _ IOPutChr [TyChr] = return tyUnit
 primIOType _ TestAll [] = return tyUnit
 primIOType loc p args = typeError loc ("invalid arguments"++show (prettylist args)++" to "++show p)
 
 prelude :: IO Lir.Prog
 prelude = Lir.prog $ decTuples ++ prims ++ io where
-  [a,b] = take 2 standardVars
-  ty = TsFun TsInt (TsFun TsInt (TsVar a))
-  binops = map binop [IntAddOp, IntSubOp, IntMulOp, IntDivOp, IntEqOp, IntLessOp]
-  binop op = Ir.Over (Loc noLoc $ V (binopString op)) ty (Lambda a (Lambda b (Prim (Binop op) [Var a, Var b])))
-  prims = binops
+  primop p = Ir.Over 
+      (Loc noLoc $ V (primName p)) 
+      (foldr TsFun (singleton $ primRet p) (map singleton $ primArgs p))
+      (foldr Lambda (Prim (primPrim p) (map Var args)) args)
+    where args = zipWith const standardVars $ primArgs p
+  prims = map primop $ Map.elems primOps
 
   decTuples = map decTuple [2..5]
   decTuple i = Data c vars [(c, map TsVar vars)] where
@@ -68,7 +97,7 @@ prelude = Lir.prog $ decTuples ++ prims ++ io where
     vars = take i standardVars
 
 io :: [Decl]
-io = [map',join,exitFailure,testAll,returnIO] where
+io = [map',join,exitFailure,ioPutChr,testAll,returnIO] where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TsVar [a,b]
   map' = Over (Loc noLoc $ V "map") (TsFun (TsFun ta tb) (TsFun (TsIO ta) (TsIO tb)))
@@ -81,4 +110,5 @@ io = [map',join,exitFailure,testAll,returnIO] where
       (Var x)))
   returnIO = LetD (Loc noLoc $ V "returnIO") (Lambda x (Return (Var x)))
   exitFailure = LetD (Loc noLoc $ V "exitFailure") (PrimIO ExitFailure [])
+  ioPutChr = Over (Loc noLoc $ V "put") (TsFun TsChr (TsIO (singleton tyUnit))) (Lambda c (PrimIO IOPutChr [Var c]))
   testAll = LetD (Loc noLoc $ V "testAll") (PrimIO TestAll [])

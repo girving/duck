@@ -45,7 +45,7 @@ type Locals = TypeEnv
 
 insertOver :: Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
 insertOver f a o = do
-  --liftIO (putStrLn ("recorded "++(pshow f)++" "++show (prettylist (overArgs o))++" = "++(pshow (overRet o))))
+  --liftIO (putStrLn ("recorded "++(pshow f)++" "++show (prettylist a)++" = "++pshow (overRet o)))
   updateInfer $ Ptrie.mapInsert f a o
 
 lookupOver :: Var -> [Type] -> Infer (Maybe (Either (Maybe Trans) (Overload Type)))
@@ -116,6 +116,7 @@ definition prog (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head vl) $
 expr :: Prog -> Locals -> SrcLoc -> Exp -> Infer Type
 expr prog env loc = exp where
   exp (Int _) = return TyInt
+  exp (Chr _) = return TyChr
   exp (Var v) = lookup prog env loc v
   exp (Apply e1 e2) = do
     t1 <- exp e1

@@ -43,6 +43,7 @@ data Type
   | TyFun Type Type
   | TyIO Type
   | TyInt
+  | TyChr
   | TyVoid
   deriving (Eq, Ord, Show)
 
@@ -55,6 +56,7 @@ data TypeSet
   | TsFun TypeSet TypeSet
   | TsIO TypeSet
   | TsInt
+  | TsChr
   | TsVoid
   | TsTrans Trans TypeSet -- ^ a (temporary) transparent macro transformer type
   deriving (Eq, Ord, Show)
@@ -105,6 +107,7 @@ intersect apply t@(TyClosure _) t'@(TyFun _ _) = intersect apply t' t
 intersect _ (TyClosure f) (TyClosure f') = return (TyClosure (List.union f f'))
 intersect apply (TyIO t) (TyIO t') = TyIO =.< intersect apply t t'
 intersect _ TyInt TyInt = return TyInt
+intersect _ TyChr TyChr = return TyChr
 intersect _ TyVoid t = return t
 intersect _ t TyVoid = return t
 intersect _ _ _ = nothing
@@ -134,6 +137,7 @@ union apply t@(TyClosure _) t'@(TyFun _ _) = union apply t' t
 union _ (TyClosure f) (TyClosure f') = return (TyClosure (List.union f f'))
 union apply (TyIO t) (TyIO t') = TyIO =.< union apply t t'
 union _ TyInt TyInt = return TyInt
+union _ TyChr TyChr = return TyChr
 union _ TyVoid _ = return TyVoid
 union _ _ TyVoid = return TyVoid
 union _ _ _ = nothing
@@ -202,6 +206,7 @@ unify' _ env (TsClosure f) (TyClosure f') = -- succeed if f' is a subset of f
 unify' _ _ (TsClosure _) (TyFun _ _) = nothing -- TyFun is never considered as general as TyClosure
 unify' apply env (TsIO t) (TyIO t') = unify' apply env t t'
 unify' _ env TsInt TyInt = return (env,[])
+unify' _ env TsChr TyChr = return (env,[])
 unify' _ env _ TyVoid = return (env,[])
 unify' _ _ _ _ = nothing
 
@@ -219,6 +224,7 @@ unify'' _ (TyClosure f) (TyClosure f') = -- succeed if f' is a subset of f
 unify'' _ (TyClosure _) (TyFun _ _) = nothing -- TyFun is never considered as general as TyClosure
 unify'' apply (TyIO t) (TyIO t') = unify'' apply t t'
 unify'' _ TyInt TyInt = success
+unify'' _ TyChr TyChr = success
 unify'' _ _ TyVoid = success
 unify'' _ _ _ = nothing
 
@@ -263,6 +269,7 @@ subst env (TsFun t1 t2) = TsFun (subst env t1) (subst env t2)
 subst env (TsIO t) = TsIO (subst env t)
 subst env (TsTrans c t) = TsTrans c (subst env t)
 subst _ TsInt = TsInt
+subst _ TsChr = TsChr
 subst _ TsVoid = TsVoid
 
 -- |Type environment substitution with unbound type variables defaulting to void
@@ -274,6 +281,7 @@ substVoid env (TsFun t1 t2) = TyFun (substVoid env t1) (substVoid env t2)
 substVoid env (TsIO t) = TyIO (substVoid env t)
 substVoid env (TsTrans c t) = transType c (substVoid env t)
 substVoid _ TsInt = TyInt
+substVoid _ TsChr = TyChr
 substVoid _ TsVoid = TyVoid
 
 -- |Occurs check
@@ -286,6 +294,7 @@ occurs env v (TsFun t1 t2) = occurs env v t1 || occurs env v t2
 occurs env v (TsIO t) = occurs env v t
 occurs env v (TsTrans _ t) = occurs env v t
 occurs _ _ TsInt = False
+occurs _ _ TsChr = False
 occurs _ _ TsVoid = False
 
 -- |Types contains no variables
@@ -299,6 +308,7 @@ singleton (TyClosure fl) = TsClosure (map (second (map singleton)) fl)
 singleton (TyFun s t) = TsFun (singleton s) (singleton t)
 singleton (TyIO t) = TsIO (singleton t)
 singleton TyInt = TsInt
+singleton TyChr = TsChr
 singleton TyVoid = TsVoid
  
 -- |Convert a singleton typeset to a type if possible
@@ -317,6 +327,7 @@ unsingleton' env (TsFun s t) = do
 unsingleton' env (TsIO t) = TyIO =.< unsingleton' env t
 unsingleton' env (TsTrans c t) = transType c =.< unsingleton' env t
 unsingleton' _ TsInt = return TyInt
+unsingleton' _ TsChr = return TyChr
 unsingleton' _ TsVoid = return TyVoid
 
 -- TODO: I'm being extremely cavalier here and pretending that the space of
@@ -331,6 +342,7 @@ skolemize (TsFun t1 t2) = TyFun (skolemize t1) (skolemize t2)
 skolemize (TsIO t) = TyIO (skolemize t)
 skolemize (TsTrans _ t) = skolemize t
 skolemize TsInt = TyInt
+skolemize TsChr = TyChr
 skolemize TsVoid = TyVoid
 
 -- |If leftovers remain after unification, this function explains which
@@ -346,6 +358,7 @@ contravariantVars = concatMap cv where
   vars (TsIO t) = vars t
   vars (TsTrans _ t) = vars t
   vars TsInt = []
+  vars TsChr = []
   vars TsVoid = []
 
 showContravariantVars :: Leftovers -> String
@@ -360,12 +373,13 @@ instance Pretty TypeSet where
   pretty' (TsCons t []) = pretty' t
   pretty' (TsClosure [(f,[])]) = pretty' f
   pretty' (TsCons t tl) | istuple t = (2, hcat $ List.intersperse (pretty ", ") $ map (guard 3) tl)
-  pretty' (TsCons t tl) = (50, guard 50 t <+> prettylist tl)
+  pretty' (TsCons t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
   pretty' (TsClosure fl) = (50, hsep (List.intersperse (pretty "&") (map (\ (f,tl) -> guard 50 f <+> prettylist tl) fl)))
   pretty' (TsFun t1 t2) = (1, guard 2 t1 <+> pretty "->" <+> guard 1 t2)
-  pretty' (TsIO t) = (1, pretty "IO" <+> guard 2 t)
+  pretty' (TsIO t) = (50, pretty "IO" <+> guard 51 t)
   pretty' (TsTrans c t) = (1, pretty (show c) <+> guard 2 t)
   pretty' TsInt = (100, pretty "Int")
+  pretty' TsChr = (100, pretty "Chr")
   pretty' TsVoid = (100, pretty "Void")
 
 instance Pretty Type where

@@ -75,6 +75,7 @@ cast _ t x = do
 expr :: Prog -> Globals -> Locals -> SrcLoc -> Exp -> Exec TValue
 expr prog global env loc = exp where
   exp (Int i) = return $ (ValInt i, TyInt)
+  exp (Chr i) = return $ (ValChr i, TyChr)
   exp (Var v) = lookup prog global env loc v
   exp (Apply e1 e2) = do
     v1 <- exp e1
@@ -186,6 +187,7 @@ apply' prog global f args loc = do
 _typeof = typeof -- unused for now
 typeof :: Prog -> Value -> Exec Type
 typeof _ (ValInt _) = return TyInt
+typeof _ (ValChr _) = return TyChr
 typeof prog (ValCons c args) = do
   tl <- mapM (typeof prog) args
   (tv, vl, tl') <- lookupConstructor prog c

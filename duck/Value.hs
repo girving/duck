@@ -21,6 +21,7 @@ import qualified Data.Map as Map
 
 data Value
   = ValInt Int
+  | ValChr Char
   | ValCons Var [Value]
   | ValClosure Var [TValue] Lir.Overloads
   | ValDelay Env Lir.Exp
@@ -40,6 +41,7 @@ valUnit = ValCons (V "()") []
 
 instance Pretty Value where
   pretty' (ValInt i) = pretty' i
+  pretty' (ValChr c) = (100, pretty (show c))
   pretty' (ValCons c []) = pretty' c
   pretty' (ValCons c fields) | istuple c = (1,
     hcat $ intersperse (pretty ", ") $ map (guard 2) fields)

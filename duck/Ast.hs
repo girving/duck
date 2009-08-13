@@ -38,6 +38,7 @@ data Exp
   | Apply Exp [Exp]
   | Var Var
   | Int Int
+  | Chr Char
   | Any
   | List [Exp]
   | Ops (Ops Exp)
@@ -121,6 +122,7 @@ instance Pretty Exp where
   pretty' (Apply e el) = (50, guard 51 e <+> prettylist el)
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
+  pretty' (Chr c) = (100, pretty (show c))
   pretty' Any = pretty' '_'
   pretty' (List el) = (100,
     brackets $ hcat (intersperse (pretty ", ") $ map (guard 2) el))
