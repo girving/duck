@@ -27,7 +27,6 @@ import qualified Ptrie
 import Prelude hiding (lookup)
 import qualified Prims
 import Data.Maybe
-import Text.PrettyPrint
 import SrcLoc
 
 ---- Algorithm discussion:

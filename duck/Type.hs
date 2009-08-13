@@ -29,7 +29,6 @@ module Type
 
 import Var
 import Pretty
-import Text.PrettyPrint
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -360,18 +359,18 @@ instance Pretty TypeSet where
   pretty' (TsVar v) = pretty' v
   pretty' (TsCons t []) = pretty' t
   pretty' (TsClosure [(f,[])]) = pretty' f
-  pretty' (TsCons t tl) | istuple t = (2, hcat $ List.intersperse (text ", ") $ map (guard 3) tl)
+  pretty' (TsCons t tl) | istuple t = (2, hcat $ List.intersperse (pretty ", ") $ map (guard 3) tl)
   pretty' (TsCons t tl) = (50, guard 50 t <+> prettylist tl)
-  pretty' (TsClosure fl) = (50, hsep (List.intersperse (text "&") (map (\ (f,tl) -> guard 50 f <+> prettylist tl) fl)))
-  pretty' (TsFun t1 t2) = (1, guard 2 t1 <+> text "->" <+> guard 1 t2)
-  pretty' (TsIO t) = (1, text "IO" <+> guard 2 t)
-  pretty' (TsTrans c t) = (1, text (show c) <+> guard 2 t)
-  pretty' TsInt = (100, text "Int")
-  pretty' TsVoid = (100, text "Void")
+  pretty' (TsClosure fl) = (50, hsep (List.intersperse (pretty "&") (map (\ (f,tl) -> guard 50 f <+> prettylist tl) fl)))
+  pretty' (TsFun t1 t2) = (1, guard 2 t1 <+> pretty "->" <+> guard 1 t2)
+  pretty' (TsIO t) = (1, pretty "IO" <+> guard 2 t)
+  pretty' (TsTrans c t) = (1, pretty (show c) <+> guard 2 t)
+  pretty' TsInt = (100, pretty "Int")
+  pretty' TsVoid = (100, pretty "Void")
 
 instance Pretty Type where
   pretty' = pretty' . singleton
 
 instance Pretty t => Pretty (Maybe Trans, t) where
   pretty' (Nothing, t) = pretty' t
-  pretty' (Just c, t) = (1, text (show c) <+> guard 2 t)
+  pretty' (Just c, t) = (1, pretty (show c) <+> guard 2 t)

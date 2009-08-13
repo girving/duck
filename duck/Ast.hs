@@ -17,7 +17,6 @@ import SrcLoc
 import ParseOps
 import Pretty
 import ParseMonad
-import Text.PrettyPrint
 import Data.List
 import Data.Maybe
 
@@ -79,52 +78,52 @@ opsPattern (OpBin o l r) = PatCons o [opsPattern l, opsPattern r]
 
 instance Pretty Decl where
   pretty (SpecD f t) =
-    pretty f <+> text "::" <+> pretty t
+    pretty f <+> pretty "::" <+> pretty t
   pretty (DefD f args e) =
     pretty f <+> prettylist args <+> equals $$ nest 2 (guard 0 e)
   pretty (LetD p e) =
     pretty p <+> equals <+> pretty e
   pretty (Data t args []) =
-    text "data" <+> pretty t <+> prettylist args
+    pretty "data" <+> pretty t <+> prettylist args
   pretty (Data t args (hd:tl)) =
-    text "data" <+> pretty t <+> prettylist args $$ nest 2 (vcat (
-      (equals <+> f hd) : map (\x -> text "|" <+> f x) tl))
+    pretty "data" <+> pretty t <+> prettylist args $$ nest 2 (vcat (
+      (equals <+> f hd) : map (\x -> pretty "|" <+> f x) tl))
     where f (c,args) = pretty c <+> prettylist args
   pretty (Infix (p,d) syms) =
-    text s <+> int p <+> hcat (intersperse (text ", ") (map (\ (V s) -> text s) syms))
+    pretty s <+> pretty p <+> hcat (intersperse (pretty ", ") (map (\ (V s) -> pretty s) syms))
     where
     s = case d of
       LeftFix -> "infixl"
       RightFix -> "infixr"
       NonFix -> "infix"
   pretty (Import v) =
-    text "import" <+> pretty v
+    pretty "import" <+> pretty v
 
 instance Pretty Exp where
-  pretty' (Spec e t) = (0, guard 1 e <+> text "::" <+> guard 60 t)
+  pretty' (Spec e t) = (0, guard 1 e <+> pretty "::" <+> guard 60 t)
   pretty' (Let p e body) = (1,
-    text "let" <+> pretty p <+> equals <+> guard 0 e <+> text "in"
+    pretty "let" <+> pretty p <+> equals <+> guard 0 e <+> pretty "in"
       $$ (guard 0 body))
   pretty' (Def f args e body) = (1,
-    text "let" <+> pretty f <+> prettylist args <+> equals
-      $$ nest 2 (guard 0 e) <+> text "in" $$ (guard 0 body))
+    pretty "let" <+> pretty f <+> prettylist args <+> equals
+      $$ nest 2 (guard 0 e) <+> pretty "in" $$ (guard 0 body))
   pretty' (Case e cases) = (1,
-    text "case" <+> pretty e <+> text "of" $$ nest 2 (
-      vjoin '|' (map (\ (p,e) -> pretty p <+> text "->" <+> pretty e) cases)))
+    pretty "case" <+> pretty e <+> pretty "of" $$ nest 2 (
+      vjoin '|' (map (\ (p,e) -> pretty p <+> pretty "->" <+> pretty e) cases)))
   pretty' (If c e1 e2) = (1,
-    text "if" <+> pretty c <+> text "then" <+> pretty e1 <+> text "else" <+> pretty e2)
-  pretty' (Lambda pl e) = (1, hsep (map (\p -> guard 2 p <+> text "->") pl) <+> guard 1 e)
+    pretty "if" <+> pretty c <+> pretty "then" <+> pretty e1 <+> pretty "else" <+> pretty e2)
+  pretty' (Lambda pl e) = (1, hsep (map (\p -> guard 2 p <+> pretty "->") pl) <+> guard 1 e)
   pretty' (Apply (Var v) [e1, e2]) | Just prec <- precedence v =
     let V s = v in
-    (prec, (guard prec e1) <+> text s <+> (guard (prec+1) e2) )
+    (prec, (guard prec e1) <+> pretty s <+> (guard (prec+1) e2) )
   pretty' (Apply (Var c) el) | Just n <- tuplelen c, n == length el = (2,
-    hcat $ intersperse (text ", ") $ map (guard 3) el)
+    hcat $ intersperse (pretty ", ") $ map (guard 3) el)
   pretty' (Apply e el) = (50, guard 51 e <+> prettylist el)
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
   pretty' Any = pretty' '_'
   pretty' (List el) = (100,
-    lbrack <> hcat (intersperse (text ", ") $ map (guard 2) el) <> rbrack)
+    brackets $ hcat (intersperse (pretty ", ") $ map (guard 2) el))
   pretty' (Ops o) = pretty' o
   pretty' (ExpLoc _ e) = pretty' e
 

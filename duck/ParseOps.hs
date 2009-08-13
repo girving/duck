@@ -12,7 +12,6 @@ module ParseOps
 import Var
 import ParseMonad
 import Pretty
-import Text.PrettyPrint
 import Data.Maybe
 import qualified Data.Map as Map
 import qualified Data.Foldable as Fold

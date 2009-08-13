@@ -23,7 +23,6 @@ import Util
 import Pretty
 import ParseOps
 import SrcLoc
-import Text.PrettyPrint
 import Data.List
 import Data.Either
 import Data.Function
@@ -308,65 +307,65 @@ instance Pretty Decl where
   pretty (LetD v e) =
     pretty v <+> equals <+> nest 2 (pretty e)
   pretty (LetM vl e) =
-    hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
+    hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
   pretty (Over v t e) =
-    pretty v <+> text "::" <+> pretty t $$
+    pretty v <+> pretty "::" <+> pretty t $$
     pretty v <+> equals <+> nest 2 (pretty e)
   pretty (Data t args cons) =
     pretty (Ast.Data t args cons)
 
 instance Pretty Exp where
-  pretty' (Spec e t) = (0, guard 1 e <+> text "::" <+> guard 60 t)
+  pretty' (Spec e t) = (0, guard 1 e <+> pretty "::" <+> guard 60 t)
   pretty' (Let v e body) = (0,
-    text "let" <+> pretty v <+> equals <+> guard 0 e <+> text "in"
+    pretty "let" <+> pretty v <+> equals <+> guard 0 e <+> pretty "in"
       $$ guard 0 body)
   pretty' (Case e pl d) = (0,
-    text "case" <+> pretty e <+> text "of" $$
+    pretty "case" <+> pretty e <+> pretty "of" $$
     vjoin '|' (map arm pl ++ def d)) where
     arm (c, vl, e) 
-      | istuple c = hcat (intersperse (text ", ") pvl) <+> end
+      | istuple c = hcat (intersperse (pretty ", ") pvl) <+> end
       | otherwise = pretty c <+> sep pvl <+> end
       where pvl = map pretty vl
-            end = text "->" <+> pretty e
+            end = pretty "->" <+> pretty e
     def Nothing = []
-    def (Just (v, e)) = [pretty v <+> text "->" <+> pretty e]
+    def (Just (v, e)) = [pretty v <+> pretty "->" <+> pretty e]
   pretty' (Int i) = pretty' i
   pretty' (Var v) = pretty' v
-  pretty' (Lambda v e) = (1, pretty v <+> text "->" <+> nest 2 (guard 1 e))
+  pretty' (Lambda v e) = (1, pretty v <+> pretty "->" <+> nest 2 (guard 1 e))
   pretty' (Apply e1 e2) = case (apply e1 [e2]) of
     (Var v, [e1,e2]) | Just prec <- precedence v -> (prec,
       let V s = v in
-      (guard prec e1) <+> text s <+> (guard (prec+1) e2))
+      (guard prec e1) <+> pretty s <+> (guard (prec+1) e2))
     (Var c, el) | Just n <- tuplelen c, n == length el -> (1,
-      hcat $ intersperse (text ", ") $ map (guard 2) el)
+      hcat $ intersperse (pretty ", ") $ map (guard 2) el)
     (e, el) -> (50, guard 50 e <+> prettylist el)
     where apply (Apply e a) al = apply e (a:al) 
           apply e al = (e,al)
   pretty' (Cons (V ":") [h,t]) | Just t' <- extract t = (100,
-    brackets (hcat (intersperse (text ", ") $ map (guard 2) (h : t')))) where
+    brackets (hcat (intersperse (pretty ", ") $ map (guard 2) (h : t')))) where
     extract (Cons (V "[]") []) = Just []
     extract (Cons (V ":") [h,t]) = (h :) =.< extract t
     extract _ = Nothing
   pretty' (Cons c args) | istuple c = (1,
-    hcat $ intersperse (text ", ") $ map (guard 2) args)
+    hcat $ intersperse (pretty ", ") $ map (guard 2) args)
   pretty' (Cons c args) = (50, pretty c <+> sep (map (guard 51) args))
   pretty' (Prim (Binop op) [e1,e2]) | prec <- binopPrecedence op = (prec,
-    guard prec e1 <+> text (binopString op) <+> guard prec e2)
+    guard prec e1 <+> pretty (binopString op) <+> guard prec e2)
   pretty' (Prim prim el) = (50,
     pretty prim <+> prettylist el)
   pretty' (Bind v e1 e2) = (6,
-    pretty v <+> text "<-" <+> guard 0 e1 $$ guard 0 e2)
-  pretty' (Return e) = (6, text "return" <+> guard 7 e)
+    pretty v <+> pretty "<-" <+> guard 0 e1 $$ guard 0 e2)
+  pretty' (Return e) = (6, pretty "return" <+> guard 7 e)
   pretty' (PrimIO p []) = pretty' p
   pretty' (PrimIO p args) = (50, guard 50 p <+> prettylist args)
   pretty' (ExpLoc _ e) = pretty' e
-  -- pretty' (ExpLoc l e) = fmap (text "{-@" <+> text (show l) <+> text "-}" <+>) $ pretty' e
+  -- pretty' (ExpLoc l e) = fmap (pretty "{-@" <+> pretty (show l) <+> pretty "-}" <+>) $ pretty' e
 
 instance Pretty Prim where
-  pretty' p = (100, text (show p))
+  pretty' p = (100, pretty (show p))
 
 instance Pretty PrimIO where
-  pretty' p = (100, text (show p))
+  pretty' p = (100, pretty (show p))
 
 binopPrecedence :: Binop -> Int
 binopPrecedence op = case op of

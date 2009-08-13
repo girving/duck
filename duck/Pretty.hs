@@ -7,6 +7,13 @@ module Pretty
   , pshow
   , guard
   , vjoin
+
+  , Doc
+  , (<>), (<+>), ($$)
+  , hcat, hsep, vcat, sep
+  , nest
+  , equals
+  , parens, brackets
   ) where
 
 import Text.PrettyPrint

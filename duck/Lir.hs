@@ -28,7 +28,6 @@ import SrcLoc
 import Ptrie (Ptrie)
 import qualified Ptrie
 import Pretty
-import Text.PrettyPrint
 import Data.List hiding (union)
 import qualified Ir
 import Ir (Prim, Binop, PrimIO)
@@ -262,30 +261,30 @@ union p1 p2 = Prog
 
 instance Pretty Prog where
   pretty prog = vcat $
-       [text "-- datatypes"]
+       [pretty "-- datatypes"]
     ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c) <- Map.toList (progDatatypes prog)]
-    ++ [text "-- functions"]
+    ++ [pretty "-- functions"]
     ++ [function v tl r vl e | (v,o) <- Map.toList (progFunctions prog), Over tl r vl e <- o]
-    ++ [text "-- overloads"]
+    ++ [pretty "-- overloads"]
     ++ [pretty (progOverloads prog)]
-    ++ [text "-- definitions"]
+    ++ [pretty "-- definitions"]
     ++ map definition (progDefinitions prog)
     where
     function :: Var -> [TypeSetArg] -> TypeSet -> [Var] -> Maybe Exp -> Doc
     function v tl r _ Nothing =
-      pretty v <+> text "::" <+> hsep (intersperse (text "->") (map (guard 2) (tl++[(Nothing,r)])))
+      pretty v <+> pretty "::" <+> hsep (intersperse (pretty "->") (map (guard 2) (tl++[(Nothing,r)])))
     function v tl r vl (Just e) =
       function v tl r vl Nothing $$
       prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
     definition (Def vl e) =
-      hcat (intersperse (text ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
+      hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
 
 instance Pretty Exp where
   pretty' = pretty' . revert
 
 instance Pretty (Map Var Overloads) where
   pretty info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
-    pr f tl (Over _ r _ Nothing) = pretty f <+> prettylist tl <+> text "::" <+> pretty r
+    pr f tl (Over _ r _ Nothing) = pretty f <+> prettylist tl <+> pretty "::" <+> pretty r
     pr f tl o@(Over _ _ vl (Just e)) = pr f tl o{ overBody = Nothing } $$
       prettylist (f : vl) <+> equals <+> nest 2 (pretty e)
 

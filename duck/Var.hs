@@ -22,7 +22,6 @@ module Var
   ) where
 
 import Pretty
-import Text.PrettyPrint
 import Data.Char
 import Data.List
 
@@ -45,8 +44,8 @@ instance Pretty Var where
   pretty' (V v) = (100,
     let c = head v in
     if isAlpha c || c == '_' || c == '(' || c == '[' then
-      text v
-    else parens $ text v)
+      pretty v
+    else parens $ pretty v)
 
 type InScopeSet = Set Var
   
