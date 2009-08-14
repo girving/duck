@@ -113,7 +113,7 @@ expr prog global env loc = exp where
     case result of
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      _ -> execError loc (pshow c++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args)) 
+      _ -> execError loc (pshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
   exp (Prim op el) = do
     (dl,tl) <- unzip =.< mapM exp el
     d <- Prims.prim loc op dl
@@ -160,7 +160,7 @@ apply prog global (ValClosure f args ov, ft) a at loc = do
     TyClosure tl -> return $ TyClosure (map (fmap (++ [at])) tl)
     _ -> liftInfer prog $ Infer.apply prog ft at loc
   case Ptrie.lookup [at] ov of 
-    Nothing -> execError loc ("unresolved overload: " ++ pshow f ++ " " ++ show (prettylist (map snd args')))
+    Nothing -> execError loc ("unresolved overload: " ++ pshow f ++ " " ++ pshowlist (map snd args'))
     Just ov -> case Ptrie.unPtrie ov of
       Left _ -> return (ValClosure f args' ov, t)
       Right (Over _ t _ Nothing) -> return (ValClosure f args' ov, t)
@@ -195,7 +195,7 @@ typeof prog (ValCons c args) = do
   case result of
     Just (tenv,[]) -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-    _ -> execError noLoc ("failed to unify types "++show (prettylist tl)++" with "++show (prettylist tl'))
+    _ -> execError noLoc ("failed to unify types "++pshowlist tl++" with "++pshowlist tl')
 typeof _ (ValClosure _ _ _) = return $ TyFun TyVoid TyVoid
 typeof _ (ValDelay _ _) = return $ TyFun tyUnit TyVoid
 typeof _ (ValBindIO _ _ _) = return $ TyIO TyVoid

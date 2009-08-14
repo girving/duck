@@ -23,7 +23,7 @@ type CallStack a = [CallFrame a]
 showStack :: Pretty a => CallStack a -> String
 showStack s = unlines (h : reverse (map p s)) where
   h = "Traceback (most recent call last):"
-  p (CallFrame f args loc) = "  " ++ show loc ++ " in "++pshow f++' ' : show (prettylist args)
+  p (CallFrame f args loc) = "  " ++ show loc ++ " in "++pshow f++' ' : pshowlist args
 
 mapStackArgs :: (a -> b) -> CallStack a -> CallStack b
 mapStackArgs f = map (\c -> c { callArgs = map f (callArgs c) })

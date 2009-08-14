@@ -146,7 +146,7 @@ definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefiniti
 -- |Add a global overload
 overload :: Var -> [TypeSetArg] -> TypeSet -> [Var] -> Exp -> State Prog ()
 overload v tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over tl r vl (Just e)] (progFunctions p) }
-overload v tl _ vl _ = error ("overload arity mismatch for "++pshow v++": argument types "++show (prettylist tl)++", variables "++show (prettylist vl)) 
+overload v tl _ vl _ = error ("overload arity mismatch for "++pshow v++": argument types "++pshowlist tl++", variables "++pshowlist vl)
 
 -- |Add an unoverloaded global function
 function :: Var -> [Var] -> Exp -> State Prog ()

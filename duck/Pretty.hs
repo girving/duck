@@ -5,6 +5,7 @@ module Pretty
   ( Pretty(..)
   , pprint
   , pshow
+  , pshowlist
   , guard
   , vjoin
 
@@ -33,6 +34,9 @@ pprint = print . pretty
 
 pshow :: Pretty t => t -> String
 pshow = render . pretty
+
+pshowlist :: Pretty t => [t] -> String
+pshowlist = render . prettylist
 
 guard :: Pretty t => Int -> t -> Doc
 guard prec x

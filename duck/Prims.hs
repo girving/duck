@@ -74,13 +74,13 @@ primType loc prim args
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO ExitFailure [] = execError noLoc "exit failure"
 primIO IOPutChr [ValChr c] = liftIO (putChar c) >. valUnit
-primIO p args = execError noLoc ("invalid arguments "++show (prettylist args)++" to "++show p)
+primIO p args = execError noLoc ("invalid arguments "++pshowlist args++" to "++show p)
 
 primIOType :: SrcLoc -> PrimIO -> [Type] -> Infer Type
 primIOType _ ExitFailure [] = return tyUnit
 primIOType _ IOPutChr [TyChr] = return tyUnit
 primIOType _ TestAll [] = return tyUnit
-primIOType loc p args = typeError loc ("invalid arguments"++show (prettylist args)++" to "++show p)
+primIOType loc p args = typeError loc ("invalid arguments"++pshowlist args++" to "++show p)
 
 prelude :: IO Lir.Prog
 prelude = Lir.prog $ decTuples ++ prims ++ io where

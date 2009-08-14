@@ -45,7 +45,7 @@ type Locals = TypeEnv
 
 insertOver :: Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
 insertOver f a o = do
-  --liftIO (putStrLn ("recorded "++pshow f++" "++show (prettylist a)++" = "++pshow (overRet o)))
+  --liftIO (putStrLn ("recorded "++pshow f++" "++pshowlist a++" = "++pshow (overRet o)))
   updateInfer $ Ptrie.mapInsert f a o
 
 lookupOver :: Var -> [Type] -> Infer (Maybe (Either (Maybe Trans) (Overload Type)))
@@ -139,7 +139,7 @@ expr prog env loc = exp where
                   if length vl == a then
                     let tl' = map (subst tenv) tl in
                     case mapM unsingleton tl' of
-                      Nothing -> typeError loc ("datatype declaration "++pshow tv++" is invalid, constructor "++pshow c++" has nonconcrete types "++show (prettylist tl'))
+                      Nothing -> typeError loc ("datatype declaration "++pshow tv++" is invalid, constructor "++pshow c++" has nonconcrete types "++pshowlist tl')
                       Just tl -> expr prog (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
                   else
                     typeError loc ("arity mismatch in pattern: "++pshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
@@ -158,7 +158,7 @@ expr prog env loc = exp where
     case result of
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      _ -> typeError loc (pshow c++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args))
+      _ -> typeError loc (pshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
   exp (Lir.Prim op el) =
     Prims.primType loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
