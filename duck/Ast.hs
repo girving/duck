@@ -69,7 +69,7 @@ imports = mapMaybe imp where
 opsExp :: Ops Exp -> Exp
 opsExp (OpAtom a) = a
 opsExp (OpUn (V "-") a) = Apply (Var (V "negate")) [opsExp a]
-opsExp (OpUn op _) = parseThrow ((pshow op)++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
+opsExp (OpUn op _) = parseThrow (pshow op++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
 opsExp (OpBin o l r) = Apply (Var o) [opsExp l, opsExp r]
 
 opsPattern :: Ops Pattern -> Pattern

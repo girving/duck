@@ -45,7 +45,7 @@ type Locals = TypeEnv
 
 insertOver :: Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
 insertOver f a o = do
-  --liftIO (putStrLn ("recorded "++(pshow f)++" "++show (prettylist a)++" = "++pshow (overRet o)))
+  --liftIO (putStrLn ("recorded "++pshow f++" "++show (prettylist a)++" = "++pshow (overRet o)))
   updateInfer $ Ptrie.mapInsert f a o
 
 lookupOver :: Var -> [Type] -> Infer (Maybe (Either (Maybe Trans) (Overload Type)))
@@ -110,7 +110,7 @@ definition prog (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head vl) $
   tl <- case (vl,t) of
           ([_],_) -> return [t]
           (_, TyCons c tl) | istuple c, length vl == length tl -> return tl
-          _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++(pshow t))
+          _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++pshow t)
   return $ prog { progGlobalTypes = foldl (\g (v,t) -> Map.insert (unLoc v) t g) (progGlobalTypes prog) (zip vl tl) }
 
 expr :: Prog -> Locals -> SrcLoc -> Exp -> Infer Type
@@ -139,18 +139,18 @@ expr prog env loc = exp where
                   if length vl == a then
                     let tl' = map (subst tenv) tl in
                     case mapM unsingleton tl' of
-                      Nothing -> typeError loc ("datatype declaration "++(pshow tv)++" is invalid, constructor "++(pshow c)++" has nonconcrete types "++show (prettylist tl'))
+                      Nothing -> typeError loc ("datatype declaration "++pshow tv++" is invalid, constructor "++pshow c++" has nonconcrete types "++show (prettylist tl'))
                       Just tl -> expr prog (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
                   else
-                    typeError loc ("arity mismatch in pattern: "++(pshow c)++" expected "++show a++" argument"++(if a == 1 then "" else "s")
+                    typeError loc ("arity mismatch in pattern: "++pshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
                       ++" but got ["++concat (intersperse ", " (map (show . pretty) vl))++"]")
-              | otherwise = typeError loc ("datatype "++(pshow tv)++" has no constructor "++(pshow c))
+              | otherwise = typeError loc ("datatype "++pshow tv++" has no constructor "++pshow c)
             defaultType Nothing = return []
             defaultType (Just (v,e')) = expr prog (Map.insert v t env) loc e' >.= \t -> [t]
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
         joinList prog loc (caseResults ++ defaultResults)
-      _ -> typeError loc ("expected datatype, got "++(pshow t))
+      _ -> typeError loc ("expected datatype, got "++pshow t)
   exp (Cons c el) = do
     args <- mapM exp el
     (tv,vl,tl) <- lookupConstructor prog loc c
@@ -158,7 +158,7 @@ expr prog env loc = exp where
     case result of
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      _ -> typeError loc ((pshow c)++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args))
+      _ -> typeError loc (pshow c++" expected arguments "++show (prettylist tl)++", got "++show (prettylist args))
   exp (Lir.Prim op el) =
     Prims.primType loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
@@ -172,8 +172,8 @@ expr prog env loc = exp where
     result <- runMaybeT $ unify (applyTry prog) ts t
     case result of
       Just (tenv,[]) -> return $ substVoid tenv ts
-      Nothing -> typeError loc ((pshow e)++" has type '"++(pshow t)++"', which is incompatible with type specification '"++(pshow ts))
-      Just (_,leftovers) -> typeError loc ("type specification '"++(pshow ts)++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
+      Nothing -> typeError loc (pshow e++" has type '"++pshow t++"', which is incompatible with type specification '"++pshow ts)
+      Just (_,leftovers) -> typeError loc ("type specification '"++pshow ts++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
   exp (ExpLoc l e) = expr prog env l e
 
 join :: Prog -> SrcLoc -> Type -> Type -> Infer Type
@@ -181,7 +181,7 @@ join prog loc t1 t2 = do
   result <- runMaybeT $ intersect (applyTry prog) t1 t2
   case result of
     Just t -> return t
-    _ -> typeError loc ("failed to unify types "++(pshow t1)++" and "++(pshow t2))
+    _ -> typeError loc ("failed to unify types "++pshow t1++" and "++pshow t2)
 
 -- In future, we might want this to produce more informative error messages
 joinList :: Prog -> SrcLoc -> [Type] -> Infer Type
@@ -203,8 +203,8 @@ apply prog (TyFun a r) t2 loc = do
   result <- runMaybeT $ unify'' (applyTry prog) a t2
   case result of
     Just () -> return r
-    _ -> typeError loc ("cannot apply '"++(pshow (TyFun a r))++"' to '"++(pshow t2)++"'")
-apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ (pshow t1))
+    _ -> typeError loc ("cannot apply '"++(pshow (TyFun a r))++"' to '"++pshow t2++"'")
+apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ pshow t1)
 
 applyTry :: Prog -> Type -> Type -> MaybeT Infer Type
 applyTry prog f t = catchError (lift $ apply prog f t noLoc) (\_ -> nothing)
@@ -271,7 +271,7 @@ cache prog f args (Over atypes r vl e) loc = do
         r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) loc e)
         result <- runMaybeT $ intersect (applyTry prog) r' rs
         case result of
-          Nothing -> typeError loc ("in call "++call++", failed to unify result "++(pshow r')++" with return signature "++(pshow rs))
+          Nothing -> typeError loc ("in call "++call++", failed to unify result "++pshow r'++" with return signature "++pshow rs)
           Just r 
             | r == prev -> return prev
             | otherwise -> fix r e
@@ -280,7 +280,7 @@ cache prog f args (Over atypes r vl e) loc = do
 -- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
 runIO (TyIO t) = return t
-runIO t = typeError noLoc ("expected IO type, got "++(pshow t))
+runIO t = typeError noLoc ("expected IO type, got "++pshow t)
 
 -- Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type

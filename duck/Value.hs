@@ -50,7 +50,7 @@ instance Pretty Value where
     where
     extract (ValCons (V "[]") []) = []
     extract (ValCons (V ":") [h,t]) = h : extract t
-    extract e = error ("invalid tail "++(pshow e)++" in list")
+    extract e = error ("invalid tail "++pshow e++" in list")
   pretty' (ValCons c fields) = (2, pretty c <+> sep (map (guard 3) fields))
   -- pretty' (ValFun _ vl e) = -- conveniently ignore env
   --  (0, pretty "\\" <> prettylist vl <> pretty " -> " <> pretty e)

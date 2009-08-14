@@ -54,7 +54,7 @@ sortOps precs input = out where
   otoks (OpUn o r) t = Right o : otoks r t
   otoks (OpBin o l r) t = otoks l (Right o : otoks r t)
   prec o = fromMaybe defaultPrec $ Map.lookup o precs
-  err o = parseThrow ("ambiguous operator expression involving " ++ (pshow o)) 
+  err o = parseThrow ("ambiguous operator expression involving " ++ pshow o) 
 
 instance Pretty a => Pretty (Ops a) where
   pretty' (OpAtom a) = pretty' a

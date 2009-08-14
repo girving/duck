@@ -52,7 +52,7 @@ enumOption short long name x f help = Option short long (ReqArg process name) he
   help' = help ++ " (one of " ++ concat (intersperse ", " (map pshow values)) ++ ")"
   values = enumFrom (minBound `asTypeOf` x)
   process :: String -> Flags -> IO Flags
-  process s flags = case lookup s [((pshow x),x) | x <- values] of
+  process s flags = case lookup s [(pshow x,x) | x <- values] of
     Nothing -> die ("invalid argument "++s++" to --"++head long)
     Just x -> return (f x flags)
 
