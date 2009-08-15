@@ -250,6 +250,9 @@ join0 x = join x
 join0 :: a -> a
 join0 x = x
 
+join0 :: IO (IO a) -> IO a
+join0 x = join x
+
 {-
 -- In Haskell, join0 would be replaced with join.  The use
 -- of join0 here avoids the need for return as a separate construct

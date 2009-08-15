@@ -35,14 +35,30 @@ depend x y = x + y
 
 lift_or x = ss_or x
 
+const x _ = x
+
+apply = id
+
+ifor b x = case b of
+  True -> const x
+  False -> ss_or x
+
+ifhuh b = case b of
+  True -> const
+  False -> delay
+
+ignore x = True
+
 test_exec = assert \ 3 == exec 3
 test_delayed = assert \ 3 == force (delay 3)
 test_if = assert \ ss_if True True (loop 0)
-test_or = assert \ ss_or True (loop 1)
+test_or = assert \ apply (ss_or True) (loop 1)
 test_ambig1 = assert \ ambiguous 5 == ()
 test_ambig2 = assert \ ambiguous (loop 0) == ()
-test_depend1 = assert \ depend True (loop 1)
+test_depend1 = assert \ apply depend True (loop 1)
 test_depend2 = assert \ depend 1 2 == 3
-test_liftor = assert \ lift_or True (loop 1)
+test_liftor = assert \ id (lift_or True) (loop 1)
+test_ifor = assert \ ifor False True (loop 1)
+test_ifhuh = assert \ ignore $ ifhuh False (loop 1)
 
 main = testAll

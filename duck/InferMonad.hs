@@ -9,12 +9,14 @@ module InferMonad
   , runInfer
   , getInfer
   , updateInfer
+  , debugInfer
   ) where
 
 import Var
 import Control.Monad.State hiding (guard)
 import Control.Monad.Error hiding (guard)
 import Util
+import Pretty
 import Type
 import Lir (Overloads)
 import Data.Map (Map)
@@ -69,3 +71,8 @@ getInfer :: Infer InferState
 getInfer = get
 updateInfer :: (InferState -> InferState) -> Infer ()
 updateInfer = Infer . modify . second -- modify
+
+debugInfer :: String -> Infer ()
+debugInfer m = Infer $ get >>= \(s,_) -> liftIO $ do
+  mapM_ (\f -> putStr (pshow (callFunction f) ++ ":")) (reverse s)
+  putStrLn (' ':m)

@@ -121,8 +121,9 @@ expr prog global env loc = exp where
     return (d,t)
   exp (Bind v e1 e2) = do
     d <- exp e1
-    t <- liftInfer prog $ Infer.expr prog (Map.insert v (snd d) (Map.map snd env)) loc e2
-    return (ValBindIO v d e2, t)
+    dt <- liftInfer prog $ Infer.runIO (snd d)
+    t <- liftInfer prog $ Infer.expr prog (Map.insert v dt (Map.map snd env)) loc e2
+    return (ValBindIO v d env e2, t)
   exp (Return e) = do
     (d,t) <- exp e
     return (ValLiftIO d, TyIO t)
@@ -198,7 +199,7 @@ typeof prog (ValCons c args) = do
     _ -> execError noLoc ("failed to unify types "++pshowlist tl++" with "++pshowlist tl')
 typeof _ (ValClosure _ _ _) = return $ TyFun TyVoid TyVoid
 typeof _ (ValDelay _ _) = return $ TyFun tyUnit TyVoid
-typeof _ (ValBindIO _ _ _) = return $ TyIO TyVoid
+typeof _ (ValBindIO _ _ _ _) = return $ TyIO TyVoid
 typeof _ (ValPrimIO _ _) = return $ TyIO TyVoid
 typeof _ (ValLiftIO _) = return $ TyIO TyVoid
 
@@ -206,19 +207,18 @@ typeof _ (ValLiftIO _) = return $ TyIO TyVoid
 main :: Prog -> Globals -> IO ()
 main prog global = runExec $ do
   main <- lookup prog global Map.empty noLoc (V "main")
-  _ <- runIO prog global Map.empty main
+  _ <- runIO prog global main
   return ()
 
-runIO :: Prog -> Globals -> Locals -> TValue -> Exec TValue
-runIO _ _ _ (ValLiftIO d, TyIO t) = return (d,t)
-runIO prog global _ (ValPrimIO TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
-runIO _ _ _ (ValPrimIO p args, TyIO t) = Prims.primIO p args >.= \d -> (d,t)
-runIO prog global env (ValBindIO v m e, TyIO t) = do
-  d <- runIO prog global env m
-  let env' = Map.insert v d env
-  d' <- expr prog global env' noLoc e
-  cast prog t $ runIO prog global env' d'
-runIO _ _ _ d =
+runIO :: Prog -> Globals -> TValue -> Exec TValue
+runIO _ _ (ValLiftIO d, TyIO t) = return (d,t)
+runIO prog global (ValPrimIO TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
+runIO _ _ (ValPrimIO p args, TyIO t) = Prims.primIO p args >.= \d -> (d,t)
+runIO prog global (ValBindIO v m env e, TyIO t) = do
+  d <- runIO prog global m
+  d' <- expr prog global (Map.insert v d env) noLoc e
+  cast prog t $ runIO prog global d'
+runIO _ _ d =
   execError noLoc ("expected IO computation, got "++pshow d)
 
 testAll :: Prog -> Globals -> Exec Value
@@ -231,7 +231,7 @@ testAll prog global = do
   test (V v,d)
     | isPrefixOf "test_" v = do
         liftIO $ putStrLn ("  "++v)
-        runIO prog global Map.empty d
+        runIO prog global d
         success
     | otherwise = success
   nop = return $ ValCons (V "()") []

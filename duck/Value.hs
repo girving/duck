@@ -28,7 +28,7 @@ data Value
     -- Monadic IO
   | ValLiftIO Value
   | ValPrimIO Lir.PrimIO [Value]
-  | ValBindIO Var TValue Lir.Exp
+  | ValBindIO Var TValue Env Lir.Exp
 
 type TValue = (Value, Type)
 
@@ -59,7 +59,7 @@ instance Pretty Value where
   pretty' (ValLiftIO v) = (2, pretty "return" <+> guard 3 v)
   pretty' (ValPrimIO p []) = pretty' p
   pretty' (ValPrimIO p args) = (2, pretty p <+> sep (map (guard 3) args))
-  pretty' (ValBindIO v d e) = (0,
+  pretty' (ValBindIO v d _ e) = (0,
     pretty v <+> pretty "<-" <+> guard 0 d $$ guard 0 e)
 
 instance Pretty TValue where

@@ -1,3 +1,5 @@
+import prelude
+
 mapIO :: (a -> IO b) -> List a -> IO (List b)
 mapIO f l = case l of
   [] -> returnIO []
@@ -9,4 +11,4 @@ mapIO f l = case l of
 put :: List Chr -> IO ()
 put s = mapIO put s >> returnIO ()
 
-main = put '\n'
+main = put ['H','e','l','l','o',' ','w','o','r','l','d','!','\n']

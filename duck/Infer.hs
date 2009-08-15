@@ -11,6 +11,7 @@ module Infer
   , lookupDatatype
   , lookupCons
   , lookupConstructor'
+  , runIO
   ) where
 
 import Var
@@ -45,7 +46,7 @@ type Locals = TypeEnv
 
 insertOver :: Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
 insertOver f a o = do
-  --liftIO (putStrLn ("recorded "++pshow f++" "++pshowlist a++" = "++pshow (overRet o)))
+  --debugInfer ("recorded "++pshow f++" "++pshowlist a++" = "++pshow (overRet o))
   updateInfer $ Ptrie.mapInsert f a o
 
 lookupOver :: Var -> [Type] -> Infer (Maybe (Either (Maybe Trans) (Overload Type)))
@@ -159,13 +160,14 @@ expr prog env loc = exp where
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       _ -> typeError loc (pshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
-  exp (Lir.Prim op el) =
+  exp (Prim op el) =
     Prims.primType loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
-    t <- runIO =<< exp e1
-    t <- expr prog (Map.insert v t env) loc e2
-    checkIO t
-  exp (Return e) = exp e >.= TyIO
+    t1 <- runIO =<< exp e1
+    t2 <- expr prog (Map.insert v t1 env) loc e2
+    checkIO t2
+  exp (Return e) =
+    exp e >.= TyIO
   exp (PrimIO p el) = mapM exp el >>= Prims.primIOType loc p >.= TyIO
   exp (Spec e ts) = do
     t <- exp e
@@ -203,7 +205,7 @@ apply prog (TyFun a r) t2 loc = do
   result <- runMaybeT $ unify'' (applyTry prog) a t2
   case result of
     Just () -> return r
-    _ -> typeError loc ("cannot apply '"++(pshow (TyFun a r))++"' to '"++pshow t2++"'")
+    Nothing -> typeError loc ("cannot apply '"++(pshow (TyFun a r))++"' to '"++pshow t2++"'")
 apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ pshow t1)
 
 applyTry :: Prog -> Type -> Type -> MaybeT Infer Type
