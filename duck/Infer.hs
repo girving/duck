@@ -248,7 +248,7 @@ apply' prog f args loc = do
   case overload of
     Left tt -> do
       let t = TyClosure [(f,args)]
-      insertOver f (zip tt args) (Over [] t [] Nothing)
+      insertOver f (zip tt args) (Over noLoc [] t [] Nothing)
       return t
     Right o -> cache prog f args o loc
 
@@ -259,7 +259,7 @@ apply' prog f args loc = do
 -- TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
 cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
-cache prog f args (Over atypes r vl e) loc = do
+cache prog f args (Over _ atypes r vl e) loc = do
   let (tt,types) = unzip atypes
   Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog) types args
   let call = show (pretty f <+> prettylist args)
@@ -269,7 +269,7 @@ cache prog f args (Over atypes r vl e) loc = do
       tl = map (argType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv r
       fix prev e = do
-        insertOver f al (Over (zip tt tl) prev vl (Just e))
+        insertOver f al (Over noLoc (zip tt tl) prev vl (Just e))
         r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) loc e)
         result <- runMaybeT $ intersect (applyTry prog) r' rs
         case result of

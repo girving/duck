@@ -82,7 +82,7 @@ primIOType _ IOPutChr [TyChr] = return tyUnit
 primIOType _ TestAll [] = return tyUnit
 primIOType loc p args = typeError loc ("invalid arguments"++pshowlist args++" to "++show p)
 
-prelude :: IO Lir.Prog
+prelude :: Lir.Prog
 prelude = Lir.prog $ decTuples ++ prims ++ io where
   primop p = Ir.Over 
       (Loc noLoc $ V (primName p)) 

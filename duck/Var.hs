@@ -49,20 +49,20 @@ instance Pretty Var where
 
 type InScopeSet = Set Var
   
-freshen :: InScopeSet -> Var -> Var
+freshen :: InScopeSet -> Var -> (InScopeSet, Var)
 freshen scope v = search v where
-  search v | Set.notMember v scope = v
+  search v | Set.notMember v scope = (Set.insert v scope, v)
            | V s <- v = search (V $ s ++ show size)
   size = Set.size scope
 
-fresh :: InScopeSet -> Var
+fresh :: InScopeSet -> (InScopeSet, Var)
 fresh s = freshen s (V "x")
 
 freshVars :: InScopeSet -> Int -> (InScopeSet, [Var])
 freshVars s 0 = (s, [])
-freshVars s n = (s', v : vl) where 
-  v = fresh s
-  (s', vl) = freshVars (Set.insert v s) (n-1)
+freshVars s n = (s'', v : vl) where 
+  (s', v) = fresh s
+  (s'', vl) = freshVars s' (n-1)
 
 standardVars :: [Var]
 standardVars = letters ++ others where

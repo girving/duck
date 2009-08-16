@@ -10,6 +10,7 @@ module Lir
   , Ir.binopString
   , prog
   , union
+  , check
   ) where
 
 import Prelude hiding (mapM)
@@ -50,7 +51,8 @@ data Datatype = Data
   }
 
 data Overload t = Over
-  { overArgs :: [TransType t]
+  { overLoc :: SrcLoc
+  , overArgs :: [TransType t]
   , overRet :: t
   , overVars :: [Var]
   , overBody :: Maybe Exp
@@ -88,8 +90,8 @@ overTypes = map snd . overArgs
 emptyProg :: Prog
 emptyProg = Prog Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
 
-prog :: [Ir.Decl] -> IO Prog
-prog decls = check $ flip execState emptyProg $ do
+prog :: [Ir.Decl] -> Prog
+prog decls = flip execState emptyProg $ do
   modify $ \p -> p { progGlobals = foldl decl_vars Set.empty decls }
   mapM_ decl decls
   modify $ \p -> p { progDefinitions = reverse (progDefinitions p) }
@@ -103,16 +105,33 @@ prog decls = check $ flip execState emptyProg $ do
       modify $ \p -> p { progConses = Map.insert (unLoc c) tc (progConses p) }
       case tyl of
         [] -> definition [c] (Cons (unLoc c) [])
-        _ -> function (unLoc c) vl (Cons (unLoc c) (map Var vl)) where
+        _ -> function c vl (Cons (unLoc c) (map Var vl)) where
           vl = take (length tyl) standardVars
 
--- Check for duplicate statements
-check :: Prog -> IO Prog
-check prog = foldM st Map.empty (progDefinitions prog) >. prog where
-  st env (Def vl _) = foldM sv env vl
-  sv env (Loc l v) = case Map.lookup v env of
+-- |A few consistency checks on Lir programs
+check :: Prog -> IO ()
+check prog = do
+  foldM_ def Map.empty (progDefinitions prog) -- check for duplicate variable definitions
+  mapM_ funs (Map.toList $ progFunctions prog) -- check for duplicate variables in argument lists
+  success
+
+  where
+
+  def :: Map Var SrcLoc -> Definition -> IO (Map Var SrcLoc)
+  def env (Def vl _) = foldM var env vl
+
+  var :: Map Var SrcLoc -> Loc Var -> IO (Map Var SrcLoc)
+  var env (Loc l v) = case Map.lookup v env of
     Nothing -> return $ Map.insert v l env
     Just l' -> die (show l++": duplicate definition of '"++pshow v++"', previously declared at "++show l')
+
+  funs :: (Var,[Overload t]) -> IO ()
+  funs (f,fl) = mapM_ (fun f) fl
+
+  fun :: Var -> Overload t -> IO ()
+  fun f (Over l _ _ vl _) = case duplicates (filter (/= V "_") vl) of
+    [] -> success
+    v:_ -> die (show l++": '"++pshow v++"' appears more than once in argument list for "++pshow f)
 
 decl_vars :: Set Var -> Ir.Decl -> Set Var
 decl_vars s (Ir.LetD (Loc _ v) _) = Set.insert v s
@@ -124,17 +143,17 @@ decl_vars s (Ir.Data _ _ _) = s
 decl :: Ir.Decl -> State Prog ()
 decl (Ir.LetD v e@(Ir.Lambda _ _)) = do
   let (vl,e') = unwrapLambda e
-  e <- expr (Set.fromList vl) e'
-  function (unLoc v) vl e
+  e <- expr (Set.fromList vl) noLoc e'
+  function v vl e
 decl (Ir.Over v t e) = do
   let (tl,r,vl,e') = unwrapTypeLambda t e
-  e <- expr (Set.fromList vl) e'
-  overload (unLoc v) tl r vl e
+  e <- expr (Set.fromList vl) noLoc e'
+  overload v tl r vl e
 decl (Ir.LetD v e) = do
-  e <- expr Set.empty e
+  e <- expr Set.empty noLoc e
   definition [v] e
 decl (Ir.LetM vl e) = do
-  e <- expr Set.empty e
+  e <- expr Set.empty noLoc e
   definition vl e
 decl (Ir.Data (Loc l tc) tvl cases) =
   modify $ \p -> p { progDatatypes = Map.insert tc (Data l tvl cases) (progDatatypes p) }
@@ -144,12 +163,12 @@ definition :: [Loc Var] -> Exp -> State Prog ()
 definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
 
 -- |Add a global overload
-overload :: Var -> [TypeSetArg] -> TypeSet -> [Var] -> Exp -> State Prog ()
-overload v tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over tl r vl (Just e)] (progFunctions p) }
-overload v tl _ vl _ = error ("overload arity mismatch for "++pshow v++": argument types "++pshowlist tl++", variables "++pshowlist vl)
+overload :: Loc Var -> [TypeSetArg] -> TypeSet -> [Var] -> Exp -> State Prog ()
+overload (Loc l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
+overload (Loc l v) tl _ vl _ = error (show l++": overload arity mismatch for "++pshow v++": argument types "++pshowlist tl++", variables "++pshowlist vl)
 
 -- |Add an unoverloaded global function
-function :: Var -> [Var] -> Exp -> State Prog ()
+function :: Loc Var -> [Var] -> Exp -> State Prog ()
 function v vl e = overload v (map ((,) Nothing) tl) r vl e where
   (tl,r) = generalType vl
 
@@ -171,59 +190,63 @@ unwrapTypeLambda (TsFun t tl) (Ir.Lambda v e) = (typeArg t:tl', r, v:vl, e') whe
 unwrapTypeLambda t e = ([], t, [], e)
 
 -- |Lambda lift an expression
-expr :: Set Var -> Ir.Exp -> State Prog Exp
-expr locals (Ir.Let v e@(Ir.Lambda _ _) rest) = do
-  e <- lambda locals v e
-  rest <- expr (Set.insert v locals) rest
+expr :: Set Var -> SrcLoc -> Ir.Exp -> State Prog Exp
+expr locals l (Ir.Let v (Ir.ExpLoc _ e) rest) =
+  expr locals l (Ir.Let v e rest)
+expr locals l (Ir.Let v e@(Ir.Lambda _ _) rest) = do
+  e <- lambda locals v l e
+  rest <- expr (Set.insert v locals) l rest
   return $ Let v e rest
-expr locals e@(Ir.Lambda _ _) = lambda locals (V "f") e
-expr _ (Ir.Int i) = return $ Int i
-expr _ (Ir.Chr c) = return $ Chr c
-expr _ (Ir.Var v) = return $ Var v
-expr locals (Ir.Apply e1 e2) = do
-  e1 <- expr locals e1
-  e2 <- expr locals e2
+expr locals l e@(Ir.Lambda _ _) = lambda locals (V "f") l e
+expr _ _ (Ir.Int i) = return $ Int i
+expr _ _ (Ir.Chr c) = return $ Chr c
+expr _ _ (Ir.Var v) = return $ Var v
+expr locals l (Ir.Apply e1 e2) = do
+  e1 <- expr locals l e1
+  e2 <- expr locals l e2
   return $ Apply e1 e2
-expr locals (Ir.Let v e rest) = do
-  e <- expr locals e
-  rest <- expr (Set.insert v locals) rest
+expr locals l (Ir.Let v e rest) = do
+  e <- expr locals l e
+  rest <- expr (Set.insert v locals) l rest
   return $ Let v e rest
-expr locals (Ir.Cons c el) = do
-  el <- mapM (expr locals) el
+expr locals l (Ir.Cons c el) = do
+  el <- mapM (expr locals l) el
   return $ Cons c el
-expr locals (Ir.Case e pl def) = do
-  e <- expr locals e
-  pl <- mapM (\ (c,vl,e) -> expr (foldl (flip Set.insert) locals vl) e >.= \e -> (c,vl,e)) pl
-  def <- mapM (\ (v,e) -> expr (Set.insert v locals) e >.= \e -> (v,e)) def
+expr locals l (Ir.Case e pl def) = do
+  e <- expr locals l e
+  pl <- mapM (\ (c,vl,e) -> expr (foldl (flip Set.insert) locals vl) l e >.= \e -> (c,vl,e)) pl
+  def <- mapM (\ (v,e) -> expr (Set.insert v locals) l e >.= \e -> (v,e)) def
   return $ Case e pl def
-expr locals (Ir.Prim prim el) = do
-  el <- mapM (expr locals) el
+expr locals l (Ir.Prim prim el) = do
+  el <- mapM (expr locals l) el
   return $ Prim prim el
-expr locals (Ir.Bind v e rest) = do
-  e <- expr locals e
-  rest <- expr (Set.insert v locals) rest
+expr locals l (Ir.Bind v e rest) = do
+  e <- expr locals l e
+  rest <- expr (Set.insert v locals) l rest
   return $ Bind v e rest
-expr locals (Ir.Return e) = Return =.< expr locals e
-expr locals (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals) el
-expr locals (Ir.Spec e t) = expr locals e >.= \e -> Spec e t
-expr locals (Ir.ExpLoc l e) = ExpLoc l =.< expr locals e
+expr locals l (Ir.Return e) = Return =.< expr locals l e
+expr locals l (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals l) el
+expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> Spec e t
+expr locals _ (Ir.ExpLoc l e) = ExpLoc l =.< expr locals l e
 
 -- |Lift a single lambda expression
-lambda :: Set Var -> Var -> Ir.Exp -> State Prog Exp
-lambda locals v e = do
+lambda :: Set Var -> Var -> SrcLoc -> Ir.Exp -> State Prog Exp
+lambda locals v l e = do
   f <- freshenM v -- use the suggested function name
   let (vl,e') = unwrapLambda e
-  e <- expr (foldl (flip Set.insert) locals vl) e'
-  let vs = free locals e
-  function f (vs ++ vl) e
+      localsPlus = foldl (flip Set.insert) locals vl
+      localsMinus = foldl (flip Set.delete) locals vl
+  e <- expr localsPlus l e'
+  let vs = free localsMinus e
+  function (Loc l f) (vs ++ vl) e
   return $ foldl Apply (Var f) (map Var vs)
 
 -- |Generate a fresh variable
 freshenM :: Var -> State Prog Var
 freshenM v = do
   p <- get
-  let v' = freshen (progGlobals p) v
-  put $ p { progGlobals = Set.insert v' (progGlobals p) }
+  let (globals,v') = freshen (progGlobals p) v
+  put $ p { progGlobals = globals }
   return v'
 
 -- |Compute the list of free variables in an expression
@@ -267,7 +290,7 @@ instance Pretty Prog where
        [pretty "-- datatypes"]
     ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c) <- Map.toList (progDatatypes prog)]
     ++ [pretty "-- functions"]
-    ++ [function v tl r vl e | (v,o) <- Map.toList (progFunctions prog), Over tl r vl e <- o]
+    ++ [function v tl r vl e | (v,o) <- Map.toList (progFunctions prog), Over _ tl r vl e <- o]
     ++ [pretty "-- overloads"]
     ++ [pretty (progOverloads prog)]
     ++ [pretty "-- definitions"]
@@ -287,8 +310,8 @@ instance Pretty Exp where
 
 instance Pretty (Map Var Overloads) where
   pretty info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
-    pr f tl (Over _ r _ Nothing) = pretty f <+> prettylist tl <+> pretty "::" <+> pretty r
-    pr f tl o@(Over _ _ vl (Just e)) = pr f tl o{ overBody = Nothing } $$
+    pr f tl (Over _ _ r _ Nothing) = pretty f <+> prettylist tl <+> pretty "::" <+> pretty r
+    pr f tl o@(Over _ _ _ vl (Just e)) = pr f tl o{ overBody = Nothing } $$
       prettylist (f : vl) <+> equals <+> nest 2 (pretty e)
 
 revert :: Exp -> Ir.Exp

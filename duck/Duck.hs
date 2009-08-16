@@ -115,12 +115,11 @@ main = do
         return r
       phase' p = phase p . return
 
-  prelude <- Prims.prelude
-
   ast <- phase PAst (loadModule Set.empty (path flags) f)
   ir <- phase PIr (Ir.prog ast)
-  lir <- phase PLir (Lir.prog ir)
-  lir <- phase' PLink (Lir.union prelude lir)
+  lir <- phase' PLir (Lir.prog ir)
+  lir <- phase' PLink (Lir.union Prims.prelude lir)
+  Lir.check lir
   lir <- phase PInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
   env <- phase PEnv (runExec $ Interp.prog lir)
 

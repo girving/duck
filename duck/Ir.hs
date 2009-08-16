@@ -226,9 +226,9 @@ match env s (Ast.PatLoc _ p) = match env s p
 match env s (Ast.PatOps o) = match env s $ Ast.opsPattern $ sortOps (envPrecs env) o
 match env s (Ast.PatCons c args) = do
   (vl, s', ms) <- matches env s args
-  let x = fresh s
+  let (s'',x) = fresh s'
       m em er = Case em [(c, vl, ms (map Var vl) er)] Nothing
-  return (x, s', m)
+  return (x, s'', m)
 match env s (Ast.PatList pl) = match env s (patternList pl)
 match _ _ (Ast.PatLambda _ _) = irError "'->' (lambda) patterns not yet implemented"
 

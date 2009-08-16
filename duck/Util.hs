@@ -5,6 +5,7 @@ module Util
   ( debug
   , debugVal
   , foldmap
+  , duplicates
   , groupPairs
   , die
   , Stack(..)
@@ -47,6 +48,10 @@ foldmap _ x [] = (x,[])
 foldmap f x (h:t) = (x'',h':t') where
   (x',h') = f x h
   (x'',t') = foldmap f x' t
+
+-- |Find all entries that occur more than once
+duplicates :: Eq a => [a] -> [a]
+duplicates l = l \\ nub l
 
 -- Note: it'd be nice if this was linear time, or at least O(n log n)
 -- See http://lambda-the-ultimate.org/node/3277
