@@ -53,7 +53,7 @@ data Datatype = Data
 data Overload t = Over
   { overLoc :: SrcLoc
   , overArgs :: [TransType t]
-  , overRet :: t
+  , overRet :: !t
   , overVars :: [Var]
   , overBody :: Maybe Exp
   }
@@ -66,20 +66,20 @@ data Definition = Def
   }
 
 data Exp
-  = ExpLoc SrcLoc Exp
-  | Int Int
-  | Chr Char
-  | Var Var
+  = ExpLoc SrcLoc !Exp
+  | Int !Int
+  | Chr !Char
+  | Var !Var
   | Apply Exp Exp
-  | Let Var Exp Exp
-  | Cons CVar [Exp]
+  | Let !Var Exp Exp
+  | Cons !CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
-  | Spec Exp TypeSet
-  | Prim Prim [Exp]
+  | Spec Exp !TypeSet
+  | Prim !Prim [Exp]
     -- Monadic IO
-  | Bind Var Exp Exp
+  | Bind !Var Exp Exp
   | Return Exp
-  | PrimIO PrimIO [Exp]
+  | PrimIO !PrimIO [Exp]
   deriving Show
 
 overTypes :: Overload t -> [t]

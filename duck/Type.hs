@@ -38,10 +38,10 @@ import Util
 
 -- |A concrete type (the types of values are always concrete)
 data Type
-  = TyCons CVar [Type]
+  = TyCons !CVar [Type]
   | TyClosure [(Var,[Type])] -- ^ an intersection of one or more closures
-  | TyFun Type Type
-  | TyIO Type
+  | TyFun !Type !Type
+  | TyIO !Type
   | TyInt
   | TyChr
   | TyVoid
@@ -50,15 +50,15 @@ data Type
 -- |A set of concrete types (used for function overloads).  This is the same
 -- as 'Type' except that it can contain type variables.
 data TypeSet
-  = TsVar Var
-  | TsCons CVar [TypeSet]
+  = TsVar !Var
+  | TsCons !CVar [TypeSet]
   | TsClosure [(Var,[TypeSet])] -- ^ an intersection of one or more closures
-  | TsFun TypeSet TypeSet
-  | TsIO TypeSet
+  | TsFun !TypeSet !TypeSet
+  | TsIO !TypeSet
   | TsInt
   | TsChr
   | TsVoid
-  | TsTrans Trans TypeSet -- ^ a (temporary) transparent macro transformer type
+  | TsTrans !Trans !TypeSet -- ^ a (temporary) transparent macro transformer type
   deriving (Eq, Ord, Show)
 
 -- |Possible kinds of type macro transformers.

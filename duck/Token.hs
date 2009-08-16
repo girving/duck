@@ -8,12 +8,12 @@ module Token
 import Var
 
 data Token
-  = TokVar { tokVar :: Var }
-  | TokCVar { tokVar :: Var }
-  | TokSym { tokVar :: Var }
-  | TokCSym { tokVar :: Var }
-  | TokInt { tokInt :: Int }
-  | TokChr { tokChr :: Char }
+  = TokVar { tokVar :: !Var }
+  | TokCVar { tokVar :: !Var }
+  | TokSym { tokVar :: !Var }
+  | TokCSym { tokVar :: !Var }
+  | TokInt { tokInt :: !Int }
+  | TokChr { tokChr :: !Char }
   | TokEq
   | TokLP
   | TokRP
@@ -21,9 +21,9 @@ data Token
   | TokRB
     -- In the following, Just t means an implicit token inserted before t
     -- by layout, and Nothing means a real token that appeared in the source.
-  | TokLC (Maybe Token)
-  | TokRC (Maybe Token)
-  | TokSemi (Maybe Token)
+  | TokLC !(Maybe Token)
+  | TokRC !(Maybe Token)
+  | TokSemi !(Maybe Token)
   | TokDColon
   | TokComma
   | TokDef
@@ -41,7 +41,7 @@ data Token
   | TokOr
   | TokMinus
   | TokImport
-  | TokInfix { tokFix :: Fixity }
+  | TokInfix { tokFix :: !Fixity }
   | TokComment
   | TokCommentEnd
   | TokEOF

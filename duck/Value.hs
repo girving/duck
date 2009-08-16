@@ -20,15 +20,15 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 data Value
-  = ValInt Int
-  | ValChr Char
-  | ValCons Var [Value]
-  | ValClosure Var [TValue] Lir.Overloads
+  = ValInt !Int
+  | ValChr !Char
+  | ValCons !Var [Value]
+  | ValClosure !Var [TValue] Lir.Overloads
   | ValDelay Env Lir.Exp
     -- Monadic IO
-  | ValLiftIO Value
-  | ValPrimIO Lir.PrimIO [Value]
-  | ValBindIO Var TValue Env Lir.Exp
+  | ValLiftIO !Value
+  | ValPrimIO !Lir.PrimIO [Value]
+  | ValBindIO !Var !TValue Env Lir.Exp
 
 type TValue = (Value, Type)
 

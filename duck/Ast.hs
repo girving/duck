@@ -23,40 +23,40 @@ import Data.Maybe
 type Prog = [Loc Decl]
 
 data Decl
-  = SpecD (Loc Var) TypeSet
-  | DefD (Loc Var) [Pattern] Exp
-  | LetD Pattern Exp
-  | Data (Loc CVar) [Var] [(Loc CVar,[TypeSet])]
-  | Infix PrecFix [Var]
-  | Import Var
+  = SpecD !(Loc Var) !TypeSet
+  | DefD !(Loc Var) [Pattern] Exp
+  | LetD !Pattern Exp
+  | Data !(Loc CVar) [Var] [(Loc CVar,[TypeSet])]
+  | Infix !PrecFix [Var]
+  | Import !Var
   deriving Show
 
 data Exp
-  = Def Var [Pattern] Exp Exp
-  | Let Pattern Exp Exp
+  = Def !Var [Pattern] Exp Exp
+  | Let !Pattern Exp Exp
   | Lambda [Pattern] Exp
   | Apply Exp [Exp]
-  | Var Var
-  | Int Int
-  | Chr Char
+  | Var !Var
+  | Int !Int
+  | Chr !Char
   | Any
   | List [Exp]
-  | Ops (Ops Exp)
-  | Spec Exp TypeSet
+  | Ops !(Ops Exp)
+  | Spec Exp !TypeSet
   | Case Exp [(Pattern,Exp)]
   | If Exp Exp Exp
-  | ExpLoc SrcLoc Exp
+  | ExpLoc SrcLoc !Exp
   deriving Show
 
 data Pattern
   = PatAny
-  | PatVar Var
-  | PatCons CVar [Pattern]
+  | PatVar !Var
+  | PatCons !CVar [Pattern]
   | PatList [Pattern]
-  | PatOps (Ops Pattern)
-  | PatLambda [Pattern] Pattern
-  | PatSpec Pattern TypeSet
-  | PatLoc SrcLoc Pattern
+  | PatOps !(Ops Pattern)
+  | PatLambda [Pattern] !Pattern
+  | PatSpec !Pattern !TypeSet
+  | PatLoc SrcLoc !Pattern
   deriving Show
 
 imports :: Prog -> [String]

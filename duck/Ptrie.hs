@@ -28,8 +28,8 @@ import qualified Data.Map as Map
 
 -- In order to make the representation canonical, the Maps in a Ptrie are never empty
 data Ptrie k a v
-  = Leaf v
-  | Node a (Map k (Ptrie k a v))
+  = Leaf !v
+  | Node !a (Map k (Ptrie k a v))
   deriving (Eq)
 
 -- |A very special ptrie that is an exception to the nonempty rule.

@@ -28,7 +28,7 @@ data SrcLoc
     , _srcEndLine, _srcEndCol :: !Int
     }
 
-data Loc a = Loc { srcLoc :: SrcLoc, unLoc :: a }
+data Loc a = Loc { srcLoc :: SrcLoc, unLoc :: !a }
 
 instance Functor Loc where
   fmap f (Loc l x) = Loc l (f x)

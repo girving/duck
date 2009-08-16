@@ -31,28 +31,28 @@ import GHC.Exts
 import Control.Monad hiding (guard)
 
 data Decl
-  = LetD (Loc Var) Exp
+  = LetD !(Loc Var) Exp
   | LetM [Loc Var] Exp
-  | Over (Loc Var) TypeSet Exp
-  | Data (Loc CVar) [Var] [(Loc CVar, [TypeSet])]
+  | Over !(Loc Var) !TypeSet Exp
+  | Data !(Loc CVar) [Var] [(Loc CVar, [TypeSet])]
   deriving Show
 
 data Exp
-  = ExpLoc SrcLoc Exp
-  | Int Int
-  | Chr Char
-  | Var Var
-  | Lambda Var Exp
+  = ExpLoc SrcLoc !Exp
+  | Int !Int
+  | Chr !Char
+  | Var !Var
+  | Lambda !Var Exp
   | Apply Exp Exp
-  | Let Var Exp Exp
-  | Cons CVar [Exp]
+  | Let !Var Exp Exp
+  | Cons !CVar [Exp]
   | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
-  | Prim Prim [Exp]
-  | Spec Exp TypeSet
+  | Prim !Prim [Exp]
+  | Spec Exp !TypeSet
     -- Monadic IO
-  | Bind Var Exp Exp
+  | Bind !Var Exp Exp
   | Return Exp
-  | PrimIO PrimIO [Exp]
+  | PrimIO !PrimIO [Exp]
   deriving Show
 
 data Binop

@@ -17,9 +17,9 @@ import qualified Data.Map as Map
 import qualified Data.Foldable as Fold
 
 data Ops a =
-    OpAtom a
-  | OpUn Var (Ops a)
-  | OpBin Var (Ops a) (Ops a)
+    OpAtom !a
+  | OpUn !Var !(Ops a)
+  | OpBin !Var !(Ops a) !(Ops a)
   deriving (Show)
 
 minPrec, defaultPrec :: PrecFix
