@@ -21,7 +21,6 @@ import Type
 import Lir (Overloads)
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Arrow hiding ((<+>))
 import Control.Exception
 import CallStack
 import SrcLoc

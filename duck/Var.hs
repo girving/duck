@@ -9,6 +9,7 @@ module Var
   , Fixity(..)
   , PrecFix
   , PrecEnv
+  , addVar
   , fresh
   , freshen
   , freshVars
@@ -48,7 +49,11 @@ instance Pretty Var where
     else parens $ pretty v)
 
 type InScopeSet = Set Var
-  
+
+addVar :: Var -> InScopeSet -> InScopeSet
+addVar (V "_") = id
+addVar v = Set.insert v
+
 freshen :: InScopeSet -> Var -> (InScopeSet, Var)
 freshen scope v = search v where
   search v | Set.notMember v scope = (Set.insert v scope, v)

@@ -11,8 +11,14 @@ g x = case x of
   _, [] -> 1
   [], _ -> 2
 
+h x = case x of 
+  _, [] -> 1
+  _, [_] -> 2
+  [], _ -> 3
+
 test_f = assert \ f ([],[]) == 1
-test_g = assert \ g ([],[]) == 2
+test_g = assert \ g ([],[]) == 1
+test_h = assert \ h ([1], [1]) == 2
 
 -- Repeated default matches should be harmless
 

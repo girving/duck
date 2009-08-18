@@ -33,7 +33,6 @@ import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Monad hiding (guard)
-import Control.Arrow hiding ((<+>))
 import Util
 
 -- |A concrete type (the types of values are always concrete)

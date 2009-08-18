@@ -7,13 +7,13 @@ module Lex
   ( lexer
   ) where
 
+import Util
 import Var
 import Token
 import SrcLoc
 import ParseMonad
 import Data.Monoid (mappend)
 import Numeric
-import Control.Arrow (first)
 import qualified Data.Char as Char
 }
 

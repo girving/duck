@@ -7,6 +7,7 @@ module Util
   , foldmap
   , duplicates
   , groupPairs
+  , first, second
   , die
   , Stack(..)
   , (++.)
@@ -59,6 +60,12 @@ groupPairs :: Eq a => [(a,b)] -> [(a,[b])]
 groupPairs pairs = map squash groups where
   squash l = (fst (head l), map snd l)
   groups = groupBy ((==) `on` fst) pairs
+
+-- more efficient than Arrow instances
+first :: (a -> c) -> (a,b) -> (c,b)
+first f (a,b) = (f a,b)
+second :: (b -> c) -> (a,b) -> (a,c)
+second f (a,b) = (a,f b)
 
 die :: MonadIO m => String -> m a
 die s = liftIO $ do
