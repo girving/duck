@@ -7,6 +7,7 @@ module Util
   , foldmap
   , duplicates
   , groupPairs
+  , spanJust
   , first, second
   , die
   , Stack(..)
@@ -60,6 +61,11 @@ groupPairs :: Eq a => [(a,b)] -> [(a,[b])]
 groupPairs pairs = map squash groups where
   squash l = (fst (head l), map snd l)
   groups = groupBy ((==) `on` fst) pairs
+
+-- |Return the longest prefix that is Just, and the rest.
+spanJust :: (a -> Maybe b) -> [a] -> ([b],[a])
+spanJust _ [] = ([],[])
+spanJust f l@(x:r) = maybe ([],l) (\y -> first (y:) $ spanJust f r) $ f x
 
 -- more efficient than Arrow instances
 first :: (a -> c) -> (a,b) -> (c,b)

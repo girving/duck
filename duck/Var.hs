@@ -20,6 +20,7 @@ module Var
   , istuple
   , tuplelen
   , isCons
+  , HasVar(..)
   ) where
 
 import Pretty
@@ -101,3 +102,11 @@ tuplelen _ = Nothing
 isCons :: Var -> Bool
 isCons (V (c:_)) | isUpper c || elem c "([:," = True
 isCons _ = False
+
+class HasVar a where
+  var :: Var -> a
+  unVar :: a -> Maybe Var
+
+instance HasVar Var where
+  var x = x
+  unVar = Just

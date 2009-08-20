@@ -77,6 +77,24 @@ opsPattern (OpAtom a) = a
 opsPattern (OpUn _ _) = parseThrow "unary operator in pattern"
 opsPattern (OpBin o l r) = PatCons o [opsPattern l, opsPattern r]
 
+instance HasVar Exp where
+  var = Var
+  unVar (Var v) = Just v
+  unVar Any = Just ignored
+  unVar (ExpLoc _ e) = unVar e
+  unVar (Spec e _) = unVar e
+  unVar (Ops e) = unVar e
+  unVar _ = Nothing
+
+instance HasVar Pattern where
+  var = PatVar
+  unVar (PatVar v) = Just v
+  unVar PatAny = Just ignored
+  unVar (PatLoc _ p) = unVar p
+  unVar (PatSpec p _) = unVar p
+  unVar (PatOps p) = unVar p
+  unVar _ = Nothing
+
 instance Pretty Decl where
   pretty (SpecD f t) =
     pretty f <+> pretty "::" <+> pretty t

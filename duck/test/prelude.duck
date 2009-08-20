@@ -64,55 +64,46 @@ x && y = if x then force y else x
 x || y = if x then x else force y
 
 (==) :: Bool -> Bool -> Bool
-x == y = case x of
-  False -> not y
-  True -> y
+False == y = not y
+True == y = y
 
 (<) :: Bool -> Bool -> Bool
-x < y = case x of
-  False -> y
-  True -> False
+False < y = y
+True < _ = False
 
 ---- maybe
 
 data Maybe a of Nothing ; Just a
 
 map :: (a -> b) -> Maybe a -> Maybe b
-map f m = case m of
-  Nothing -> Nothing
-  Just x -> Just (f x)
+map _ Nothing = Nothing
+map f (Just x) = Just (f x)
 
 fold :: (a -> b -> a) -> a -> Maybe b -> a
-fold f x l = case l of
-  Nothing -> x
-  Just y -> f x y
+fold _ x Nothing = x
+fold f x (Just y) = f x y
 
 join :: Maybe (Maybe a) -> Maybe a
-join m = case m of
-  Nothing -> Nothing
-  Just Nothing -> Nothing
-  Just (Just x) -> Just x
+join (Just x) = x
+join Nothing = Nothing
 
 bool :: Maybe a -> Bool
-bool x = case x of
-  Nothing -> False
-  _ -> True
+bool Nothing = False
+bool _ = True
 
 join0 :: Maybe (Maybe a) -> Maybe a
 join0 x = join x
 
 (==) :: Maybe a -> Maybe b -> Bool
-x == y = case x,y of
-  Nothing, Nothing -> True
-  Just x, Just y -> x == y
-  _ -> False
+Nothing == Nothing = True
+Just x == Just y = x == y
+_ == _ = False
 
 cmp :: Maybe a -> Maybe b -> Ordering
-cmp x y = case x,y of
-  Nothing, Nothing -> EQ
-  Nothing, Just _ -> LT
-  Just _, Nothing -> GT
-  Just x, Just y -> cmp x y
+cmp Nothing Nothing = EQ
+cmp Nothing (Just _) = LT
+cmp (Just _) Nothing = GT
+cmp (Just x) (Just y) = cmp x y
 
 ---- lists
 
@@ -121,40 +112,35 @@ data List a of
   a : List a
 
 map :: (a -> b) -> List a -> List b
-map f l = case l of
-  [] -> []
-  x:l -> f x : map f l
+map _ [] = []
+map f (x:l) = f x : map f l
 
 fold :: (a -> b -> a) -> a -> List b -> a
-fold f x l = case l of
-  [] -> x
-  y:l -> fold f (f x y) l
+fold _ x [] = x
+fold f x (y:l) = fold f (f x y) l
 
 join :: List (List a) -> List a
-join l = case l of
-  [] -> []
-  []:l -> join l
-  (x:y):l -> x : join (y:l)
+join [] = []
+join ([]:l) = join l
+join ((x:y):l) = x : join (y:l)
 
 join0 :: List (List a) -> List a
 join0 x = join x
 
 bool :: List a -> Bool
-bool x = case x of
-  [] -> False
-  _ -> True
+bool [] = False
+bool _ = True
 
 (==) :: List a -> List b -> Bool
-x == y = case x,y of
-  [],[] -> True
-  x:x',y:y' -> x == y && x' == y'
+[] == [] = True
+(x:xl) == (y:yl) = x == y && xl == yl
+_ == _ = False
 
 cmp :: List a -> List b -> Ordering
-cmp x y = case x,y of
-  [],[] -> EQ
-  [],_ -> LT
-  _,[] -> GT
-  x:x',y:y' -> cmp x y || cmp x' y'
+cmp [] [] = EQ
+cmp [] _ = LT
+cmp _ [] = GT
+cmp (x:xl) (y:yl) = cmp x y || cmp xl yl
 
 ---- tuples
 
@@ -175,17 +161,15 @@ cmp (a,b,c) (a',b',c') = cmp a a' || cmp b b' || cmp c c'
 data Ordering of LT ; EQ ; GT
 
 negate :: Ordering -> Ordering
-negate x = case x of
-  LT -> GT
-  EQ -> EQ
-  GT -> LT
+negate LT = GT
+negate GT = LT
+negate EQ = EQ
 
 (==) :: Ordering -> Ordering -> Bool
-x == y = case x,y of
-  LT,LT -> True
-  EQ,EQ -> True
-  GT,GT -> True
-  _ -> False
+EQ == EQ = True
+LT == LT = True
+GT == GT = True
+_ == _ = False
 
 (<) :: Ordering -> Ordering -> Bool
 x < y = case y of

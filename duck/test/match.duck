@@ -3,9 +3,8 @@ main = testAll
 
 -- Verify that the first matching alternative is chosen
 
-f x = case x of
-  [], _ -> 1
-  _, [] -> 2
+f ([],_) = 1
+f (_,[]) = 2
 
 g x = case x of
   _, [] -> 1

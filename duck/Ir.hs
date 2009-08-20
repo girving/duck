@@ -158,30 +158,37 @@ prog p = either die return (decls p) where
   -- We use Either in order to return errors.  TODO: add location information to the errors.
   decls :: [Loc Ast.Decl] -> E [Decl]
   decls [] = return []
-  decls (Loc _ (Ast.DefD f args body) : rest) = do
-    e <- expr env s (Ast.Lambda args body)
+  decls decs@(Loc _ (Ast.DefD f _ _):_) = do
+    let isfcase (Loc _ (Ast.DefD (Loc _ f') a b)) | unLoc f == f' = Just (a,b)
+        isfcase _ = Nothing
+        (defs,rest) = spanJust isfcase decs
+        s' = foldl' (foldl' pattern_vars) s (map fst defs)
+    n <- case group $ map (length . fst) defs of
+      [n:_] -> return n
+      _ -> irError ("Equations for " ++ pshow f ++ " have different numbers of arguments")
+    let (s'',vl) = freshVars s' n
+    body <- cases env s'' (map Var vl) defs
+    let e = foldr Lambda body vl
     (LetD f e :) =.< decls rest
-  decls (Loc _ (Ast.SpecD f t) : rest) = case rest of
-    Loc _ (Ast.DefD f' args body) : rest | unLoc f == unLoc f' -> do
-      e <- expr env s (Ast.Lambda args body)
-      (Over f t e :) =.< decls rest
-    Loc _ (Ast.DefD f' _ _) : _ -> irError ("Syntax error: type specification for '"++pshow f++"' followed by definition of '"++pshow f'++"'")
-    _ -> irError ("Syntax error: type specification for '"++pshow f++"' must be followed by a definition")
-  decls (Loc _ (Ast.LetD (Ast.PatLoc l p) e) : rest) = decls (Loc l (Ast.LetD p e) : rest)
-  decls (Loc l (Ast.LetD Ast.PatAny e) : rest) = do
-    e <- expr env s e
-    (LetD (Loc l ignored) e :) =.< decls rest
-  decls (Loc l (Ast.LetD (Ast.PatVar v) e) : rest) = do
-    e <- expr env s e
-    (LetD (Loc l v) e :) =.< decls rest
-  decls (Loc l (Ast.LetD p e) : rest) = do
-    (p,vars) <- pattern env l p
-    (_,_,m) <- match env s p Nothing
-    e <- expr env s e
-    let d = case map (\ (v,l) -> Loc l v) (Map.toList vars) of
-              [v] -> LetD v (m e (Var (unLoc v)))
-              vl -> LetM vl (m e (Cons (tupleCons vl) (map (Var . unLoc) vl)))
-    (d :) =.< decls rest
+  decls (Loc _ (Ast.SpecD f t) : rest) = do
+    rest <- decls rest
+    case rest of
+      LetD f' e : rest 
+        | unLoc f == unLoc f' -> return (Over f t e : rest)
+        | otherwise -> irError ("Syntax error: type specification for '"++pshow f++"' followed by definition of '"++pshow f'++"'")
+      _ -> irError ("Syntax error: type specification for '"++pshow f++"' must be followed by its definition")
+  decls (Loc l (Ast.LetD p e) : rest)
+    | Just v <- unVar p = do
+      e <- expr env s e
+      (LetD (Loc l v) e :) =.< decls rest
+    | otherwise = do
+      (p,vars) <- pattern env l p
+      (_,_,m) <- match env s p Nothing
+      e <- expr env s e
+      let d = case map (\ (v,l) -> Loc l v) (Map.toList vars) of
+                [v] -> LetD v (m e (Var (unLoc v)))
+                vl -> LetM vl (m e (Cons (tupleCons vl) (map (Var . unLoc) vl)))
+      (d :) =.< decls rest
   decls (Loc _ (Ast.Data t args cons) : rest) = (Data t args cons :) =.< decls rest
   decls (Loc _ (Ast.Infix _ _) : rest) = decls rest
   decls (Loc _ (Ast.Import _) : rest) = decls rest
@@ -201,17 +208,20 @@ expr env s (Ast.Apply f args) = do
   return $ foldl' Apply f args
 expr env s (Ast.Let p e c) = do
   e <- expr env s e
-  (p,_) <- pattern env noLoc p
-  (_,s',m) <- match env s p Nothing
-  c <- expr env s' c
-  return $ m e c
+  case unVar p of
+    Just v -> Let v e =.< expr env (addVar v s) c
+    Nothing -> do
+      (p,_) <- pattern env noLoc p
+      (_,s',m) <- match env s p Nothing
+      c <- expr env s' c
+      return $ m e c
 expr env s (Ast.Def f args body c) = do
   (args,_) <- patterns env noLoc args
   (vl, s', m) <- matches env s args Nothing
   body <- expr env s' body
   c <- expr env (Set.insert f s) c
   return $ Let f (foldr Lambda (m (map Var vl) body) vl) c
-expr env s (Ast.Case e cl) = expr env s e >>= \e -> cases env s e cl
+expr env s (Ast.Case e cl) = expr env s e >>= \e -> case1 env s e cl
 expr env s (Ast.Ops o) = expr env s $ Ast.opsExp $ sortOps (envPrecs env) o
 expr env s (Ast.Spec e t) = expr env s e >.= \e -> Spec e t
 expr env s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) =.< mapM (expr env s) el
@@ -256,12 +266,14 @@ type PatTop = Either (CVar,Int) Var
 -- Part (3) is handled by building up a stack of unprocessed expressions and an associated
 -- set of pattern stacks, and then iteratively reducing the set of possibilities.
 -- This generally follows Wadler's algorithm in The Implementation of Functional Programming Languages
-cases :: Env -> InScopeSet -> Exp -> [(Ast.Pattern, Ast.Exp)] -> E Exp
+case1 :: Env -> InScopeSet -> Exp -> [(Ast.Pattern, Ast.Exp)] -> E Exp
+case1 env s e = cases env s [e] . map (first (:[]))
+cases :: Env -> InScopeSet -> [Exp] -> [([Ast.Pattern], Ast.Exp)] -> E Exp
 cases env s e arms = do
-  (arms,vars) <- mapAndUnzipM (\(p,e) -> pattern env noLoc p >.= \(p,s) -> (([p],e),Map.keysSet s)) arms
+  (arms,vars) <- mapAndUnzipM (\(p,e) -> patterns env noLoc p >.= \(p,s) -> ((p,e),Map.keysSet s)) arms
   let vars' = Set.unions (s:vars)
   -- here we call all pattern variables "in scope" to make sure we don't end up colliding with them along the way (though see issue 22)
-  reduce vars' [e] arms Nothing
+  reduce vars' e arms Nothing
 
   where 
 
@@ -273,9 +285,9 @@ cases env s e arms = do
   reduce s (val:vals) alts fall = 
     lv =.< reduceGroups s' var vals groups fall
     where
-      ((s',var),lv) = case val of
-        Var v -> ((s,v),id)
-        _ -> (fresh s,Let var val)
+      ((s',var),lv) = case unVar val of
+        Just v -> ((s,v),id)
+        Nothing -> (fresh s,Let var val)
       -- separate into groups of vars vs. cons
       sameGroup (Left _, _) (Left _, _) = True
       sameGroup (Right _, _) (Right _, _) = True
@@ -324,6 +336,13 @@ cases env s e arms = do
   separate ((PatVar v):l,e) = (Right v, (l,e))
   separate ((PatCons c a):l,e) = (Left (c, length a), (a++l,e))
   separate _ = error "separate: bad arguments"
+
+instance HasVar Exp where
+  var = Var
+  unVar (Var v) = Just v
+  unVar (ExpLoc _ e) = unVar e
+  unVar (Spec e _) = unVar e
+  unVar _ = Nothing
 
 -- Pretty printing
 
