@@ -66,7 +66,7 @@ lookup :: Prog -> Locals -> SrcLoc -> Var -> Infer Type
 lookup prog env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
-  | Just _ <- Map.lookup v (progFunctions prog) = return $ TyClosure [(v,[])] -- if we find overloads, make a new closure
+  | Just _ <- Map.lookup v (progFunctions prog) = return $ tyClosure v [] -- if we find overloads, make a new closure
   | otherwise = typeError loc ("unbound variable " ++ show v)
 
 lookupDatatype :: Prog -> SrcLoc -> CVar -> Infer Datatype
@@ -192,20 +192,25 @@ joinList prog loc = foldM1 (join prog loc)
 apply :: Prog -> Type -> Type -> SrcLoc -> Infer Type
 apply _ TyVoid _ _ = return TyVoid
 apply _ _ TyVoid _ = return TyVoid
-apply prog (TyClosure fl) t2 loc = joinList prog loc =<< mapM ap fl where
-  ap :: (Var,[Type]) -> Infer Type
-  ap (f,args) = do
+apply prog (TyFun (TypeFun al cl)) t2 loc = do
+  al <- mapM arrow al
+  cl <- mapM closure cl
+  joinList prog loc (al++cl)
+  where
+  arrow :: (Type,Type) -> Infer Type
+  arrow (a,r) = do
+    result <- runMaybeT $ unify'' (applyTry prog) a t2
+    case result of
+      Just () -> return r
+      Nothing -> typeError loc ("cannot apply '"++(pshow (tyArrow a r))++"' to '"++pshow t2++"'")
+  closure :: (Var,[Type]) -> Infer Type
+  closure (f,args) = do
     r <- lookupOver f args'
     case r of
       Nothing -> apply' prog f args' loc -- no match, type not yet inferred
       Just (Right t) -> return (overRet t) -- fully applied
-      Just (Left _) -> return $ TyClosure [(f,args')] -- partially applied
+      Just (Left _) -> return $ tyClosure f args' -- partially applied
     where args' = args ++ [t2]
-apply prog (TyFun a r) t2 loc = do
-  result <- runMaybeT $ unify'' (applyTry prog) a t2
-  case result of
-    Just () -> return r
-    Nothing -> typeError loc ("cannot apply '"++(pshow (TyFun a r))++"' to '"++pshow t2++"'")
 apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ pshow t1)
 
 applyTry :: Prog -> Type -> Type -> MaybeT Infer Type
@@ -224,7 +229,7 @@ resolve prog f args loc = do
         less <- isSpecOf o o'
         more <- isSpecOf o' o
         return $ less || not more) overloads
-      options overs = concatMap (\ o -> "\n  "++(pshow (foldr TsFun (overRet o) (overTypes o)))) overs
+      options overs = concatMap (\ o -> "\n  "++(pshow (foldr tsArrow (overRet o) (overTypes o)))) overs
   filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
   case filtered of
     [] -> typeError loc (call++" doesn't match any overload, possibilities are"++options rawOverloads)
@@ -247,7 +252,7 @@ apply' prog f args loc = do
     typeError loc (show (pretty f <+> prettylist args) ++ " has conflicting type transforms with other overloads")
   case overload of
     Left tt -> do
-      let t = TyClosure [(f,args)]
+      let t = tyClosure f args
       insertOver f (zip tt args) (Over noLoc [] t [] Nothing)
       return t
     Right o -> cache prog f args o loc
@@ -264,7 +269,7 @@ cache prog f args (Over _ atypes r vl e) loc = do
   Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog) types args
   let call = show (pretty f <+> prettylist args)
   unless (null leftovers) $ 
-    typeError loc (call++" uses invalid overload "++(pshow (foldr TsFun r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
+    typeError loc (call++" uses invalid overload "++(pshow (foldr tsArrow r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
   let al = zip tt args
       tl = map (argType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv r

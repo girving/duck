@@ -84,9 +84,9 @@ primIOType loc p args = typeError loc ("invalid arguments"++pshowlist args++" to
 
 prelude :: Lir.Prog
 prelude = Lir.prog $ decTuples ++ prims ++ io where
-  primop p = Ir.Over 
+  primop p = Ir.Over
       (Loc noLoc $ V (primName p)) 
-      (foldr TsFun (singleton $ primRet p) (map singleton $ primArgs p))
+      (foldr tsArrow (singleton $ primRet p) (map singleton $ primArgs p))
       (foldr Lambda (Prim (primPrim p) (map Var args)) args)
     where args = zipWith const standardVars $ primArgs p
   prims = map primop $ Map.elems primOps
@@ -100,15 +100,15 @@ io :: [Decl]
 io = [map',join,exitFailure,ioPutChr,testAll,returnIO] where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TsVar [a,b]
-  map' = Over (Loc noLoc $ V "map") (TsFun (TsFun ta tb) (TsFun (TsIO ta) (TsIO tb)))
+  map' = Over (Loc noLoc $ V "map") (tsArrow (tsArrow ta tb) (tsArrow (TsIO ta) (TsIO tb)))
     (Lambda f (Lambda c
       (Bind x (Var c)
       (Return (Apply (Var f) (Var x))))))
-  join = Over (Loc noLoc $ V "join") (TsFun (TsIO (TsIO ta)) (TsIO ta))
+  join = Over (Loc noLoc $ V "join") (tsArrow (TsIO (TsIO ta)) (TsIO ta))
     (Lambda c
       (Bind x (Var c)
       (Var x)))
   returnIO = LetD (Loc noLoc $ V "returnIO") (Lambda x (Return (Var x)))
   exitFailure = LetD (Loc noLoc $ V "exitFailure") (PrimIO ExitFailure [])
-  ioPutChr = Over (Loc noLoc $ V "put") (TsFun TsChr (TsIO (singleton tyUnit))) (Lambda c (PrimIO IOPutChr [Var c]))
+  ioPutChr = Over (Loc noLoc $ V "put") (tsArrow TsChr (TsIO (singleton tyUnit))) (Lambda c (PrimIO IOPutChr [Var c]))
   testAll = LetD (Loc noLoc $ V "testAll") (PrimIO TestAll [])

@@ -1,13 +1,20 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, ScopedTypeVariables #-}
 -- | Duck Types
 
 module Type
   ( Type(..)
   , TypeSet(..)
+  , TypeFun(..)
   , Trans(..)
   , TransType, TypeArg, TypeSetArg
   , TypeEnv
   , tyUnit
+  , isTyUnit
+  , tyArrow
+  , tsArrow
+  , isTyArrow
+  , isTsArrow
+  , tyClosure
   , transType
   , typeArg
   , argType
@@ -35,11 +42,27 @@ import qualified Data.Map as Map
 import Control.Monad hiding (guard)
 import Util
 
+-- |The type of type functions.  TyFun and TsFun below represent an
+-- intersection of one or more of these primitive type functions.
+--
+-- Since type functions can be arbitrary functions from types to types,
+-- there is no algorithmic way to simplify their intersections or unions.
+-- Therefore, we represent them as an intersection of primitive type functions
+-- (either arrow types or named closures).
+--
+-- In particular, we can perform the simplification when intersecting (a -> b)
+-- and (c -> d) if 'a' and 'c' have a representable union.  We could have chosen
+-- to make all unions representable by storing unions of function types as well,
+-- but for now we still stick to storing intersections.
+data TypeFun t = TypeFun
+  { funArrows :: ![(t,t)]
+  , funClosures :: ![(Var,[t])] }
+  deriving (Eq, Ord, Show)
+
 -- |A concrete type (the types of values are always concrete)
 data Type
   = TyCons !CVar [Type]
-  | TyClosure [(Var,[Type])] -- ^ an intersection of one or more closures
-  | TyFun !Type !Type
+  | TyFun !(TypeFun Type)
   | TyIO !Type
   | TyInt
   | TyChr
@@ -51,8 +74,7 @@ data Type
 data TypeSet
   = TsVar !Var
   | TsCons !CVar [TypeSet]
-  | TsClosure [(Var,[TypeSet])] -- ^ an intersection of one or more closures
-  | TsFun !TypeSet !TypeSet
+  | TsFun !(TypeFun TypeSet)
   | TsIO !TypeSet
   | TsInt
   | TsChr
@@ -77,8 +99,29 @@ type Apply m = Type -> Type -> m Type
 tyUnit :: Type
 tyUnit = TyCons (V "()") []
 
+isTyUnit :: Type -> Bool
+isTyUnit (TyCons (V "()") []) = True
+isTyUnit _ = False
+
+tyArrow :: Type -> Type -> Type
+tyArrow s t = TyFun (TypeFun [(s,t)] [])
+
+tsArrow :: TypeSet -> TypeSet -> TypeSet
+tsArrow s t = TsFun (TypeFun [(s,t)] [])
+
+isTyArrow :: Type -> Maybe (Type,Type)
+isTyArrow (TyFun (TypeFun [a] [])) = Just a
+isTyArrow _ = Nothing
+
+isTsArrow :: TypeSet -> Maybe (TypeSet,TypeSet)
+isTsArrow (TsFun (TypeFun [a] [])) = Just a
+isTsArrow _ = Nothing
+
+tyClosure :: Var -> [Type] -> Type
+tyClosure f tl = TyFun (TypeFun [] [(f,tl)])
+
 transType :: Trans -> Type -> Type
-transType Delayed = TyFun tyUnit
+transType Delayed t = TyFun (TypeFun [(tyUnit,t)] [])
 
 typeArg :: TypeSet -> TypeSetArg
 typeArg (TsTrans c t) = (Just c, t)
@@ -94,16 +137,7 @@ argType (Just c, t) = transType c t
 -- The first argument says how to apply closure types to types.
 intersect :: MonadMaybe m => Apply m -> Type -> Type -> m Type
 intersect apply (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< intersectList apply tl tl'
-intersect apply (TyFun s t) (TyFun s' t') = do
-  ss <- union apply s s' -- note contravariance
-  tt <- intersect apply t t' -- back to covariance
-  return $ TyFun ss tt
-intersect apply (TyFun s t) f@(TyClosure _) = do
-  r <- apply f s
-  t <- intersect apply t r
-  return $ TyFun s t
-intersect apply t@(TyClosure _) t'@(TyFun _ _) = intersect apply t' t
-intersect _ (TyClosure f) (TyClosure f') = return (TyClosure (List.union f f'))
+intersect apply (TyFun f) (TyFun f') = TyFun =.< intersectFun apply f f'
 intersect apply (TyIO t) (TyIO t') = TyIO =.< intersect apply t t'
 intersect _ TyInt TyInt = return TyInt
 intersect _ TyChr TyChr = return TyChr
@@ -120,34 +154,62 @@ intersectList apply (t:tl) (t':tl') = do
   return (t'':tl'')
 intersectList _ _ _ = nothing
 
+-- |Intersect two type functions.  Except in special cases, this means unioning the lists.
+intersectFun :: MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m (TypeFun Type)
+intersectFun apply (TypeFun al cl) (TypeFun al' cl') = do
+  al'' <- reduceArrows apply (al++al')
+  return $ TypeFun (List.sort al'') (merge cl cl')
+
+-- |Given a intersection list of arrow types, attempt to reduce them into a
+-- smaller equivalent list.  This can either successfully reduce, do nothing,
+-- or fail (detect that the intersection is empty).
+reduceArrows :: MonadMaybe m => Apply m -> [(Type,Type)] -> m [(Type,Type)]
+reduceArrows _ [] = return []
+reduceArrows apply ((s,t):al) = do
+  r <- reduce [] al
+  case r of
+    Nothing -> ((s,t) :) =.< reduceArrows apply al
+    Just al -> reduceArrows apply al -- keep trying, maybe we can reduce more
+  where
+  reduce _ [] = return Nothing
+  reduce prev (a@(s',t') : next) = do
+    ss <- union apply s s' -- function arguments are contravariant, so union
+    case ss of
+      Nothing -> reduce (a:prev) next
+      Just ss -> do
+        tt <- intersect apply t t' -- return values are covariant, so intersect 
+        return $ Just $ (ss,tt) : reverse prev ++ next
+
 -- |Symmetric antiunify: @z <- union x y@ means that a value of type z can be
 -- safely viewed as having type x and type y.
-union :: MonadMaybe m => Apply m -> Type -> Type -> m Type
-union apply (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< unionList apply tl tl'
-union apply (TyFun s t) (TyFun s' t') = do
-  ss <- intersect apply s s' -- note contravariance
-  tt <- union apply t t' -- back to covariance
-  return $ TyFun ss tt
-union apply (TyFun s t) f@(TyClosure _) = do
-  r <- apply f s
-  t <- union apply t r
-  return $ TyFun s t
-union apply t@(TyClosure _) t'@(TyFun _ _) = union apply t' t
-union _ (TyClosure f) (TyClosure f') = return (TyClosure (List.union f f'))
-union apply (TyIO t) (TyIO t') = TyIO =.< union apply t t'
-union _ TyInt TyInt = return TyInt
-union _ TyChr TyChr = return TyChr
-union _ TyVoid _ = return TyVoid
-union _ _ TyVoid = return TyVoid
+--
+-- Not all unions are representable in the case of function types, so union can
+-- either succeed (the result is representable), fail (union is definitely invalid),
+-- or be indeterminant (we don't know).  The indeterminate case returns Nothing.
+union :: MonadMaybe m => Apply m -> Type -> Type -> m (Maybe Type)
+union apply (TyCons c tl) (TyCons c' tl') | c == c' = fmap (TyCons c) =.< unionList apply tl tl'
+union _ (TyFun f) (TyFun f') = return (
+  if f == f' then Just (TyFun f)
+  else Nothing) -- union is indeterminant
+union apply (TyIO t) (TyIO t') = fmap TyIO =.< union apply t t'
+union _ TyInt TyInt = return (Just TyInt)
+union _ TyChr TyChr = return (Just TyChr)
+union _ TyVoid _ = return (Just TyVoid)
+union _ _ TyVoid = return (Just TyVoid)
 union _ _ _ = nothing
 
 -- |The equivalent of 'union' for lists.  The two lists must have the same size.
-unionList :: MonadMaybe m => (Type -> Type -> m Type) -> [Type] -> [Type] -> m [Type]
-unionList _ [] [] = return []
+--
+-- If we come across an indeterminate value early in the list, we still process the rest
+-- of this in case we find a clear failure.
+unionList :: MonadMaybe m => (Type -> Type -> m Type) -> [Type] -> [Type] -> m (Maybe [Type])
+unionList _ [] [] = return (Just [])
 unionList apply (t:tl) (t':tl') = do
   t'' <- union apply t t'
   tl'' <- unionList apply tl tl'
-  return (t'':tl'')
+  return (case (t'',tl'') of
+    (Just t,Just tl) -> Just (t:tl)
+    _ -> Nothing)
 unionList _ _ _ = nothing
 
 -- |Directed unify: @unify s t@ tries to turn @s@ into @t@ via variable substitutions,
@@ -171,15 +233,15 @@ unionList _ _ _ = nothing
 unify :: MonadMaybe m => Apply m -> TypeSet -> Type -> m (TypeEnv, Leftovers)
 unify apply t t' = unifyFix apply Map.empty =<< unify' apply Map.empty t t'
 
-type Leftover = (TypeSet, Type)
+type Leftover = (TypeFun TypeSet, TypeFun Type)
 type Leftovers = [Leftover]
 
 unifyFix :: MonadMaybe m => Apply m -> TypeEnv -> (TypeEnv, Leftovers) -> m (TypeEnv, Leftovers)
 unifyFix _ _ r@(_, []) = return r -- finished leftovers, so done
 unifyFix _ prev r@(env, _) | prev == env = return r -- reached fixpoint without exhausing leftovers
 unifyFix apply _ (env, leftovers) = unifyFix apply env =<< foldM step (env, []) leftovers where
-  step (env, leftovers) (t,t') = do
-    (env, l) <- unify' apply env t t'
+  step (env, leftovers) (f,f') = do
+    (env, l) <- unifyFun' apply env f f'
     return (env, l ++ leftovers)
 
 unify' :: MonadMaybe m => Apply m -> TypeEnv -> TypeSet -> Type -> m (TypeEnv, Leftovers)
@@ -188,21 +250,7 @@ unify' apply env (TsVar v) t =
     Nothing -> return (Map.insert v t env, [])
     Just t' -> intersect apply t t' >.= \t'' -> (Map.insert v t'' env, [])
 unify' apply env (TsCons c tl) (TyCons c' tl') | c == c' = unifyList' apply env tl tl'
-unify' apply env f@(TsFun s t) f'@(TyFun s' t') = do
-  case unsingleton' env s of
-    Nothing -> return (env,[(f,f')])
-    Just s -> do
-      unify'' apply s' s -- note reversed arguments due to contravariance
-      unify' apply env t t' -- back to covariance
-unify' apply env f@(TsFun s t) f'@(TyClosure _) = do
-  case unsingleton' env s of
-    Nothing -> return (env,[(f,f')])
-    Just s -> do
-      t' <- apply f' s
-      unify' apply env t t'
-unify' _ env (TsClosure f) (TyClosure f') = -- succeed if f' is a subset of f
-  if all (\x -> List.elem (second (map singleton) x) f) f' then return (env,[]) else nothing
-unify' _ _ (TsClosure _) (TyFun _ _) = nothing -- TyFun is never considered as general as TyClosure
+unify' apply env (TsFun f) (TyFun f') = unifyFun' apply env f f'
 unify' apply env (TsIO t) (TyIO t') = unify' apply env t t'
 unify' _ env TsInt TyInt = return (env,[])
 unify' _ env TsChr TyChr = return (env,[])
@@ -212,20 +260,89 @@ unify' _ _ _ _ = nothing
 -- |Same as 'unify'', but the first argument is a type
 unify'' :: MonadMaybe m => Apply m -> Type -> Type -> m ()
 unify'' apply (TyCons c tl) (TyCons c' tl') | c == c' = unifyList'' apply tl tl'
-unify'' apply (TyFun s t) (TyFun s' t') = do
-  unify'' apply s' s -- contravariant
-  unify'' apply t t' -- covariant
-unify'' apply (TyFun s t) f@(TyClosure _) = do
-  t' <- apply f s
-  unify'' apply t t'
-unify'' _ (TyClosure f) (TyClosure f') = -- succeed if f' is a subset of f
-  if all (\x -> List.elem x f) f' then success else nothing
-unify'' _ (TyClosure _) (TyFun _ _) = nothing -- TyFun is never considered as general as TyClosure
+unify'' apply (TyFun f) (TyFun f') = unifyFun'' apply f f'
 unify'' apply (TyIO t) (TyIO t') = unify'' apply t t'
 unify'' _ TyInt TyInt = success
 unify'' _ TyChr TyChr = success
 unify'' _ _ TyVoid = success
 unify'' _ _ _ = nothing
+
+-- |Unify for function types
+--
+-- We use the following rules:
+--     unify (intersect_f f) (intersect_f' f')
+--        = intersect_f' union_f (unify f f')
+--     unify (a -> b) (c -> d) = unify c a -> unify b d
+--     unify (a -> b) closure = a -> unify b (closure a)
+--     unify closure (a -> b) = fail
+-- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
+-- lack the ability to do speculative computation and rollback.  Therefore,
+-- "union" currently means ignore all but the first entry.
+unifyFun' :: forall m. MonadMaybe m => Apply m -> TypeEnv -> TypeFun TypeSet -> TypeFun Type -> m (TypeEnv, Leftovers)
+unifyFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
+  seq env [] $ map (arrow al cl) al' ++ map (closure al cl) cl'
+  where
+  seq :: TypeEnv -> Leftovers -> [TypeEnv -> m (TypeEnv, Leftovers)] -> m (TypeEnv, Leftovers)
+  seq env leftovers [] = return (env,leftovers)
+  seq env leftovers (m:ml) = do
+    (env,l1) <- m env
+    (env,l2) <- seq env leftovers ml
+    return $ (env,l1++l2)
+
+  arrow :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Type,Type) -> TypeEnv -> m (TypeEnv, Leftovers)
+  arrow al _ (s',t') env
+    | s'' <- singleton s'
+    , t'' <- singleton t'
+    , List.elem (s'',t'') al = return (env,[]) -- succeed if (s',t') appears in al
+  arrow ((s,t):_) _ (s',t') env = do
+    case unsingleton' env s of
+      Nothing -> return (env,[(ft,ft')])
+      Just s -> do
+        unify'' apply s' s -- reverse arguments for contravariance
+        unify' apply env t t' -- back to covariant
+  arrow [] _ _ _ = nothing -- arrows are never considered as general as closures
+
+  closure :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Var,[Type]) -> TypeEnv -> m (TypeEnv, Leftovers)
+  closure _ fl f' env
+    | f'' <- second (map singleton) f'
+    , List.elem f'' fl = return (env,[]) -- succeed if f' appears in fl
+  closure ((s,t):_) _ f' env = do
+    case unsingleton' env s of
+      Nothing -> return (env,[(ft,ft')])
+      Just s -> do
+        t' <- apply (TyFun (TypeFun [] [f'])) s
+        unify' apply env t t'
+  closure [] _ _ _ = nothing
+
+-- |Unify for singleton function types.
+--
+-- We use the following rules:
+--     unify (intersect_f f) (intersect_f' f')
+--        = intersect_f' union_f (unify f f')
+--     unify (a -> b) (c -> d) = unify c a -> unify b d
+--     unify (a -> b) closure = a -> unify b (closure a)
+--     unify closure (a -> b) = fail
+-- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
+-- lack the ability to do speculative computation and rollback.  Therefore,
+-- "union" currently means ignore all but the first entry.
+unifyFun'' :: forall m. MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m ()
+unifyFun'' apply (TypeFun al cl) (TypeFun al' cl') = do
+  mapM_ (arrow al cl) al'
+  mapM_ (closure al cl) cl'
+  where
+  arrow :: [(Type,Type)] -> [(Var,[Type])] -> (Type,Type) -> m ()
+  arrow al _ a' | List.elem a' al = success -- succeed if a' appears in al
+  arrow ((s,t):_) _ (s',t') = do
+    unify'' apply s' s -- contravariant
+    unify'' apply t t' -- covariant
+  arrow [] _ _ = nothing -- arrows are never considered as general as closures
+
+  closure :: [(Type,Type)] -> [(Var,[Type])] -> (Var,[Type]) -> m ()
+  closure _ fl f' | List.elem f' fl = success -- succeed if f' appears in fl
+  closure ((s,t):_) _ f' = do
+    t' <- apply (TyFun (TypeFun [] [f'])) s
+    unify'' apply t t'
+  closure [] _ _ = nothing
 
 -- |The equivalent of 'unify' for lists.  To succeed, the first argument must be
 -- at least as long as the second argument (think of the first argument as the
@@ -263,38 +380,50 @@ subst env (TsVar v)
   | Just t <- Map.lookup v env = singleton t
   | otherwise = TsVar v
 subst env (TsCons c tl) = TsCons c (map (subst env) tl)
-subst env (TsClosure fl) = TsClosure (map (second (map (subst env))) fl)
-subst env (TsFun t1 t2) = TsFun (subst env t1) (subst env t2)
+subst env (TsFun f) = TsFun (substFun env f)
 subst env (TsIO t) = TsIO (subst env t)
 subst env (TsTrans c t) = TsTrans c (subst env t)
 subst _ TsInt = TsInt
 subst _ TsChr = TsChr
 subst _ TsVoid = TsVoid
 
+substFun :: TypeEnv -> TypeFun TypeSet -> TypeFun TypeSet
+substFun env (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
+  arrow (s,t) = (subst env s, subst env t)
+  closure (f,tl) = (f, map (subst env) tl)
+
 -- |Type environment substitution with unbound type variables defaulting to void
 substVoid :: TypeEnv -> TypeSet -> Type
 substVoid env (TsVar v) = Map.findWithDefault TyVoid v env
 substVoid env (TsCons c tl) = TyCons c (map (substVoid env) tl)
-substVoid env (TsClosure fl) = TyClosure (map (second (map (substVoid env))) fl)
-substVoid env (TsFun t1 t2) = TyFun (substVoid env t1) (substVoid env t2)
+substVoid env (TsFun f) = TyFun (substVoidFun env f)
 substVoid env (TsIO t) = TyIO (substVoid env t)
 substVoid env (TsTrans c t) = transType c (substVoid env t)
 substVoid _ TsInt = TyInt
 substVoid _ TsChr = TyChr
 substVoid _ TsVoid = TyVoid
 
+substVoidFun :: TypeEnv -> TypeFun TypeSet -> TypeFun Type
+substVoidFun env (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
+  arrow (s,t) = (substVoid env s, substVoid env t)
+  closure (f,tl) = (f, map (substVoid env) tl)
+
 -- |Occurs check
 occurs :: TypeEnv -> Var -> TypeSet -> Bool
 occurs env v (TsVar v') | Just t <- Map.lookup v' env = occurs' v t
 occurs _ v (TsVar v') = v == v'
 occurs env v (TsCons _ tl) = any (occurs env v) tl
-occurs env v (TsClosure fl) = any (any (occurs env v) . snd) fl
-occurs env v (TsFun t1 t2) = occurs env v t1 || occurs env v t2
+occurs env v (TsFun f) = occursFun env v f
 occurs env v (TsIO t) = occurs env v t
 occurs env v (TsTrans _ t) = occurs env v t
 occurs _ _ TsInt = False
 occurs _ _ TsChr = False
 occurs _ _ TsVoid = False
+
+occursFun :: TypeEnv -> Var -> TypeFun TypeSet -> Bool
+occursFun env v (TypeFun al cl) = any arrow al || any closure cl where
+  arrow (s,t) = occurs env v s || occurs env v t
+  closure (_,tl) = any (occurs env v) tl
 
 -- |Types contains no variables
 occurs' :: Var -> Type -> Bool
@@ -303,12 +432,16 @@ occurs' _ _ = False
 -- |This way is easy
 singleton :: Type -> TypeSet
 singleton (TyCons c tl) = TsCons c (map singleton tl)
-singleton (TyClosure fl) = TsClosure (map (second (map singleton)) fl)
-singleton (TyFun s t) = TsFun (singleton s) (singleton t)
+singleton (TyFun f) = TsFun (singletonFun f)
 singleton (TyIO t) = TsIO (singleton t)
 singleton TyInt = TsInt
 singleton TyChr = TsChr
 singleton TyVoid = TsVoid
+
+singletonFun :: TypeFun Type -> TypeFun TypeSet
+singletonFun (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
+  arrow (s,t) = (singleton s, singleton t)
+  closure (f,tl) = (f, map singleton tl)
  
 -- |Convert a singleton typeset to a type if possible
 unsingleton :: TypeSet -> Maybe Type
@@ -318,16 +451,24 @@ unsingleton' :: TypeEnv -> TypeSet -> Maybe Type
 unsingleton' env (TsVar v) | Just t <- Map.lookup v env = return t
 unsingleton' _ (TsVar _) = nothing
 unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
-unsingleton' env (TsClosure fl) = TyClosure =.< mapM (secondM (mapM (unsingleton' env))) fl
-unsingleton' env (TsFun s t) = do
-  s <- unsingleton' env s
-  t <- unsingleton' env t
-  return $ TyFun s t
+unsingleton' env (TsFun f) = TyFun =.< unsingletonFun' env f
 unsingleton' env (TsIO t) = TyIO =.< unsingleton' env t
 unsingleton' env (TsTrans c t) = transType c =.< unsingleton' env t
 unsingleton' _ TsInt = return TyInt
 unsingleton' _ TsChr = return TyChr
 unsingleton' _ TsVoid = return TyVoid
+
+unsingletonFun' :: TypeEnv -> TypeFun TypeSet -> Maybe (TypeFun Type)
+unsingletonFun' env (TypeFun al cl) = do
+  al <- mapM arrow al
+  cl <- mapM closure cl
+  return $ TypeFun al cl
+  where
+  arrow (s,t) = do
+    s <- unsingleton' env s
+    t <- unsingleton' env t
+    return (s,t)
+  closure (f,tl) = mapM (unsingleton' env) tl >.= \tl -> (f,tl)
 
 -- TODO: I'm being extremely cavalier here and pretending that the space of
 -- variables in TsCons and TsVar is disjoint.  When this fails in the future,
@@ -336,29 +477,34 @@ unsingleton' _ TsVoid = return TyVoid
 skolemize :: TypeSet -> Type
 skolemize (TsVar v) = TyCons v [] -- skolemization
 skolemize (TsCons c tl) = TyCons c (map skolemize tl)
-skolemize (TsClosure fl) = TyClosure (map (second (map skolemize)) fl)
-skolemize (TsFun t1 t2) = TyFun (skolemize t1) (skolemize t2)
+skolemize (TsFun f) = TyFun (skolemizeFun f)
 skolemize (TsIO t) = TyIO (skolemize t)
 skolemize (TsTrans _ t) = skolemize t
 skolemize TsInt = TyInt
 skolemize TsChr = TyChr
 skolemize TsVoid = TyVoid
 
+skolemizeFun :: TypeFun TypeSet -> TypeFun Type
+skolemizeFun (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
+  arrow (s,t) = (skolemize s, skolemize t)
+  closure (f,tl) = (f, map skolemize tl)
+
 -- |If leftovers remain after unification, this function explains which
 -- variables caused the problem.
 contravariantVars :: Leftovers -> [Var]
 contravariantVars = concatMap cv where
-  cv (TsFun s _, _) = vars s
-  cv _ = []
+  cv (TypeFun al _, _) = concatMap (vars . fst) al
   vars (TsVar v) = [v]
   vars (TsCons _ tl) = concatMap vars tl
-  vars (TsClosure fl) = concatMap (concatMap vars . snd) fl
-  vars (TsFun t1 t2) = vars t1 ++ vars t2
+  vars (TsFun f) = varsFun f
   vars (TsIO t) = vars t
   vars (TsTrans _ t) = vars t
   vars TsInt = []
   vars TsChr = []
   vars TsVoid = []
+  varsFun (TypeFun al cl) = concatMap arrow al ++ concatMap closure cl where
+    arrow (s,t) = vars s ++ vars t
+    closure (_,tl) = concatMap vars tl
 
 showContravariantVars :: Leftovers -> String
 showContravariantVars leftovers = case contravariantVars leftovers of
@@ -370,11 +516,9 @@ showContravariantVars leftovers = case contravariantVars leftovers of
 instance Pretty TypeSet where
   pretty' (TsVar v) = pretty' v
   pretty' (TsCons t []) = pretty' t
-  pretty' (TsClosure [(f,[])]) = pretty' f
   pretty' (TsCons t tl) | istuple t = (2, hcat $ List.intersperse (pretty ", ") $ map (guard 3) tl)
   pretty' (TsCons t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
-  pretty' (TsClosure fl) = (50, hsep (List.intersperse (pretty "&") (map (\ (f,tl) -> guard 50 f <+> prettylist tl) fl)))
-  pretty' (TsFun t1 t2) = (1, guard 2 t1 <+> pretty "->" <+> guard 1 t2)
+  pretty' (TsFun f) = pretty' f
   pretty' (TsIO t) = (50, pretty "IO" <+> guard 51 t)
   pretty' (TsTrans c t) = (1, pretty (show c) <+> guard 2 t)
   pretty' TsInt = (100, pretty "Int")
@@ -383,6 +527,14 @@ instance Pretty TypeSet where
 
 instance Pretty Type where
   pretty' = pretty' . singleton
+
+instance Pretty t => Pretty (TypeFun t) where
+  pretty' (TypeFun [] [(f,[])]) = pretty' f
+  pretty' (TypeFun [(s,t)] []) = (1, guard 2 s <+> pretty "->" <+> guard 1 t)
+  pretty' (TypeFun [] [(f,tl)]) = (50, pretty f <+> prettylist tl)
+  pretty' (TypeFun al cl) = (40, hsep (List.intersperse (pretty "&") (
+    map (\ (s,t) -> parens (guard 2 s <+> pretty "->" <+> guard 1 t)) al ++
+    map (\ (f,tl) -> pretty f <+> prettylist tl) cl)))
 
 instance Pretty t => Pretty (Maybe Trans, t) where
   pretty' (Nothing, t) = pretty' t

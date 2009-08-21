@@ -6,6 +6,7 @@ module Util
   , debugVal
   , foldmap
   , duplicates
+  , merge
   , groupPairs
   , spanJust
   , first, second
@@ -54,6 +55,18 @@ foldmap f x (h:t) = (x'',h':t') where
 -- |Find all entries that occur more than once
 duplicates :: Eq a => [a] -> [a]
 duplicates l = l \\ nub l
+
+-- |Merge two unique sorted lists, eliminating duplicates.
+--
+-- Odd behavior will result if the lists are unsorted or contain duplicates.
+-- Sorted means sorted in ascending order.
+merge :: Ord a => [a] -> [a] -> [a]
+merge xs [] = xs
+merge [] ys = ys
+merge (x:xs) (y:ys) = case compare x y of
+  LT -> x : merge xs (y:ys)
+  EQ -> x : merge xs ys -- left bias
+  GT -> y : merge (x:xs) ys
 
 -- Note: it'd be nice if this was linear time, or at least O(n log n)
 -- See http://lambda-the-ultimate.org/node/3277

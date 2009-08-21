@@ -185,8 +185,9 @@ generalType vl = (tl,r) where
 
 -- |Unwrap a type/lambda combination as far as we can
 unwrapTypeLambda :: TypeSet -> Ir.Exp -> ([TypeSetArg], TypeSet, [Var], Ir.Exp)
-unwrapTypeLambda (TsFun t tl) (Ir.Lambda v e) = (typeArg t:tl', r, v:vl, e') where
-  (tl', r, vl, e') = unwrapTypeLambda tl e
+unwrapTypeLambda a (Ir.Lambda v e) | Just (t,tl) <- isTsArrow a =
+  let (tl', r, vl, e') = unwrapTypeLambda tl e in
+    (typeArg t:tl', r, v:vl, e')
 unwrapTypeLambda t e = ([], t, [], e)
 
 -- |Lambda lift an expression

@@ -39,10 +39,10 @@ lookup prog global env loc v
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
   | Just o <- Map.lookup v (progOverloads prog) = return (
       ValClosure v [] o, -- if we find overloads, make a new closure
-      TyClosure [(v,[])])
+      tyClosure v [])
   | Just (o:_) <- Map.lookup v (progFunctions prog) = let tt = fst $ head $ overArgs o in return (
       ValClosure v [] (Ptrie.empty tt), -- this should never be used
-      TyClosure [(v,[])])
+      tyClosure v [])
   | otherwise = execError loc ("unbound variable " ++ show v)
 
 lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [TypeSet])
@@ -157,16 +157,14 @@ trans prog global env loc f e = do
 apply :: Prog -> Globals -> TValue -> TValue -> Type -> SrcLoc -> Exec TValue
 apply prog global (ValClosure f args ov, ft) a at loc = do
   let args' = args ++ [a]
-  t <- case ft of
-    TyClosure tl -> return $ TyClosure (map (fmap (++ [at])) tl)
-    _ -> liftInfer prog $ Infer.apply prog ft at loc
-  case Ptrie.lookup [at] ov of 
+  t <- liftInfer prog $ Infer.apply prog ft at loc
+  case Ptrie.lookup [at] ov of
     Nothing -> execError loc ("unresolved overload: " ++ pshow f ++ " " ++ pshowlist (map snd args'))
     Just ov -> case Ptrie.unPtrie ov of
       Left _ -> return (ValClosure f args' ov, t)
-      Right (Over _ _ t _ Nothing) -> return (ValClosure f args' ov, t)
-      Right (Over _ at t vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) loc e
-apply prog global (ValDelay env e, TyFun (TyCons (V "()") []) t) (ValCons (V "()") [], TyCons (V "()") []) _ loc =
+      Right (Over _ _ _ _ Nothing) -> return (ValClosure f args' ov, t)
+      Right (Over _ at _ vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) loc e
+apply prog global (ValDelay env e, ta) _ _ loc | Just (_,t) <- isTyArrow ta =
   cast prog t $ expr prog global env loc e
 apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ pshow v ++ " :: " ++ pshow t)
 
@@ -197,8 +195,8 @@ typeof prog (ValCons c args) = do
     Just (tenv,[]) -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
     _ -> execError noLoc ("failed to unify types "++pshowlist tl++" with "++pshowlist tl')
-typeof _ (ValClosure _ _ _) = return $ TyFun TyVoid TyVoid
-typeof _ (ValDelay _ _) = return $ TyFun tyUnit TyVoid
+typeof _ (ValClosure _ _ _) = return $ tyArrow TyVoid TyVoid
+typeof _ (ValDelay _ _) = return $ tyArrow tyUnit TyVoid
 typeof _ (ValBindIO _ _ _ _) = return $ TyIO TyVoid
 typeof _ (ValPrimIO _ _) = return $ TyIO TyVoid
 typeof _ (ValLiftIO _) = return $ TyIO TyVoid

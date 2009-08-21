@@ -328,7 +328,7 @@ typeExp l (Var v) = return $ TsVar v
 typeExp l (Lambda pl e) = do
   tl <- mapM (typePat l) pl
   t <- typeExp l e 
-  return $ foldr TsFun t tl
+  return $ foldr tsArrow t tl
 typeExp _ (ExpLoc l e) = typeExp l e
 typeExp l (Int _) = parseError (ParseError l ("integer types aren't implemented yet"))
 typeExp l Any = parseError (ParseError l ("'_' isn't implemented for types yet"))
@@ -346,7 +346,7 @@ typePat l (PatVar v) = return $ TsVar v
 typePat l (PatLambda pl p) = do
   tl <- mapM (typePat l) pl
   t <- typePat l p 
-  return $ foldr TsFun t tl
+  return $ foldr tsArrow t tl
 typePat _ (PatLoc l p) = typePat l p
 typePat l PatAny = parseError (ParseError l ("'_' isn't implemented for types yet"))
 typePat l (PatOps _) = parseError (ParseError l ("operator expression not allowed in type"))
