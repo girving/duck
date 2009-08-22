@@ -157,7 +157,7 @@ expr prog env loc = exp where
   exp (Cons c el) = do
     args <- mapM exp el
     (tv,vl,tl) <- lookupConstructor prog loc c
-    result <- runMaybeT $ unifyList (applyTry prog) tl args
+    result <- runMaybeT $ subsetList (applyTry prog) args tl
     case result of
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
@@ -173,7 +173,7 @@ expr prog env loc = exp where
   exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= tyIO
   exp (Spec e ts) = do
     t <- exp e
-    result <- runMaybeT $ unify (applyTry prog) ts t
+    result <- runMaybeT $ subset (applyTry prog) t ts
     case result of
       Just (tenv,[]) -> return $ substVoid tenv ts
       Nothing -> typeError loc (pshow e++" has type '"++pshow t++"', which is incompatible with type specification '"++pshow ts++"'")
@@ -201,7 +201,7 @@ apply prog (TyFun (TypeFun al cl)) t2 loc = do
   where
   arrow :: (Type,Type) -> Infer Type
   arrow (a,r) = do
-    result <- runMaybeT $ unify'' (applyTry prog) a t2
+    result <- runMaybeT $ subset'' (applyTry prog) t2 a
     case result of
       Just () -> return r
       Nothing -> typeError loc ("cannot apply '"++(pshow (tyArrow a r))++"' to '"++pshow t2++"'")
@@ -223,7 +223,7 @@ resolve :: Prog -> Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overl
 resolve prog f args loc = do
   rawOverloads <- lookupOverloads prog loc f -- look up possibilities
   let call = show (pretty f <+> prettylist args)
-      prune o = runMaybeT $ unifyList (applyTry prog) (overTypes o) args >. o
+      prune o = runMaybeT $ subsetList (applyTry prog) args (overTypes o) >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
   let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Infer Bool
       isSpecOf a b = do
@@ -231,7 +231,7 @@ resolve prog f args loc = do
             tb = overTypes b
         if length ta /= length tb
           then return False -- overloads with different arities should not be considered specializations of each other
-          else isJust =.< runMaybeT (unifyListSkolem (applyTry prog) tb ta)
+          else isJust =.< runMaybeT (subsetListSkolem (applyTry prog) ta tb)
       isMinimal o = allM (\o' -> do
         less <- isSpecOf o o'
         more <- isSpecOf o' o
@@ -273,7 +273,7 @@ apply' prog f args loc = do
 cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
 cache prog f args (Over _ atypes r vl e) loc = do
   let (tt,types) = unzip atypes
-  Just (tenv, leftovers) <- runMaybeT $ unifyList (applyTry prog) types args
+  Just (tenv, leftovers) <- runMaybeT $ subsetList (applyTry prog) args types
   let call = show (pretty f <+> prettylist args)
   unless (null leftovers) $ 
     typeError loc (call++" uses invalid overload "++(pshow (foldr tsArrow r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
@@ -295,7 +295,7 @@ cache prog f args (Over _ atypes r vl e) loc = do
 main :: Prog -> Infer ()
 main prog = do
   main <- lookup prog Map.empty noLoc (V "main")
-  result <- runMaybeT $ unify'' (applyTry prog) (tyIO tyUnit) main
+  result <- runMaybeT $ subset'' (applyTry prog) main (tyIO tyUnit)
   case result of
     Just () -> success
     Nothing -> typeError noLoc ("main has type "++pshow main++", but should have type IO ()")

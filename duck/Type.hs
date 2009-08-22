@@ -11,11 +11,11 @@ module Type
   , transType
   , typeArg
   , argType
-  , unify
-  , unify''
-  , unifyList
-  , unifyList''
-  , unifyListSkolem
+  , subset
+  , subset''
+  , subsetList
+  , subsetList''
+  , subsetListSkolem
   , union
   , unionList
   , subst
@@ -41,10 +41,6 @@ module Type
 -- contravariant version of union:
 --
 --     union (a -> t) (b -> t) = intersect a b -> t
---
--- The unification operation below corresponds to a subset test;
--- "unify a b" answers the question "Can we pass b to (a -> ...)?", so
--- "unify a b" succeeds iff "b" is a subset of "a".
 --
 -- Note that Void is equivalent to the Haskell type forall a. a.  On the other
 -- side of the lattice, the type Top corresponding to the type exists a. a would
@@ -198,153 +194,149 @@ intersectList apply (t:tl) (t':tl') = do
     _ -> Nothing)
 intersectList _ _ _ = nothing
 
--- |@unify s t@ tries to turn @s@ into @t@ via variable substitutions,
--- but not the other way round.  In other words, unify succeeds if it finds
--- a variable substituion M s.t. S(t) <= S(s|M).
+-- |@subset s t@ tries to turn @t@ into @s@ via variable substitutions,
+-- but not the other way round.  In other words, subset succeeds if it finds
+-- a variable substituion M s.t. S(s) <= S(t|M).
 --
 -- Note that the occurs check is unnecessary here due to directedness.  In
 -- particular, all TypeEnv bindings are of the form v -> t, where t is a Type.
 -- Since Type contains no type variables, the occurs check succeeds trivially.
 --
--- Operationally, @unify x y@ answers the question "If a function takes an
--- argument of type x, can we pass it a y?"  As an example, @unify x Void@ always
--- succeeds since the hypothesis is vacuously true: there are no values of
--- type Void.
+-- Operationally, @subset x y@ answers the question "Can we pass an x to a
+-- function that takes y?"  As an example, @subset Void x@ always succeeds
+-- since the hypothesis is vacuously true: there are no values of type Void.
 --
 -- The order in which subtypes are unified must be adaptive in the presence of
--- function type sets.  For example, when unifying (a -> Int, a) with
--- (Negate, Int), the value of "a" must be determined from the second part of
--- the tuple before the function part can be checked.  To handle this, unify'
--- produces a list of indeterminate subcomputations as it runs, and unify
--- iterates on this until a fixed point is reached.
-unify :: MonadMaybe m => Apply m -> TypeSet -> Type -> m (TypeEnv, Leftovers)
-unify apply t t' = unifyFix apply Map.empty =<< unify' apply Map.empty t t'
+-- function type sets.  For example, in subset (Negate, Int) (a -> Int, a),
+-- the value of "a" must be determined from the second part of the tuple before
+-- the function part can be checked.  To handle this, subset' produces a list
+-- of indeterminate subcomputations as it runs, and subset iterates on this
+-- until a fixed point is reached.
+subset :: MonadMaybe m => Apply m -> Type -> TypeSet -> m (TypeEnv, Leftovers)
+subset apply t t' = subsetFix apply Map.empty =<< subset' apply Map.empty t t'
 
-type Leftover = (TypeFun TypeSet, TypeFun Type)
+type Leftover = (TypeFun Type, TypeFun TypeSet)
 type Leftovers = [Leftover]
 
-unifyFix :: MonadMaybe m => Apply m -> TypeEnv -> (TypeEnv, Leftovers) -> m (TypeEnv, Leftovers)
-unifyFix _ _ r@(_, []) = return r -- finished leftovers, so done
-unifyFix _ prev r@(env, _) | prev == env = return r -- reached fixpoint without exhausing leftovers
-unifyFix apply _ (env, leftovers) = unifyFix apply env =<< foldM step (env, []) leftovers where
+subsetFix :: MonadMaybe m => Apply m -> TypeEnv -> (TypeEnv, Leftovers) -> m (TypeEnv, Leftovers)
+subsetFix _ _ r@(_, []) = return r -- finished leftovers, so done
+subsetFix _ prev r@(env, _) | prev == env = return r -- reached fixpoint without exhausing leftovers
+subsetFix apply _ (env, leftovers) = subsetFix apply env =<< foldM step (env, []) leftovers where
   step (env, leftovers) (f,f') = do
-    (env, l) <- unifyFun' apply env f f'
+    (env, l) <- subsetFun' apply env f f'
     return (env, l ++ leftovers)
 
-unify' :: MonadMaybe m => Apply m -> TypeEnv -> TypeSet -> Type -> m (TypeEnv, Leftovers)
-unify' apply env (TsVar v) t =
+subset' :: MonadMaybe m => Apply m -> TypeEnv -> Type -> TypeSet -> m (TypeEnv, Leftovers)
+subset' apply env t (TsVar v) =
   case Map.lookup v env of
     Nothing -> return (Map.insert v t env, [])
     Just t' -> union apply t t' >.= \t'' -> (Map.insert v t'' env, [])
-unify' apply env (TsCons c tl) (TyCons c' tl') | c == c' = unifyList' apply env tl tl'
-unify' apply env (TsFun f) (TyFun f') = unifyFun' apply env f f'
-unify' _ env _ TyVoid = return (env,[])
-unify' _ _ _ _ = nothing
+subset' apply env (TyCons c tl) (TsCons c' tl') | c == c' = subsetList' apply env tl tl'
+subset' apply env (TyFun f) (TsFun f') = subsetFun' apply env f f'
+subset' _ env TyVoid _ = return (env,[])
+subset' _ _ _ _ = nothing
 
--- |Same as 'unify'', but the first argument is a type.
--- unify s t succeeds if S(t) <= S(s).
-unify'' :: MonadMaybe m => Apply m -> Type -> Type -> m ()
-unify'' apply (TyCons c tl) (TyCons c' tl') | c == c' = unifyList'' apply tl tl'
-unify'' apply (TyFun f) (TyFun f') = unifyFun'' apply f f'
-unify'' _ _ TyVoid = success
-unify'' _ _ _ = nothing
+-- |Same as 'subset'', but the first argument is a type.
+-- subset s t succeeds if S(s) <= S(t).
+subset'' :: MonadMaybe m => Apply m -> Type -> Type -> m ()
+subset'' apply (TyCons c tl) (TyCons c' tl') | c == c' = subsetList'' apply tl tl'
+subset'' apply (TyFun f) (TyFun f') = subsetFun'' apply f f'
+subset'' _ TyVoid _ = success
+subset'' _ _ _ = nothing
 
--- |Unify for function types
+-- |Subset for function types
 --
 -- We use the following rules:
---     unify (union_f f) (union_f' f')
---        = union_f' intersect_f (unify f f')
---     unify (a -> b) (c -> d) = unify c a -> unify b d
---     unify (a -> b) closure = a -> unify b (closure a)
---     unify closure (a -> b) = fail
+--     subset (union_f f) (union_f' f')
+--        = forall_f exists_f' (subset f f')
+--     subset (a -> b) (c -> d) = subset c a & subset b d
+--     subset closure (a -> b) = subset (closure a) b
+--     subset (a -> b) closure = false
 -- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
 -- lack the ability to do speculative computation and rollback.  Therefore,
 -- "intersect" currently means ignore all but the first entry.
-unifyFun' :: forall m. MonadMaybe m => Apply m -> TypeEnv -> TypeFun TypeSet -> TypeFun Type -> m (TypeEnv, Leftovers)
-unifyFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
-  seq env [] $ map (arrow al cl) al' ++ map (closure al cl) cl'
+subsetFun' :: forall m. MonadMaybe m => Apply m -> TypeEnv -> TypeFun Type -> TypeFun TypeSet -> m (TypeEnv, Leftovers)
+subsetFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
+  seq env [] $ map (arrow al' cl') al ++ map (closure al' cl') cl
   where
   seq :: TypeEnv -> Leftovers -> [TypeEnv -> m (TypeEnv, Leftovers)] -> m (TypeEnv, Leftovers)
   seq env leftovers [] = return (env,leftovers)
   seq env leftovers (m:ml) = do
     (env,l1) <- m env
     (env,l2) <- seq env leftovers ml
-    return $ (env,l1++l2)
+    return (env,l1++l2)
 
   arrow :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Type,Type) -> TypeEnv -> m (TypeEnv, Leftovers)
-  arrow al _ (s',t') env
-    | s'' <- singleton s'
-    , t'' <- singleton t'
-    , List.elem (s'',t'') al = return (env,[]) -- succeed if (s',t') appears in al
-  arrow ((s,t):_) _ (s',t') env = do
-    case unsingleton' env s of
+  arrow al' _ (s,t) env
+    | List.elem (singleton s, singleton t) al' = return (env,[]) -- succeed if (s,t) appears in al
+  arrow ((s',t'):_) _ (s,t) env = do
+    case unsingleton' env s' of
       Nothing -> return (env,[(ft,ft')])
-      Just s -> do
-        unify'' apply s' s -- reverse arguments for contravariance
-        unify' apply env t t' -- back to covariant
+      Just s' -> do
+        subset'' apply s' s -- reverse arguments for contravariance
+        subset' apply env t t' -- back to covariant
   arrow [] _ _ _ = nothing -- arrows are never considered as general as closures
 
   closure :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Var,[Type]) -> TypeEnv -> m (TypeEnv, Leftovers)
-  closure _ fl f' env
-    | f'' <- second (map singleton) f'
-    , List.elem f'' fl = return (env,[]) -- succeed if f' appears in fl
-  closure ((s,t):_) _ f' env = do
-    case unsingleton' env s of
+  closure _ fl' f env
+    | f_ <- second (map singleton) f
+    , List.elem f_ fl' = return (env,[]) -- succeed if f' appears in fl
+  closure ((s',t'):_) _ f env = do
+    case unsingleton' env s' of
       Nothing -> return (env,[(ft,ft')])
-      Just s -> do
-        t' <- apply (TyFun (TypeFun [] [f'])) s
-        unify' apply env t t'
+      Just s' -> do
+        t <- apply (TyFun (TypeFun [] [f])) s'
+        subset' apply env t t'
   closure [] _ _ _ = nothing
 
--- |Unify for singleton function types.
-unifyFun'' :: forall m. MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m ()
-unifyFun'' apply (TypeFun al cl) (TypeFun al' cl') = do
-  mapM_ (arrow al cl) al'
-  mapM_ (closure al cl) cl'
+-- |Subset for singleton function types.
+subsetFun'' :: forall m. MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m ()
+subsetFun'' apply (TypeFun al cl) (TypeFun al' cl') = do
+  mapM_ (arrow al' cl') al
+  mapM_ (closure al' cl') cl
   where
   arrow :: [(Type,Type)] -> [(Var,[Type])] -> (Type,Type) -> m ()
-  arrow al _ a' | List.elem a' al = success -- succeed if a' appears in al
-  arrow ((s,t):_) _ (s',t') = do
-    unify'' apply s' s -- contravariant
-    unify'' apply t t' -- covariant
+  arrow al' _ a | List.elem a al' = success -- succeed if a appears in al'
+  arrow ((s',t'):_) _ (s,t) = do
+    subset'' apply s' s -- contravariant
+    subset'' apply t t' -- covariant
   arrow [] _ _ = nothing -- arrows are never considered as general as closures
 
   closure :: [(Type,Type)] -> [(Var,[Type])] -> (Var,[Type]) -> m ()
-  closure _ fl f' | List.elem f' fl = success -- succeed if f' appears in fl
-  closure ((s,t):_) _ f' = do
-    t' <- apply (TyFun (TypeFun [] [f'])) s
-    unify'' apply t t'
+  closure _ fl' f | List.elem f fl' = success -- succeed if f appears in fl'
+  closure ((s',t'):_) _ f = do
+    t <- apply (TyFun (TypeFun [] [f])) s'
+    subset'' apply t t'
   closure [] _ _ = nothing
 
--- |The equivalent of 'unify' for lists.  To succeed, the first argument must be
--- at least as long as the second argument (think of the first argument as the
--- types a function takes as arguments, and the second as the types of the
--- values it is passed).
-unifyList :: MonadMaybe m => Apply m -> [TypeSet] -> [Type] -> m (TypeEnv, Leftovers)
-unifyList apply tl tl' = unifyFix apply Map.empty =<< unifyList' apply Map.empty tl tl'
+-- |The equivalent of 'subset' for lists.  To succeed, the second argument must
+-- be at least as long as the first (think of the first as being the types of
+-- values passed to a function taking the second as arguments).
+subsetList :: MonadMaybe m => Apply m -> [Type] -> [TypeSet] -> m (TypeEnv, Leftovers)
+subsetList apply tl tl' = subsetFix apply Map.empty =<< subsetList' apply Map.empty tl tl'
 
-unifyList' :: MonadMaybe m => Apply m -> TypeEnv -> [TypeSet] -> [Type] -> m (TypeEnv, Leftovers)
-unifyList' _ env _ [] = return (env,[])
-unifyList' apply env (t:tl) (t':tl') = do
-  (env,l1) <- unify' apply env t t'
-  (env,l2) <- unifyList' apply env tl tl'
+subsetList' :: MonadMaybe m => Apply m -> TypeEnv -> [Type] -> [TypeSet] -> m (TypeEnv, Leftovers)
+subsetList' _ env [] _ = return (env,[])
+subsetList' apply env (t:tl) (t':tl') = do
+  (env,l1) <- subset' apply env t t'
+  (env,l2) <- subsetList' apply env tl tl'
   return (env, l1 ++ l2)
-unifyList' _ _ _ _ = nothing
+subsetList' _ _ _ _ = nothing
 
--- |Same as 'unifyList'', but for Type instead of TypeSet
-unifyList'' :: MonadMaybe m => Apply m -> [Type] -> [Type] -> m ()
-unifyList'' _ _ [] = success
-unifyList'' apply (t:tl) (t':tl') = do
-  unify'' apply t t'
-  unifyList'' apply tl tl'
-unifyList'' _ _ _ = nothing
+-- |Same as 'subsetList'', but for Type instead of TypeSet
+subsetList'' :: MonadMaybe m => Apply m -> [Type] -> [Type] -> m ()
+subsetList'' _ [] _ = success
+subsetList'' apply (t:tl) (t':tl') = do
+  subset'' apply t t'
+  subsetList'' apply tl tl'
+subsetList'' _ _ _ = nothing
 
--- |'unifyList' for the case of two type sets.  Here the two sets of variables are
+-- |'subsetList' for the case of two type sets.  Here the two sets of variables are
 -- considered to come from separate namespaces.  To make this clear, we implement
 -- this function using skolemization, by turning all variables in the second
 -- TypeEnv into TyConses.
-unifyListSkolem :: MonadMaybe m => Apply m -> [TypeSet] -> [TypeSet] -> m ()
-unifyListSkolem apply x y = unifyList apply x (map skolemize y) >. ()
+subsetListSkolem :: MonadMaybe m => Apply m -> [TypeSet] -> [TypeSet] -> m ()
+subsetListSkolem apply x y = subsetList apply (map skolemize x) y >. ()
 
 -- |Type environment substitution
 subst :: TypeEnv -> TypeSet -> TypeSet
@@ -447,7 +439,7 @@ skolemizeFun (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
 -- variables caused the problem.
 contravariantVars :: Leftovers -> [Var]
 contravariantVars = concatMap cv where
-  cv (TypeFun al _, _) = concatMap (vars . fst) al
+  cv (_, TypeFun al _) = concatMap (vars . fst) al
   vars (TsVar v) = [v]
   vars (TsCons _ tl) = concatMap vars tl
   vars (TsFun f) = varsFun f

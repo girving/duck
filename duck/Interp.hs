@@ -110,7 +110,7 @@ expr prog global env loc = exp where
   exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el
     (tv,vl,tl) <- lookupConstructor prog c
-    result <- runMaybeT $ unifyList (applyTry prog) tl types
+    result <- runMaybeT $ subsetList (applyTry prog) types tl
     case result of
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
@@ -134,7 +134,7 @@ expr prog global env loc = exp where
     return (ValPrimIO p dl, tyIO t)
   exp (Spec e ts) = do
     (d,t) <- exp e
-    result <- runMaybeT $ unify (applyTry prog) ts t
+    result <- runMaybeT $ subset (applyTry prog) t ts
     case result of
       Just (tenv,[]) -> return (d,substVoid tenv ts)
       Nothing -> execError loc (pshow e++" has type '"++pshow t++"', which is incompatible with type specification '"++pshow ts++"'")
@@ -191,7 +191,7 @@ typeof _ (ValChr _) = return tyChr
 typeof prog (ValCons c args) = do
   tl <- mapM (typeof prog) args
   (tv, vl, tl') <- lookupConstructor prog c
-  result <- runMaybeT $ unifyList (applyTry prog) tl' tl
+  result <- runMaybeT $ subsetList (applyTry prog) tl tl'
   case result of
     Just (tenv,[]) -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
