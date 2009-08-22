@@ -7,6 +7,13 @@
 -- 
 -- For example, a prefix trie can be used to represent the types of overloaded
 -- curried functions.
+--
+-- In order to represent argument transformation macros, Ptrie's have an
+-- additional field on each node that describes something about the edges
+-- out of that node.  This is the middle "a" type argument to Ptrie.  At some
+-- point this field may want to shift to live on each edge; in terms of
+-- overloads this change would correspond to allowing different macro
+-- transforms depending on the type of the argument.
 
 module Ptrie
   ( Ptrie
