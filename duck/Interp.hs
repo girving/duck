@@ -14,6 +14,7 @@ import qualified Data.List as List
 import Data.Maybe
 import Var
 import Type
+import Prims
 import Value
 import SrcLoc
 import Pretty
@@ -25,7 +26,6 @@ import ExecMonad
 import Control.Monad hiding (guard)
 import Control.Monad.Trans
 import qualified Infer
-import qualified Prims
 import qualified Base
 
 -- Environments
@@ -211,7 +211,7 @@ main prog global = runExec $ do
 
 runIO :: Prog -> Globals -> TValue -> Exec TValue
 runIO _ _ (ValLiftIO d, TyIO t) = return (d,t)
-runIO prog global (ValPrimIO Prims.TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
+runIO prog global (ValPrimIO TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
 runIO _ _ (ValPrimIO p args, TyIO t) = Base.primIO p args >.= \d -> (d,t)
 runIO prog global (ValBindIO v m env e, TyIO t) = do
   d <- runIO prog global m

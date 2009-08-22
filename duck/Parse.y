@@ -11,6 +11,7 @@ import Token
 import Layout
 import Ast
 import Type
+import Prims
 import SrcLoc
 import ParseMonad
 import ParseOps

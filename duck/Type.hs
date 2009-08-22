@@ -8,13 +8,6 @@ module Type
   , Trans(..)
   , TransType, TypeArg, TypeSetArg
   , TypeEnv
-  , tyUnit
-  , isTyUnit
-  , tyArrow
-  , tsArrow
-  , isTyArrow
-  , isTsArrow
-  , tyClosure
   , transType
   , typeArg
   , argType
@@ -122,32 +115,8 @@ type TypeEnv = Map Var Type
 -- |The type of functions which say how to apply closure types to types
 type Apply m = Type -> Type -> m Type
 
-tyUnit :: Type
-tyUnit = TyCons (V "()") []
-
-isTyUnit :: Type -> Bool
-isTyUnit (TyCons (V "()") []) = True
-isTyUnit _ = False
-
-tyArrow :: Type -> Type -> Type
-tyArrow s t = TyFun (TypeFun [(s,t)] [])
-
-tsArrow :: TypeSet -> TypeSet -> TypeSet
-tsArrow s t = TsFun (TypeFun [(s,t)] [])
-
-isTyArrow :: Type -> Maybe (Type,Type)
-isTyArrow (TyFun (TypeFun [a] [])) = Just a
-isTyArrow _ = Nothing
-
-isTsArrow :: TypeSet -> Maybe (TypeSet,TypeSet)
-isTsArrow (TsFun (TypeFun [a] [])) = Just a
-isTsArrow _ = Nothing
-
-tyClosure :: Var -> [Type] -> Type
-tyClosure f tl = TyFun (TypeFun [] [(f,tl)])
-
 transType :: Trans -> Type -> Type
-transType Delayed t = TyFun (TypeFun [(tyUnit,t)] [])
+transType Delayed t = TyFun (TypeFun [(TyCons (V "()") [],t)] [])
 
 typeArg :: TypeSet -> TypeSetArg
 typeArg (TsTrans c t) = (Just c, t)

@@ -16,6 +16,7 @@ module Infer
 
 import Var
 import Type
+import Prims
 import Util
 import Pretty
 import Lir hiding (prog, union)

@@ -7,9 +7,18 @@ module Prims
   , PrimIO(..)
   , binopString
   , binopPrecedence
+  , tyUnit
+  , isTyUnit
+  , tyArrow
+  , tsArrow
+  , isTyArrow
+  , isTsArrow
+  , tyClosure
   ) where
 
 import Pretty
+import Type
+import Var
 
 data Binop
   = IntAddOp
@@ -34,6 +43,32 @@ data PrimIO
   | IOPutChr
   | TestAll
   deriving (Eq, Ord, Show)
+
+-- Primitive types
+
+tyUnit :: Type
+tyUnit = TyCons (V "()") []
+
+isTyUnit :: Type -> Bool
+isTyUnit (TyCons (V "()") []) = True
+isTyUnit _ = False
+
+tyArrow :: Type -> Type -> Type
+tyArrow s t = TyFun (TypeFun [(s,t)] [])
+
+tsArrow :: TypeSet -> TypeSet -> TypeSet
+tsArrow s t = TsFun (TypeFun [(s,t)] [])
+
+isTyArrow :: Type -> Maybe (Type,Type)
+isTyArrow (TyFun (TypeFun [a] [])) = Just a
+isTyArrow _ = Nothing
+
+isTsArrow :: TypeSet -> Maybe (TypeSet,TypeSet)
+isTsArrow (TsFun (TypeFun [a] [])) = Just a
+isTsArrow _ = Nothing
+
+tyClosure :: Var -> [Type] -> Type
+tyClosure f tl = TyFun (TypeFun [] [(f,tl)])
 
 -- Pretty printing
 
