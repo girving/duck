@@ -18,13 +18,17 @@ duck: Duck.hs $(OTHERS)
 	$(GHC) $(GHCFLAGS) --make $< -o $@
 
 %.hs: %.y
+	chmod -f +w $@
 	$(HAPPY) $(HAPPYFLAGS) $< -o $@
+	chmod -w $@
 
 %.info: %.y
 	$(HAPPY) $(HAPPYFLAGS) $< -i$@
 
 %.hs: %.x
+	chmod -f +w $@
 	$(ALEX) $(ALEXFLAGS) $< -o $@
+	chmod -w $@
 
 .PHONY: test $(TESTS) $(TESTS_C)
 test: $(TESTS) $(TESTS_C)
