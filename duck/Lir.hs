@@ -14,7 +14,7 @@ module Lir
   ) where
 
 import Prelude hiding (mapM)
-import Type
+import Type hiding (union)
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set

@@ -23,8 +23,8 @@ module Type
   , unifyList
   , unifyList''
   , unifyListSkolem
-  , intersect
-  , intersectList
+  , union
+  , unionList
   , subst
   , substVoid
   , occurs
@@ -33,6 +33,32 @@ module Type
   , contravariantVars
   , showContravariantVars
   ) where
+
+-- Explanation of covariance and contravariance:
+--
+-- You should think of a type as being the set of values that inhabit the type.
+-- For example, the type Int is {0, 1, -1, 2, -2, ...}, and the type Void is
+-- the empty set {}.  Subtype means subset, so Void is a subtype of all types.
+--
+-- The set logic is also useful for remembering what union and intersect do.
+-- For example, (if c then a else b :: union A B) if (a :: A) and (b :: B),
+-- since the set of values resulting from the "if" is the union of the sets of
+-- values resulting from the two branches.  Intersection arises as the
+-- contravariant version of union:
+--
+--     union (a -> t) (b -> t) = intersect a b -> t
+--
+-- The unification operation below corresponds to a subset test;
+-- "unify a b" answers the question "Can we pass b to (a -> ...)?", so
+-- "unify a b" succeeds iff "b" is a subset of "a".
+--
+-- Note that Void is equivalent to the Haskell type forall a. a.  On the other
+-- side of the lattice, the type Top corresponding to the type exists a. a would
+-- be the type that could be anything.
+--
+-- A concrete example: the empty list [] has type List Void.  If we start adding
+-- values to the list to get [a], [a,b], etc. the type gets larger and larger
+-- as we union together more and more types.
 
 import Var
 import Pretty
@@ -43,17 +69,17 @@ import Control.Monad hiding (guard)
 import Util
 
 -- |The type of type functions.  TyFun and TsFun below represent an
--- intersection of one or more of these primitive type functions.
+-- union of one or more of these primitive type functions.
 --
 -- Since type functions can be arbitrary functions from types to types,
 -- there is no algorithmic way to simplify their intersections or unions.
--- Therefore, we represent them as an intersection of primitive type functions
+-- Therefore, we represent them as a union of primitive type functions
 -- (either arrow types or named closures).
 --
--- In particular, we can perform the simplification when intersecting (a -> b)
--- and (c -> d) if 'a' and 'c' have a representable union.  We could have chosen
--- to make all unions representable by storing unions of function types as well,
--- but for now we still stick to storing intersections.
+-- In particular, we can perform the simplification when unioning (a -> b)
+-- and (c -> d) if 'a' and 'c' have a representable intersection.  We could have
+-- chosen to make all intersections representable by storing intersections of
+-- function types as well, but for now we still stick to storing unions.
 data TypeFun t = TypeFun
   { funArrows :: ![(t,t)]
   , funClosures :: ![(Var,[t])] }
@@ -131,38 +157,38 @@ argType :: (Maybe Trans, Type) -> Type
 argType (Nothing, t) = t
 argType (Just c, t) = transType c t
 
--- |Symmetric unify: @z <- intersect x y@ means that a value of type x or y
+-- |Symmetric unify: @z <- union x y@ means that a value of type x or y
 -- can be safely viewed as having type z.
 --
 -- The first argument says how to apply closure types to types.
-intersect :: MonadMaybe m => Apply m -> Type -> Type -> m Type
-intersect apply (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< intersectList apply tl tl'
-intersect apply (TyFun f) (TyFun f') = TyFun =.< intersectFun apply f f'
-intersect apply (TyIO t) (TyIO t') = TyIO =.< intersect apply t t'
-intersect _ TyInt TyInt = return TyInt
-intersect _ TyChr TyChr = return TyChr
-intersect _ TyVoid t = return t
-intersect _ t TyVoid = return t
-intersect _ _ _ = nothing
+union :: MonadMaybe m => Apply m -> Type -> Type -> m Type
+union apply (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< unionList apply tl tl'
+union apply (TyFun f) (TyFun f') = TyFun =.< unionFun apply f f'
+union apply (TyIO t) (TyIO t') = TyIO =.< union apply t t'
+union _ TyInt TyInt = return TyInt
+union _ TyChr TyChr = return TyChr
+union _ TyVoid t = return t
+union _ t TyVoid = return t
+union _ _ _ = nothing
 
--- |The equivalent of 'intersect' for lists.  The two lists must have the same size.
-intersectList :: MonadMaybe m => Apply m -> [Type] -> [Type] -> m [Type]
-intersectList _ [] [] = return []
-intersectList apply (t:tl) (t':tl') = do
-  t'' <- intersect apply t t'
-  tl'' <- intersectList apply tl tl'
+-- |The equivalent of 'union' for lists.  The two lists must have the same size.
+unionList :: MonadMaybe m => Apply m -> [Type] -> [Type] -> m [Type]
+unionList _ [] [] = return []
+unionList apply (t:tl) (t':tl') = do
+  t'' <- union apply t t'
+  tl'' <- unionList apply tl tl'
   return (t'':tl'')
-intersectList _ _ _ = nothing
+unionList _ _ _ = nothing
 
--- |Intersect two type functions.  Except in special cases, this means unioning the lists.
-intersectFun :: MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m (TypeFun Type)
-intersectFun apply (TypeFun al cl) (TypeFun al' cl') = do
+-- |Union two type functions.  Except in special cases, this means unioning the lists.
+unionFun :: MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m (TypeFun Type)
+unionFun apply (TypeFun al cl) (TypeFun al' cl') = do
   al'' <- reduceArrows apply (al++al')
   return $ TypeFun (List.sort al'') (merge cl cl')
 
--- |Given a intersection list of arrow types, attempt to reduce them into a
+-- |Given a union list of arrow types, attempt to reduce them into a
 -- smaller equivalent list.  This can either successfully reduce, do nothing,
--- or fail (detect that the intersection is empty).
+-- or fail (detect that the union is impossible).
 reduceArrows :: MonadMaybe m => Apply m -> [(Type,Type)] -> m [(Type,Type)]
 reduceArrows _ [] = return []
 reduceArrows apply ((s,t):al) = do
@@ -173,44 +199,45 @@ reduceArrows apply ((s,t):al) = do
   where
   reduce _ [] = return Nothing
   reduce prev (a@(s',t') : next) = do
-    ss <- union apply s s' -- function arguments are contravariant, so union
+    ss <- intersect apply s s' -- function arguments are contravariant, so intersect
     case ss of
       Nothing -> reduce (a:prev) next
       Just ss -> do
-        tt <- intersect apply t t' -- return values are covariant, so intersect 
+        tt <- union apply t t' -- return values are covariant, so union 
         return $ Just $ (ss,tt) : reverse prev ++ next
 
--- |Symmetric antiunify: @z <- union x y@ means that a value of type z can be
+-- |Symmetric antiunify: @z <- intersect x y@ means that a value of type z can be
 -- safely viewed as having type x and type y.
 --
--- Not all unions are representable in the case of function types, so union can
--- either succeed (the result is representable), fail (union is definitely invalid),
--- or be indeterminant (we don't know).  The indeterminate case returns Nothing.
-union :: MonadMaybe m => Apply m -> Type -> Type -> m (Maybe Type)
-union apply (TyCons c tl) (TyCons c' tl') | c == c' = fmap (TyCons c) =.< unionList apply tl tl'
-union _ (TyFun f) (TyFun f') = return (
+-- Not all intersections are representable in the case of function types, so
+-- intersect can either succeed (the result is representable), fail
+-- (intersection is definitely invalid), or be indeterminant (we don't know).
+-- The indeterminate case returns Nothing.
+intersect :: MonadMaybe m => Apply m -> Type -> Type -> m (Maybe Type)
+intersect apply (TyCons c tl) (TyCons c' tl') | c == c' = fmap (TyCons c) =.< intersectList apply tl tl'
+intersect _ (TyFun f) (TyFun f') = return (
   if f == f' then Just (TyFun f)
-  else Nothing) -- union is indeterminant
-union apply (TyIO t) (TyIO t') = fmap TyIO =.< union apply t t'
-union _ TyInt TyInt = return (Just TyInt)
-union _ TyChr TyChr = return (Just TyChr)
-union _ TyVoid _ = return (Just TyVoid)
-union _ _ TyVoid = return (Just TyVoid)
-union _ _ _ = nothing
+  else Nothing) -- intersect is indeterminant
+intersect apply (TyIO t) (TyIO t') = fmap TyIO =.< intersect apply t t'
+intersect _ TyInt TyInt = return (Just TyInt)
+intersect _ TyChr TyChr = return (Just TyChr)
+intersect _ TyVoid _ = return (Just TyVoid)
+intersect _ _ TyVoid = return (Just TyVoid)
+intersect _ _ _ = nothing
 
--- |The equivalent of 'union' for lists.  The two lists must have the same size.
+-- |The equivalent of 'intersect' for lists.  The two lists must have the same size.
 --
 -- If we come across an indeterminate value early in the list, we still process the rest
 -- of this in case we find a clear failure.
-unionList :: MonadMaybe m => (Type -> Type -> m Type) -> [Type] -> [Type] -> m (Maybe [Type])
-unionList _ [] [] = return (Just [])
-unionList apply (t:tl) (t':tl') = do
-  t'' <- union apply t t'
-  tl'' <- unionList apply tl tl'
+intersectList :: MonadMaybe m => (Type -> Type -> m Type) -> [Type] -> [Type] -> m (Maybe [Type])
+intersectList _ [] [] = return (Just [])
+intersectList apply (t:tl) (t':tl') = do
+  t'' <- intersect apply t t'
+  tl'' <- intersectList apply tl tl'
   return (case (t'',tl'') of
     (Just t,Just tl) -> Just (t:tl)
     _ -> Nothing)
-unionList _ _ _ = nothing
+intersectList _ _ _ = nothing
 
 -- |Directed unify: @unify s t@ tries to turn @s@ into @t@ via variable substitutions,
 -- but not the other way round.
@@ -248,7 +275,7 @@ unify' :: MonadMaybe m => Apply m -> TypeEnv -> TypeSet -> Type -> m (TypeEnv, L
 unify' apply env (TsVar v) t =
   case Map.lookup v env of
     Nothing -> return (Map.insert v t env, [])
-    Just t' -> intersect apply t t' >.= \t'' -> (Map.insert v t'' env, [])
+    Just t' -> union apply t t' >.= \t'' -> (Map.insert v t'' env, [])
 unify' apply env (TsCons c tl) (TyCons c' tl') | c == c' = unifyList' apply env tl tl'
 unify' apply env (TsFun f) (TyFun f') = unifyFun' apply env f f'
 unify' apply env (TsIO t) (TyIO t') = unify' apply env t t'
@@ -270,14 +297,14 @@ unify'' _ _ _ = nothing
 -- |Unify for function types
 --
 -- We use the following rules:
---     unify (intersect_f f) (intersect_f' f')
---        = intersect_f' union_f (unify f f')
+--     unify (union_f f) (union_f' f')
+--        = union_f' intersect_f (unify f f')
 --     unify (a -> b) (c -> d) = unify c a -> unify b d
 --     unify (a -> b) closure = a -> unify b (closure a)
 --     unify closure (a -> b) = fail
 -- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
 -- lack the ability to do speculative computation and rollback.  Therefore,
--- "union" currently means ignore all but the first entry.
+-- "intersect" currently means ignore all but the first entry.
 unifyFun' :: forall m. MonadMaybe m => Apply m -> TypeEnv -> TypeFun TypeSet -> TypeFun Type -> m (TypeEnv, Leftovers)
 unifyFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
   seq env [] $ map (arrow al cl) al' ++ map (closure al cl) cl'
@@ -315,16 +342,6 @@ unifyFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
   closure [] _ _ _ = nothing
 
 -- |Unify for singleton function types.
---
--- We use the following rules:
---     unify (intersect_f f) (intersect_f' f')
---        = intersect_f' union_f (unify f f')
---     unify (a -> b) (c -> d) = unify c a -> unify b d
---     unify (a -> b) closure = a -> unify b (closure a)
---     unify closure (a -> b) = fail
--- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
--- lack the ability to do speculative computation and rollback.  Therefore,
--- "union" currently means ignore all but the first entry.
 unifyFun'' :: forall m. MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m ()
 unifyFun'' apply (TypeFun al cl) (TypeFun al' cl') = do
   mapM_ (arrow al cl) al'

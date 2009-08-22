@@ -18,9 +18,9 @@ import Var
 import Type
 import Util
 import Pretty
-import Lir hiding (prog)
+import Lir hiding (prog, union)
 import qualified Data.Map as Map
-import Data.List hiding (lookup, intersect)
+import Data.List hiding (lookup, union)
 import qualified Data.List as List
 import Control.Monad.Error hiding (guard, join)
 import InferMonad
@@ -180,7 +180,7 @@ expr prog env loc = exp where
 
 join :: Prog -> SrcLoc -> Type -> Type -> Infer Type
 join prog loc t1 t2 = do
-  result <- runMaybeT $ intersect (applyTry prog) t1 t2
+  result <- runMaybeT $ union (applyTry prog) t1 t2
   case result of
     Just t -> return t
     _ -> typeError loc ("failed to unify types "++pshow t1++" and "++pshow t2)
@@ -276,7 +276,7 @@ cache prog f args (Over _ atypes r vl e) loc = do
       fix prev e = do
         insertOver f al (Over noLoc (zip tt tl) prev vl (Just e))
         r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) loc e)
-        result <- runMaybeT $ intersect (applyTry prog) r' rs
+        result <- runMaybeT $ union (applyTry prog) r' rs
         case result of
           Nothing -> typeError loc ("in call "++call++", failed to unify result "++pshow r'++" with return signature "++pshow rs)
           Just r 

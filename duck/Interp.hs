@@ -9,7 +9,7 @@ module Interp
   ) where
 
 import Prelude hiding (lookup)
-import Data.List hiding (lookup, intersect)
+import Data.List hiding (lookup)
 import qualified Data.List as List
 import Data.Maybe
 import Var
