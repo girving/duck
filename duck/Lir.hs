@@ -6,11 +6,14 @@ module Lir
   , Datatype(..), Overload(..), Definition(..)
   , Overloads
   , Exp(..)
+  , Trans(..)
   , overTypes
   , Ir.binopString
   , prog
   , union
   , check
+  , transType
+  , argType
   ) where
 
 import Prelude hiding (mapM)
@@ -59,6 +62,14 @@ data Overload t = Over
   }
 
 type Overloads = Ptrie Type (Maybe Trans) (Overload Type)
+
+-- |Possible kinds of type macro transformers.
+data Trans
+  = Delayed -- :: Delay
+  deriving (Eq, Ord, Show)
+
+type TransType t = (Maybe Trans, t)
+type TypeSetArg = TransType TypeSet
 
 data Definition = Def
   { defVars :: [Loc Var]
@@ -182,6 +193,20 @@ unwrapLambda e = ([], e)
 generalType :: [a] -> ([TypeSet], TypeSet)
 generalType vl = (tl,r) where
   r : tl = map TsVar (take (length vl + 1) standardVars)
+
+-- |Apply a macro transformation to a type
+transType :: Trans -> Type -> Type
+transType Delayed t = tyArrow tyUnit t
+
+-- |Converts an annotation argument type to the effective type of the argument within the function.
+argType :: (Maybe Trans, Type) -> Type
+argType (Nothing, t) = t
+argType (Just c, t) = transType c t
+
+-- |Extracts the annotation from a possibly annotated argument type.
+typeArg :: TypeSet -> TypeSetArg
+typeArg (TsCons (V "Delayed") [t]) = (Just Delayed, t)
+typeArg t = (Nothing, t)
 
 -- |Unwrap a type/lambda combination as far as we can
 unwrapTypeLambda :: TypeSet -> Ir.Exp -> ([TypeSetArg], TypeSet, [Var], Ir.Exp)
@@ -329,3 +354,7 @@ revert (Return e) = Ir.Return (revert e)
 revert (PrimIO p el) = Ir.PrimIO p (map revert el)
 revert (Spec e t) = Ir.Spec (revert e) t
 revert (ExpLoc l e) = Ir.ExpLoc l (revert e)
+
+instance Pretty t => Pretty (Maybe Trans, t) where
+  pretty' (Nothing, t) = pretty' t
+  pretty' (Just c, t) = (1, pretty (show c) <+> guard 2 t)

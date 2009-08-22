@@ -5,12 +5,7 @@ module Type
   ( Type(..)
   , TypeSet(..)
   , TypeFun(..)
-  , Trans(..)
-  , TransType, TypeArg, TypeSetArg
   , TypeEnv
-  , transType
-  , typeArg
-  , argType
   , subset
   , subset''
   , subsetList
@@ -89,17 +84,7 @@ data TypeSet
   | TsCons !CVar [TypeSet]
   | TsFun !(TypeFun TypeSet)
   | TsVoid
-  | TsTrans !Trans !TypeSet -- ^ a (temporary) transparent macro transformer type
   deriving (Eq, Ord, Show)
-
--- |Possible kinds of type macro transformers.
-data Trans 
-  = Delayed -- :: Delay
-  deriving (Eq, Ord, Show)
-
-type TransType t = (Maybe Trans, t)
-type TypeArg = TransType Type
-type TypeSetArg = TransType TypeSet
 
 type TypeEnv = Map Var Type
 
@@ -114,17 +99,6 @@ freeze = Map.map snd
 
 -- |The type of functions which say how to apply closure types to types
 type Apply m = Type -> Type -> m Type
-
-transType :: Trans -> Type -> Type
-transType Delayed t = TyFun (TypeFun [(TyCons (V "()") [],t)] [])
-
-typeArg :: TypeSet -> TypeSetArg
-typeArg (TsTrans c t) = (Just c, t)
-typeArg t = (Nothing, t)
-
-argType :: (Maybe Trans, Type) -> Type
-argType (Nothing, t) = t
-argType (Just c, t) = transType c t
 
 -- |@z <- union x y@ means that a value of type x or y can be safely viewed as
 -- having type z.  Viewed as sets, this means S(z) >= union S(x) S(y), where
@@ -360,7 +334,6 @@ subst env (TsVar v)
   | otherwise = TsVar v
 subst env (TsCons c tl) = TsCons c (map (subst env) tl)
 subst env (TsFun f) = TsFun (substFun env f)
-subst env (TsTrans c t) = TsTrans c (subst env t)
 subst _ TsVoid = TsVoid
 
 substFun :: TypeEnv -> TypeFun TypeSet -> TypeFun TypeSet
@@ -373,7 +346,6 @@ substVoid :: TypeEnv -> TypeSet -> Type
 substVoid env (TsVar v) = Map.findWithDefault TyVoid v env
 substVoid env (TsCons c tl) = TyCons c (map (substVoid env) tl)
 substVoid env (TsFun f) = TyFun (substVoidFun env f)
-substVoid env (TsTrans c t) = transType c (substVoid env t)
 substVoid _ TsVoid = TyVoid
 
 substVoidFun :: TypeEnv -> TypeFun TypeSet -> TypeFun Type
@@ -387,7 +359,6 @@ occurs env v (TsVar v') | Just t <- Map.lookup v' env = occurs' v t
 occurs _ v (TsVar v') = v == v'
 occurs env v (TsCons _ tl) = any (occurs env v) tl
 occurs env v (TsFun f) = occursFun env v f
-occurs env v (TsTrans _ t) = occurs env v t
 occurs _ _ TsVoid = False
 
 occursFun :: TypeEnv -> Var -> TypeFun TypeSet -> Bool
@@ -431,7 +402,6 @@ unsingleton' env (TsVar v) | Just (_,t) <- Map.lookup v env = return t
 unsingleton' _ (TsVar _) = nothing
 unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
 unsingleton' env (TsFun f) = TyFun =.< unsingletonFun' env f
-unsingleton' env (TsTrans c t) = transType c =.< unsingleton' env t
 unsingleton' _ TsVoid = return TyVoid
 
 unsingletonFun' :: Constraints -> TypeFun TypeSet -> Maybe (TypeFun Type)
@@ -454,7 +424,6 @@ skolemize :: TypeSet -> Type
 skolemize (TsVar v) = TyCons v [] -- skolemization
 skolemize (TsCons c tl) = TyCons c (map skolemize tl)
 skolemize (TsFun f) = TyFun (skolemizeFun f)
-skolemize (TsTrans _ t) = skolemize t
 skolemize TsVoid = TyVoid
 
 skolemizeFun :: TypeFun TypeSet -> TypeFun Type
@@ -467,7 +436,6 @@ vars :: TypeSet -> [Var]
 vars (TsVar v) = [v]
 vars (TsCons _ tl) = concatMap vars tl
 vars (TsFun f) = varsFun f
-vars (TsTrans _ t) = vars t
 vars TsVoid = []
 
 varsFun :: TypeFun TypeSet -> [Var]
@@ -494,7 +462,6 @@ instance Pretty TypeSet where
   pretty' (TsCons t tl) | istuple t = (2, hcat $ List.intersperse (pretty ", ") $ map (guard 3) tl)
   pretty' (TsCons t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
   pretty' (TsFun f) = pretty' f
-  pretty' (TsTrans c t) = (1, pretty (show c) <+> guard 2 t)
   pretty' TsVoid = (100, pretty "Void")
 
 instance Pretty Type where
@@ -507,7 +474,3 @@ instance Pretty t => Pretty (TypeFun t) where
   pretty' (TypeFun al cl) = (40, hsep (List.intersperse (pretty "&") (
     map (\ (s,t) -> parens (guard 2 s <+> pretty "->" <+> guard 1 t)) al ++
     map (\ (f,tl) -> pretty f <+> prettylist tl) cl)))
-
-instance Pretty t => Pretty (Maybe Trans, t) where
-  pretty' (Nothing, t) = pretty' t
-  pretty' (Just c, t) = (1, pretty (show c) <+> guard 2 t)
