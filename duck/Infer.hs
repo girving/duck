@@ -174,7 +174,7 @@ expr prog env loc = exp where
     result <- runMaybeT $ unify (applyTry prog) ts t
     case result of
       Just (tenv,[]) -> return $ substVoid tenv ts
-      Nothing -> typeError loc (pshow e++" has type '"++pshow t++"', which is incompatible with type specification '"++pshow ts)
+      Nothing -> typeError loc (pshow e++" has type '"++pshow t++"', which is incompatible with type specification '"++pshow ts++"'")
       Just (_,leftovers) -> typeError loc ("type specification '"++pshow ts++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
   exp (ExpLoc l e) = expr prog env l e
 
