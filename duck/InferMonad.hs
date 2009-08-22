@@ -7,6 +7,7 @@ module InferMonad
   , typeError
   , withFrame
   , runInfer
+  , rerunInfer
   , getInfer
   , updateInfer
   , debugInfer
@@ -18,7 +19,7 @@ import Control.Monad.Error hiding (guard)
 import Util
 import Pretty
 import Type
-import Lir (Overloads)
+import Lir (Overloads, Prog, progOverloads)
 import Data.Map (Map)
 import qualified Data.Map as Map
 import Control.Exception
@@ -60,6 +61,11 @@ withFrame f args loc e =
 
 runInfer :: CallStack Type -> FunctionInfo -> Infer a -> IO (a, FunctionInfo)
 runInfer stack info e = runErrorT (runStateT (unInfer e) (stack, info) >.= second snd) >>= either (die . showError) return
+
+-- Takes a prog instead of FunctionInfo, and discards any extra function info
+-- computed during the extra inference.
+rerunInfer :: CallStack Type -> Prog -> Infer a -> IO a
+rerunInfer stack prog e = liftM fst (runInfer stack (progOverloads prog) e)
 
 instance MonadState InferState Infer where
   get = snd =.< Infer get

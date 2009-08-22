@@ -12,6 +12,8 @@ module Util
   , groupPairs
   , spanJust
   , first, second
+  , exit
+  , dieWith
   , die
   , Stack(..)
   , (++.)
@@ -100,10 +102,17 @@ first f (a,b) = (f a,b)
 second :: (b -> c) -> (a,b) -> (a,c)
 second f (a,b) = (a,f b)
 
-die :: MonadIO m => String -> m a
-die s = liftIO $ do
+exit :: Int -> IO a
+exit 0 = exitSuccess
+exit i = exitWith (ExitFailure i)
+
+dieWith :: MonadIO m => Int -> String -> m a
+dieWith i s = liftIO $ do
   fputs stderr (s++"\n")
-  exitFailure
+  exit i
+
+die :: MonadIO m => String -> m a
+die = dieWith 1
 
 -- |Stacks are lists with an extra bit of information at the bottom
 -- This is useful to represent stacks with different layers of types

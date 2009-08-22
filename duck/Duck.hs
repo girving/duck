@@ -121,6 +121,7 @@ main = do
   lir <- phase' PLink (Lir.union Base.base lir)
   Lir.check lir
   lir <- phase PInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
+  unless (compileOnly flags) $ rerunInfer [] lir (Infer.main lir)
   env <- phase PEnv (runExec $ Interp.prog lir)
 
   unless (compileOnly flags) $ do

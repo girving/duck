@@ -41,7 +41,7 @@ $(TESTS):
 $(TESTS_C):
 	./duck -c test/$@.duck
 $(TESTS_FAIL):
-	! ./duck -Itest test/$@.duck
+	./duck -Itest test/$@.duck; s=$$?; if [ $$s -eq 1 ]; then :; else echo $@ failed: exit status $$s != 1; false; fi
 
 .PHONY: clean
 clean:

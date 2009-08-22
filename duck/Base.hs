@@ -29,7 +29,6 @@ import Control.Monad.Trans (liftIO)
 import qualified Control.Exception as Exn
 import qualified Data.Char as Char
 import qualified Data.Map as Map
-import System.Exit
 
 data PrimOp = PrimOp
   { primPrim :: Prim
@@ -77,7 +76,7 @@ primType loc prim args
   | otherwise = typeError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
 
 primIO :: PrimIO -> [Value] -> Exec Value
-primIO Exit [ValInt i] = liftIO (exitWith (if i/=0 then ExitFailure i else ExitSuccess))
+primIO Exit [ValInt i] = liftIO (exit i)
 primIO IOPutChr [ValChr c] = liftIO (putChar c) >. valUnit
 primIO p args = execError noLoc ("invalid arguments "++pshowlist args++" to "++show p)
 

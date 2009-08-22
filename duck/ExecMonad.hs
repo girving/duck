@@ -40,14 +40,14 @@ withFrame f args loc e =
 runExec :: Exec a -> IO a
 runExec e = evalStateT (unExec e) []
 
+-- Most runtime errors should never happen, since they should be caught by type
+-- inference and the like.  Therefore, we use exit status 3 so that they can be
+-- distinguished from the better kinds of errors.
 execError :: SrcLoc -> String -> Exec a
 execError loc msg = Exec $ get >>= \s ->
-  liftIO (die (showStack s ++ "RuntimeError: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
+  liftIO (dieWith 3 (showStack s ++ "RuntimeError: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
 
 liftInfer :: Lir.Prog -> Infer a -> Exec a
 liftInfer prog infer = Exec $ do
   s <- get
-  let info = Lir.progOverloads prog
-  (r,_info') <- liftIO $ runInfer (mapStackArgs snd s) info infer
-  -- when (info /= info') $ die (showStack s ++ "RuntimeError: inference changed overload table")
-  return r
+  liftIO $ rerunInfer (mapStackArgs snd s) prog infer

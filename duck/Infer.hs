@@ -12,6 +12,7 @@ module Infer
   , lookupCons
   , lookupConstructor'
   , runIO
+  , main
   ) where
 
 import Var
@@ -289,6 +290,15 @@ cache prog f args (Over _ atypes r vl e) loc = do
             | r == prev -> return prev
             | otherwise -> fix r e
   maybe (return TyVoid) (fix TyVoid) e -- recursive function calls are initially assumed to be void
+
+-- Verify that main exists and has type IO ().
+main :: Prog -> Infer ()
+main prog = do
+  main <- lookup prog Map.empty noLoc (V "main")
+  result <- runMaybeT $ unify'' (applyTry prog) (tyIO tyUnit) main
+  case result of
+    Just () -> success
+    Nothing -> typeError noLoc ("main has type "++pshow main++", but should have type IO ()")
 
 -- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
