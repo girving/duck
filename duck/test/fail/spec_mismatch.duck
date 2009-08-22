@@ -1,0 +1,4 @@
+main = testAll
+
+f :: Int -> Int
+g x = x

@@ -1,0 +1,3 @@
+main = testAll
+
+_ = 1 :: Void

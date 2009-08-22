@@ -1,0 +1,3 @@
+main = testAll
+
+_ = (+) :: a -> Int -> Int

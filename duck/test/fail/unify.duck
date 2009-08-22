@@ -1,0 +1,6 @@
+import base
+main = testAll
+
+_ = case True of
+  True -> 1
+  False -> 'a'

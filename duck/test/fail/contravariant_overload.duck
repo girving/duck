@@ -1,0 +1,6 @@
+main = testAll
+
+f :: (a -> Int) -> Int
+f g = g 0
+
+_ = f \x -> x

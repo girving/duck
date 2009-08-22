@@ -1,0 +1,9 @@
+main = testAll
+
+f :: Int -> a -> Int
+f x y = 0
+
+f :: a -> Int -> Int
+f x y = 0
+
+_ = f 0 0

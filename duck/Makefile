@@ -8,6 +8,7 @@ ALEXFLAGS = -g
 OTHERS = Parse.hs Lex.hs
 TESTS = basic layout curry delay match io tyfun
 TESTS_C = apply base ops null
+TESTS_FAIL := $(wildcard test/fail/*.duck)
 
 all: duck
 
@@ -30,12 +31,17 @@ duck: Duck.hs $(OTHERS)
 	umask $$(( `umask` | 222 )) ; \
 	$(ALEX) $(ALEXFLAGS) $< -o $@
 
-.PHONY: test $(TESTS) $(TESTS_C)
-test: $(TESTS) $(TESTS_C)
+ALL_TESTS = $(TESTS) $(TESTS_C) $(TESTS_FAIL)
+.PHONY: test $(ALL_TESTS)
+test: $(ALL_TESTS)
+	@echo
+	@echo All tests passed!
 $(TESTS):
 	./duck test/$@.duck
 $(TESTS_C):
 	./duck -c test/$@.duck
+$(TESTS_FAIL):
+	! ./duck -Itest $@
 
 .PHONY: clean
 clean:
