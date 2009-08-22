@@ -29,6 +29,7 @@ import Control.Monad.Trans (liftIO)
 import qualified Control.Exception as Exn
 import qualified Data.Char as Char
 import qualified Data.Map as Map
+import System.Exit
 
 data PrimOp = PrimOp
   { primPrim :: Prim
@@ -76,12 +77,12 @@ primType loc prim args
   | otherwise = typeError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
 
 primIO :: PrimIO -> [Value] -> Exec Value
-primIO ExitFailure [] = execError noLoc "exit failure"
+primIO Exit [ValInt i] = liftIO (exitWith (if i/=0 then ExitFailure i else ExitSuccess))
 primIO IOPutChr [ValChr c] = liftIO (putChar c) >. valUnit
 primIO p args = execError noLoc ("invalid arguments "++pshowlist args++" to "++show p)
 
 primIOType :: SrcLoc -> PrimIO -> [Type] -> Infer Type
-primIOType _ ExitFailure [] = return tyUnit
+primIOType _ Exit [i] | isTyInt i = return TyVoid
 primIOType _ IOPutChr [c] | isTyChr c = return tyUnit
 primIOType _ TestAll [] = return tyUnit
 primIOType loc p args = typeError loc ("invalid arguments"++pshowlist args++" to "++show p)
@@ -101,7 +102,7 @@ base = Lir.prog $ decTuples ++ prims ++ io where
     vars = take i standardVars
 
 io :: [Decl]
-io = [map',join,exitFailure,ioPutChr,testAll,returnIO] where
+io = [map',join,exit,ioPutChr,testAll,returnIO] where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TsVar [a,b]
   map' = Over (Loc noLoc $ V "map") (tsArrow (tsArrow ta tb) (tsArrow (tsIO ta) (tsIO tb)))
@@ -113,6 +114,6 @@ io = [map',join,exitFailure,ioPutChr,testAll,returnIO] where
       (Bind x (Var c)
       (Var x)))
   returnIO = LetD (Loc noLoc $ V "returnIO") (Lambda x (Return (Var x)))
-  exitFailure = LetD (Loc noLoc $ V "exitFailure") (PrimIO ExitFailure [])
-  ioPutChr = Over (Loc noLoc $ V "put") (tsArrow tsChr (tsIO (singleton tyUnit))) (Lambda c (PrimIO IOPutChr [Var c]))
+  exit = Over (Loc noLoc $ V "exit") (tsArrow tsInt (tsIO TsVoid)) (Lambda x (PrimIO Exit [Var x]))
+  ioPutChr = Over (Loc noLoc $ V "put") (tsArrow tsChr (tsIO tsUnit)) (Lambda c (PrimIO IOPutChr [Var c]))
   testAll = LetD (Loc noLoc $ V "testAll") (PrimIO TestAll [])

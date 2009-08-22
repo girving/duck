@@ -258,11 +258,11 @@ map :: (a -> b) -> IO a -> IO b
 
 -- And here are some primitives:
 
-exitFailure :: IO Void 
+exit :: Int -> IO Void 
 returnIO :: a -> IO a
 testAll :: IO Void
 -}
 
 assert x =
   if x then returnIO ()
-  else exitFailure
+  else exit 1

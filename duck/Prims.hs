@@ -8,6 +8,7 @@ module Prims
   , binopString
   , binopPrecedence
   , tyUnit
+  , tsUnit
   , isTyUnit
   , tyArrow
   , tsArrow
@@ -15,6 +16,8 @@ module Prims
   , isTsArrow
   , tyClosure
   , tyInt
+  , tsInt
+  , isTyInt
   , tyChr
   , tsChr
   , isTyChr
@@ -46,7 +49,7 @@ data Prim
   deriving (Eq, Ord, Show)
 
 data PrimIO
-  = ExitFailure
+  = Exit
   | IOPutChr
   | TestAll
   deriving (Eq, Ord, Show)
@@ -55,6 +58,7 @@ data PrimIO
 
 tyUnit :: Type
 tyUnit = TyCons (V "()") []
+tsUnit = singleton tyUnit
 
 isTyUnit :: Type -> Bool
 isTyUnit (TyCons (V "()") []) = True
@@ -79,6 +83,11 @@ tyClosure f tl = TyFun (TypeFun [] [(f,tl)])
 
 tyInt :: Type
 tyInt = TyCons (V "Int") []
+tsInt = singleton tyInt
+
+isTyInt :: Type -> Bool
+isTyInt (TyCons (V "Int") []) = True
+isTyInt _ = False
 
 tyChr :: Type
 tyChr = TyCons (V "Chr") []

@@ -1,1 +1,1 @@
-main = exitFailure
+main = exit 1

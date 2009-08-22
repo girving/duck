@@ -6,9 +6,9 @@ ALEX = alex
 ALEXFLAGS = -g
 
 OTHERS = Parse.hs Lex.hs
-TESTS = basic layout curry delay match io tyfun
+TESTS = basic layout curry delay match io tyfun success
 TESTS_C = apply base ops null
-TESTS_FAIL := $(wildcard test/fail/*.duck)
+TESTS_FAIL := $(patsubst test/fail/%.duck, fail/%, $(wildcard test/fail/*.duck))
 
 all: duck
 
@@ -41,7 +41,7 @@ $(TESTS):
 $(TESTS_C):
 	./duck -c test/$@.duck
 $(TESTS_FAIL):
-	! ./duck -Itest $@
+	! ./duck -Itest test/$@.duck
 
 .PHONY: clean
 clean:
