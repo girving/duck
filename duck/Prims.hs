@@ -14,6 +14,10 @@ module Prims
   , isTyArrow
   , isTsArrow
   , tyClosure
+  , tyInt
+  , tyChr
+  , tsChr
+  , isTyChr
   ) where
 
 import Pretty
@@ -69,6 +73,17 @@ isTsArrow _ = Nothing
 
 tyClosure :: Var -> [Type] -> Type
 tyClosure f tl = TyFun (TypeFun [] [(f,tl)])
+
+tyInt :: Type
+tyInt = TyCons (V "Int") []
+
+tyChr :: Type
+tyChr = TyCons (V "Chr") []
+tsChr = singleton tyChr
+
+isTyChr :: Type -> Bool
+isTyChr (TyCons (V "Chr") []) = True
+isTyChr _ = False
 
 -- Pretty printing
 

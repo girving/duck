@@ -83,8 +83,6 @@ data Type
   = TyCons !CVar [Type]
   | TyFun !(TypeFun Type)
   | TyIO !Type
-  | TyInt
-  | TyChr
   | TyVoid
   deriving (Eq, Ord, Show)
 
@@ -95,8 +93,6 @@ data TypeSet
   | TsCons !CVar [TypeSet]
   | TsFun !(TypeFun TypeSet)
   | TsIO !TypeSet
-  | TsInt
-  | TsChr
   | TsVoid
   | TsTrans !Trans !TypeSet -- ^ a (temporary) transparent macro transformer type
   deriving (Eq, Ord, Show)
@@ -134,8 +130,6 @@ union :: MonadMaybe m => Apply m -> Type -> Type -> m Type
 union apply (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< unionList apply tl tl'
 union apply (TyFun f) (TyFun f') = TyFun =.< unionFun apply f f'
 union apply (TyIO t) (TyIO t') = TyIO =.< union apply t t'
-union _ TyInt TyInt = return TyInt
-union _ TyChr TyChr = return TyChr
 union _ TyVoid t = return t
 union _ t TyVoid = return t
 union _ _ _ = nothing
@@ -188,8 +182,6 @@ intersect _ (TyFun f) (TyFun f') = return (
   if f == f' then Just (TyFun f)
   else Nothing) -- intersect is indeterminant
 intersect apply (TyIO t) (TyIO t') = fmap TyIO =.< intersect apply t t'
-intersect _ TyInt TyInt = return (Just TyInt)
-intersect _ TyChr TyChr = return (Just TyChr)
 intersect _ TyVoid _ = return (Just TyVoid)
 intersect _ _ TyVoid = return (Just TyVoid)
 intersect _ _ _ = nothing
@@ -248,8 +240,6 @@ unify' apply env (TsVar v) t =
 unify' apply env (TsCons c tl) (TyCons c' tl') | c == c' = unifyList' apply env tl tl'
 unify' apply env (TsFun f) (TyFun f') = unifyFun' apply env f f'
 unify' apply env (TsIO t) (TyIO t') = unify' apply env t t'
-unify' _ env TsInt TyInt = return (env,[])
-unify' _ env TsChr TyChr = return (env,[])
 unify' _ env _ TyVoid = return (env,[])
 unify' _ _ _ _ = nothing
 
@@ -258,8 +248,6 @@ unify'' :: MonadMaybe m => Apply m -> Type -> Type -> m ()
 unify'' apply (TyCons c tl) (TyCons c' tl') | c == c' = unifyList'' apply tl tl'
 unify'' apply (TyFun f) (TyFun f') = unifyFun'' apply f f'
 unify'' apply (TyIO t) (TyIO t') = unify'' apply t t'
-unify'' _ TyInt TyInt = success
-unify'' _ TyChr TyChr = success
 unify'' _ _ TyVoid = success
 unify'' _ _ _ = nothing
 
@@ -369,8 +357,6 @@ subst env (TsCons c tl) = TsCons c (map (subst env) tl)
 subst env (TsFun f) = TsFun (substFun env f)
 subst env (TsIO t) = TsIO (subst env t)
 subst env (TsTrans c t) = TsTrans c (subst env t)
-subst _ TsInt = TsInt
-subst _ TsChr = TsChr
 subst _ TsVoid = TsVoid
 
 substFun :: TypeEnv -> TypeFun TypeSet -> TypeFun TypeSet
@@ -385,8 +371,6 @@ substVoid env (TsCons c tl) = TyCons c (map (substVoid env) tl)
 substVoid env (TsFun f) = TyFun (substVoidFun env f)
 substVoid env (TsIO t) = TyIO (substVoid env t)
 substVoid env (TsTrans c t) = transType c (substVoid env t)
-substVoid _ TsInt = TyInt
-substVoid _ TsChr = TyChr
 substVoid _ TsVoid = TyVoid
 
 substVoidFun :: TypeEnv -> TypeFun TypeSet -> TypeFun Type
@@ -402,8 +386,6 @@ occurs env v (TsCons _ tl) = any (occurs env v) tl
 occurs env v (TsFun f) = occursFun env v f
 occurs env v (TsIO t) = occurs env v t
 occurs env v (TsTrans _ t) = occurs env v t
-occurs _ _ TsInt = False
-occurs _ _ TsChr = False
 occurs _ _ TsVoid = False
 
 occursFun :: TypeEnv -> Var -> TypeFun TypeSet -> Bool
@@ -420,8 +402,6 @@ singleton :: Type -> TypeSet
 singleton (TyCons c tl) = TsCons c (map singleton tl)
 singleton (TyFun f) = TsFun (singletonFun f)
 singleton (TyIO t) = TsIO (singleton t)
-singleton TyInt = TsInt
-singleton TyChr = TsChr
 singleton TyVoid = TsVoid
 
 singletonFun :: TypeFun Type -> TypeFun TypeSet
@@ -440,8 +420,6 @@ unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
 unsingleton' env (TsFun f) = TyFun =.< unsingletonFun' env f
 unsingleton' env (TsIO t) = TyIO =.< unsingleton' env t
 unsingleton' env (TsTrans c t) = transType c =.< unsingleton' env t
-unsingleton' _ TsInt = return TyInt
-unsingleton' _ TsChr = return TyChr
 unsingleton' _ TsVoid = return TyVoid
 
 unsingletonFun' :: TypeEnv -> TypeFun TypeSet -> Maybe (TypeFun Type)
@@ -466,8 +444,6 @@ skolemize (TsCons c tl) = TyCons c (map skolemize tl)
 skolemize (TsFun f) = TyFun (skolemizeFun f)
 skolemize (TsIO t) = TyIO (skolemize t)
 skolemize (TsTrans _ t) = skolemize t
-skolemize TsInt = TyInt
-skolemize TsChr = TyChr
 skolemize TsVoid = TyVoid
 
 skolemizeFun :: TypeFun TypeSet -> TypeFun Type
@@ -485,8 +461,6 @@ contravariantVars = concatMap cv where
   vars (TsFun f) = varsFun f
   vars (TsIO t) = vars t
   vars (TsTrans _ t) = vars t
-  vars TsInt = []
-  vars TsChr = []
   vars TsVoid = []
   varsFun (TypeFun al cl) = concatMap arrow al ++ concatMap closure cl where
     arrow (s,t) = vars s ++ vars t
@@ -507,8 +481,6 @@ instance Pretty TypeSet where
   pretty' (TsFun f) = pretty' f
   pretty' (TsIO t) = (50, pretty "IO" <+> guard 51 t)
   pretty' (TsTrans c t) = (1, pretty (show c) <+> guard 2 t)
-  pretty' TsInt = (100, pretty "Int")
-  pretty' TsChr = (100, pretty "Chr")
   pretty' TsVoid = (100, pretty "Void")
 
 instance Pretty Type where

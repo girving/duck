@@ -39,13 +39,13 @@ data PrimOp = PrimOp
   }
 
 intOp :: Binop -> Type -> (Int -> Int -> Value) -> PrimOp
-intOp op rt fun = PrimOp (Binop op) (binopString op) [TyInt, TyInt] rt $ \[ValInt i, ValInt j] -> fun i j
+intOp op rt fun = PrimOp (Binop op) (binopString op) [tyInt, tyInt] rt $ \[ValInt i, ValInt j] -> fun i j
 
 intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
 intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> ValCons (V $ if fun i j then "True" else "False") []
 
 intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
-intBinOp op fun = intOp op TyInt $ \i -> ValInt . fun i
+intBinOp op fun = intOp op tyInt $ \i -> ValInt . fun i
 
 primOps :: Map.Map Prim PrimOp
 primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
@@ -58,8 +58,8 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
-  , PrimOp ChrIntOrd "ord" [TyChr] TyInt $ \[ValChr c] -> ValInt (Char.ord c)
-  , PrimOp IntChrChr "chr" [TyInt] TyChr $ \[ValInt c] -> ValChr (Char.chr c)
+  , PrimOp ChrIntOrd "ord" [tyChr] tyInt $ \[ValChr c] -> ValInt (Char.ord c)
+  , PrimOp IntChrChr "chr" [tyInt] tyChr $ \[ValInt c] -> ValChr (Char.chr c)
   ]
 
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
@@ -82,7 +82,7 @@ primIO p args = execError noLoc ("invalid arguments "++pshowlist args++" to "++s
 
 primIOType :: SrcLoc -> PrimIO -> [Type] -> Infer Type
 primIOType _ ExitFailure [] = return tyUnit
-primIOType _ IOPutChr [TyChr] = return tyUnit
+primIOType _ IOPutChr [c] | isTyChr c = return tyUnit
 primIOType _ TestAll [] = return tyUnit
 primIOType loc p args = typeError loc ("invalid arguments"++pshowlist args++" to "++show p)
 
@@ -114,5 +114,5 @@ io = [map',join,exitFailure,ioPutChr,testAll,returnIO] where
       (Var x)))
   returnIO = LetD (Loc noLoc $ V "returnIO") (Lambda x (Return (Var x)))
   exitFailure = LetD (Loc noLoc $ V "exitFailure") (PrimIO ExitFailure [])
-  ioPutChr = Over (Loc noLoc $ V "put") (tsArrow TsChr (TsIO (singleton tyUnit))) (Lambda c (PrimIO IOPutChr [Var c]))
+  ioPutChr = Over (Loc noLoc $ V "put") (tsArrow tsChr (TsIO (singleton tyUnit))) (Lambda c (PrimIO IOPutChr [Var c]))
   testAll = LetD (Loc noLoc $ V "testAll") (PrimIO TestAll [])

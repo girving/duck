@@ -117,8 +117,8 @@ definition prog (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head vl) $
 
 expr :: Prog -> Locals -> SrcLoc -> Exp -> Infer Type
 expr prog env loc = exp where
-  exp (Int _) = return TyInt
-  exp (Chr _) = return TyChr
+  exp (Int _) = return tyInt
+  exp (Chr _) = return tyChr
   exp (Var v) = lookup prog env loc v
   exp (Apply e1 e2) = do
     t1 <- exp e1
