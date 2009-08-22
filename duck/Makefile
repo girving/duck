@@ -7,7 +7,7 @@ ALEXFLAGS = -g
 
 OTHERS = Parse.hs Lex.hs
 TESTS = basic layout curry delay match io tyfun
-TESTS_C = apply prelude ops null
+TESTS_C = apply base ops null
 
 all: duck
 

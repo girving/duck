@@ -1,4 +1,4 @@
-import prelude
+import base
 
 seven = 1 + 2 * 3
 five = 1 * 2 + 3

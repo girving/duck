@@ -1,4 +1,4 @@
-import prelude
+import base
 
 data T of A T ; B
 

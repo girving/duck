@@ -1,4 +1,4 @@
-import prelude
+import base
 main = testAll
 
 -- verify that closure types join correctly

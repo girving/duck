@@ -1,4 +1,4 @@
-import prelude
+import base
 
 f :: Int -> Int -> Int
 f x y =

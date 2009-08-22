@@ -1,4 +1,4 @@
-import prelude
+import base
 
 mapIO :: (a -> IO b) -> List a -> IO (List b)
 mapIO f l = case l of

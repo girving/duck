@@ -1,4 +1,4 @@
-import prelude
+import base
 main = testAll
 
 -- Verify that the first matching alternative is chosen

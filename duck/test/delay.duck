@@ -1,4 +1,4 @@
-import prelude
+import base
 
 exec :: Delayed a -> a
 exec x = force x
