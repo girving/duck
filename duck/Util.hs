@@ -2,7 +2,9 @@
 -- | Duck utility functions
 
 module Util
-  ( debug
+  ( fputs
+  , puts
+  , debug
   , debugVal
   , foldmap
   , duplicates
@@ -38,13 +40,25 @@ import Control.Exception
 import Control.Monad.Error
 import Control.Monad.State
 import Control.Monad.Trans
+import Foreign.C.String
+
+-- |Write a string to a stream all at once.
+--
+-- The string is written out all at once (as if with fputs in C), so it
+-- won't end up interleaved with other strings like putStrLn does.
+fputs :: Handle -> String -> IO ()
+fputs h s = withCStringLen s (uncurry $ hPutBuf h)
+
+-- |Write a string to stdout with a trailing newline.
+puts :: String -> IO ()
+puts s = fputs stdout (s++"\n")
 
 debug :: Show a => a -> b -> b
 debug a b =
-  unsafePerformIO (print a >> return b)
+  unsafePerformIO (puts (show a) >> return b)
 
 debugVal :: Show a => a -> a
-debugVal a = unsafePerformIO (print a) `seq` a
+debugVal a = unsafePerformIO (puts (show a)) `seq` a
 
 foldmap :: (a -> b -> (a,c)) -> a -> [b] -> (a,[c])
 foldmap _ x [] = (x,[])
@@ -88,7 +102,7 @@ second f (a,b) = (a,f b)
 
 die :: MonadIO m => String -> m a
 die s = liftIO $ do
-  hPutStrLn stderr s
+  fputs stderr (s++"\n")
   exitFailure
 
 -- |Stacks are lists with an extra bit of information at the bottom

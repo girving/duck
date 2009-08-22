@@ -99,11 +99,11 @@ main = do
   (options, args, errors) <- getOpt Permute options =.< getArgs
   case errors of
     [] -> return ()
-    _ -> mapM_ (hPutStr stderr) errors >> hPutStr stderr usage >> exitFailure
+    _ -> fputs stderr (concat errors ++ usage) >> exitFailure
   flags <- foldM (\t s -> s t) defaults options
 
   f <- case args of
-    [] -> putStrLn "Duck interactive mode" >. ""
+    [] -> puts "Duck interactive mode" >. ""
     [file] -> return file
     _ -> fail "expected zero or one arguments"
 

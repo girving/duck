@@ -73,5 +73,4 @@ updateInfer = Infer . modify . second -- modify
 
 debugInfer :: String -> Infer ()
 debugInfer m = Infer $ get >>= \(s,_) -> liftIO $ do
-  mapM_ (\f -> putStr (pshow (callFunction f) ++ ":")) (reverse s)
-  putStrLn (' ':m)
+  puts (concatMap (\f -> pshow (callFunction f) ++ ":") (reverse s) ++ ' ':m)

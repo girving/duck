@@ -222,14 +222,14 @@ runIO _ _ d =
 
 testAll :: Prog -> Globals -> Exec Value
 testAll prog global = do
-  liftIO $ putStrLn "running unit tests..."
+  liftIO $ puts "running unit tests..."
   mapM_ test (Map.toList global)
-  liftIO $ putStrLn "success!"
+  liftIO $ puts "success!"
   nop
   where
   test (V v,d)
     | isPrefixOf "test_" v = do
-        liftIO $ putStrLn ("  "++v)
+        liftIO $ puts ("  "++v)
         runIO prog global d
         success
     | otherwise = success

@@ -19,6 +19,7 @@ module Pretty
 
 import Text.PrettyPrint
 import qualified Data.Map as Map
+import Util
 
 class Pretty t where
   pretty :: t -> Doc
@@ -30,7 +31,7 @@ class Pretty t where
   prettylist = hsep . map (guard 99)
 
 pprint :: Pretty t => t -> IO ()
-pprint = print . pretty
+pprint = puts . pshow
 
 pshow :: Pretty t => t -> String
 pshow = render . pretty
