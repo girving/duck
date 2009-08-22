@@ -32,6 +32,7 @@ module Type
 -- You should think of a type as being the set of values that inhabit the type.
 -- For example, the type Int is {0, 1, -1, 2, -2, ...}, and the type Void is
 -- the empty set {}.  Subtype means subset, so Void is a subtype of all types.
+-- In some of comments below, we'll use S(t) to denote this set of values.
 --
 -- The set logic is also useful for remembering what union and intersect do.
 -- For example, (if c then a else b :: union A B) if (a :: A) and (b :: B),
@@ -120,8 +121,9 @@ argType :: (Maybe Trans, Type) -> Type
 argType (Nothing, t) = t
 argType (Just c, t) = transType c t
 
--- |Symmetric unify: @z <- union x y@ means that a value of type x or y
--- can be safely viewed as having type z.
+-- |@z <- union x y@ means that a value of type x or y can be safely viewed as
+-- having type z.  Viewed as sets, this means S(z) >= union S(x) S(y), where
+-- equality holds if the union of values can be exactly represented as a type.
 --
 -- The first argument says how to apply closure types to types.
 union :: MonadMaybe m => Apply m -> Type -> Type -> m Type
@@ -166,8 +168,8 @@ reduceArrows apply ((s,t):al) = do
         tt <- union apply t t' -- return values are covariant, so union 
         return $ Just $ (ss,tt) : reverse prev ++ next
 
--- |Symmetric antiunify: @z <- intersect x y@ means that a value of type z can be
--- safely viewed as having type x and type y.
+-- |@z <- intersect x y@ means that a value of type z can be safely viewed as
+-- having type x and type y.  Viewed as sets, S(z) <= intersect S(x) S(y).
 --
 -- Not all intersections are representable in the case of function types, so
 -- intersect can either succeed (the result is representable), fail
@@ -196,8 +198,9 @@ intersectList apply (t:tl) (t':tl') = do
     _ -> Nothing)
 intersectList _ _ _ = nothing
 
--- |Directed unify: @unify s t@ tries to turn @s@ into @t@ via variable substitutions,
--- but not the other way round.
+-- |@unify s t@ tries to turn @s@ into @t@ via variable substitutions,
+-- but not the other way round.  In other words, unify succeeds if it finds
+-- a variable substituion M s.t. S(t) <= S(s|M).
 --
 -- Note that the occurs check is unnecessary here due to directedness.  In
 -- particular, all TypeEnv bindings are of the form v -> t, where t is a Type.
@@ -238,7 +241,8 @@ unify' apply env (TsFun f) (TyFun f') = unifyFun' apply env f f'
 unify' _ env _ TyVoid = return (env,[])
 unify' _ _ _ _ = nothing
 
--- |Same as 'unify'', but the first argument is a type
+-- |Same as 'unify'', but the first argument is a type.
+-- unify s t succeeds if S(t) <= S(s).
 unify'' :: MonadMaybe m => Apply m -> Type -> Type -> m ()
 unify'' apply (TyCons c tl) (TyCons c' tl') | c == c' = unifyList'' apply tl tl'
 unify'' apply (TyFun f) (TyFun f') = unifyFun'' apply f f'
