@@ -7,7 +7,6 @@ module ParseMonad
   , ParseError(..)
   , runP
   , parseError
-  , parseThrow
   , get, put
   , Context(..)
   ) where
@@ -24,8 +23,6 @@ import Control.Monad.State.Class
 import qualified Control.Monad.Error.Class as MError
 import SrcLoc
 import Data.Typeable (Typeable)
-import Data.Monoid
-import Control.Exception (Exception, throw)
 
 data ParseResult a
   = ParseOk ParseState a
@@ -59,8 +56,6 @@ newtype P a = P { unP :: ParseState -> ParseResult a }
 instance Show ParseError where
   show (ParseError l s) = show l ++ ": " ++ s
 
-instance Exception ParseError
-
 psError :: ParseState -> String -> ParseError
 psError s msg = ParseError (ps_loc s) $ msg ++ case ps_rest s of
     [] -> " at end of file"
@@ -75,9 +70,6 @@ instance Monad P where
   return a = P $ \s -> ParseOk s a
 
   fail msg = P $ \s -> ParseFail $ psError s msg
-
-instance MError.Error ParseError where
-  strMsg s = ParseError mempty s
 
 instance MError.MonadError ParseError P where
   throwError e = P $ \_ -> ParseFail e
@@ -110,12 +102,3 @@ instance MonadState ParseState P where
   get = P $ \s -> ParseOk s s
 
   put s = P $ \_ -> ParseOk s ()
-
-parseThrow :: String -> a
-parseThrow s = throw (MError.strMsg s :: ParseError)
-
-{- needs fixing with IO re-added
-parseTry :: a -> P a
-parseTry x = P $ \s ->
-  catch (ParseOk s =.< evaluate x) $ \(ParseError l m) -> return (ParseFail (ParseError (mappend l (ps_loc s)) m))
--}

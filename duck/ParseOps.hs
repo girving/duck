@@ -10,11 +10,12 @@ module ParseOps
 -- Partially borrowed from http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs
 
 import Var
-import ParseMonad
 import Pretty
 import Data.Maybe
 import qualified Data.Map as Map
 import qualified Data.Foldable as Fold
+import SrcLoc
+import Stage
 
 data Ops a =
     OpAtom !a
@@ -32,8 +33,8 @@ orderPrec (p1,d1) (p2,d2) = case compare p1 p2 of
     GT -> LeftFix
     EQ -> if d1 == d2 then d1 else NonFix
 
-sortOps :: Show a => PrecEnv -> Ops a -> Ops a
-sortOps precs input = out where
+sortOps :: Show a => PrecEnv -> SrcLoc -> Ops a -> Ops a
+sortOps precs loc input = out where
   (out, []) = parse minPrec Nothing toks
   parse p Nothing (Left l : rest) = 
     parse p (Just (OpAtom l)) rest
@@ -54,7 +55,7 @@ sortOps precs input = out where
   otoks (OpUn o r) t = Right o : otoks r t
   otoks (OpBin o l r) t = otoks l (Right o : otoks r t)
   prec o = fromMaybe defaultPrec $ Map.lookup o precs
-  err o = parseThrow ("ambiguous operator expression involving " ++ pshow o) 
+  err o = stageError StageParse loc ("ambiguous operator expression involving " ++ pshow o) 
 
 instance Pretty a => Pretty (Ops a) where
   pretty' (OpAtom a) = pretty' a

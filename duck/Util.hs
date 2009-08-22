@@ -12,6 +12,9 @@ module Util
   , groupPairs
   , spanJust
   , first, second
+  , sameLength
+  , allOf
+  , TextEnum(..)
   , exit
   , dieWith
   , die
@@ -38,6 +41,8 @@ import System.Exit
 import System.IO.Unsafe
 import Data.Function
 import Data.List
+import Data.Maybe
+import Data.Char
 import Control.Exception
 import Control.Monad.Error
 import Control.Monad.State
@@ -101,6 +106,27 @@ first :: (a -> c) -> (a,b) -> (c,b)
 first f (a,b) = (f a,b)
 second :: (b -> c) -> (a,b) -> (a,c)
 second f (a,b) = (a,f b)
+
+sameLength :: [a] -> [b] -> Bool
+sameLength [] [] = True
+sameLength (_:a) (_:b) = sameLength a b
+sameLength _ _ = False
+
+allOf :: (Enum a, Bounded a) => [a]
+allOf = enumFromTo minBound maxBound
+
+class (Eq e, Enum e, Bounded e) => TextEnum e where
+  enumTexts :: [(e,String)]
+  showEnum :: e -> String
+  readsEnum :: String -> [(e, String)]
+
+  enumTexts = map (\e -> (e,showEnum e)) allOf
+  showEnum e = fromJust $ lookup e enumTexts
+  readsEnum s =
+    [ (a, drop (length t) s) 
+    | (a,t) <- enumTexts
+    , isPrefixOf (map toLower t) (map toLower s)
+    ]
 
 exit :: Int -> IO a
 exit 0 = exitSuccess

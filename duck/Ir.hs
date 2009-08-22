@@ -99,7 +99,7 @@ pattern' _ s l (Ast.PatVar v)
   | otherwise = return (PatVar v, Map.insert v l s)
 pattern' env s l (Ast.PatSpec p _) = pattern' env s l p -- XXX we don't actually do anything with these?
 pattern' env s _ (Ast.PatLoc l p) = pattern' env s l p
-pattern' env s l (Ast.PatOps o) = pattern' env s l (Ast.opsPattern $ sortOps (envPrecs env) o)
+pattern' env s l (Ast.PatOps o) = pattern' env s l (Ast.opsPattern l $ sortOps (envPrecs env) l o)
 pattern' env s l (Ast.PatList pl) = do
   (pl, s) <- patterns' env s l pl
   return (foldr (\p pl -> PatCons (V ":") [p, pl]) (PatCons (V "[]") []) pl, s)
@@ -196,7 +196,7 @@ expr env s (Ast.Def f args body c) = do
   c <- expr env (Set.insert f s) c
   return $ Let f (foldr Lambda (m (map Var vl) body) vl) c
 expr env s (Ast.Case e cl) = expr env s e >>= \e -> case1 env s e cl
-expr env s (Ast.Ops o) = expr env s $ Ast.opsExp $ sortOps (envPrecs env) o
+expr env s (Ast.Ops o) = expr env s $ Ast.opsExp noLoc $ sortOps (envPrecs env) noLoc o
 expr env s (Ast.Spec e t) = expr env s e >.= \e -> Spec e t
 expr env s (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) =.< mapM (expr env s) el
 expr env s (Ast.If c e1 e2) = do

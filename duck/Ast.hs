@@ -14,9 +14,9 @@ module Ast
 import Var
 import Type
 import SrcLoc
+import Stage
 import ParseOps
 import Pretty
-import ParseMonad
 import Data.List
 import Data.Maybe
 
@@ -66,16 +66,16 @@ imports = mapMaybe imp where
 
 -- Pretty printing
 
-opsExp :: Ops Exp -> Exp
-opsExp (OpAtom a) = a
-opsExp (OpUn (V "-") a) = Apply (Var (V "negate")) [opsExp a]
-opsExp (OpUn op _) = parseThrow (pshow op++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
-opsExp (OpBin o l r) = Apply (Var o) [opsExp l, opsExp r]
+opsExp :: SrcLoc -> Ops Exp -> Exp
+opsExp _ (OpAtom a) = a
+opsExp loc (OpUn (V "-") a) = Apply (Var (V "negate")) [opsExp loc a]
+opsExp loc (OpUn op _) = stageError StageParse loc (pshow op++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
+opsExp loc (OpBin o l r) = Apply (Var o) [opsExp loc l, opsExp loc r]
 
-opsPattern :: Ops Pattern -> Pattern
-opsPattern (OpAtom a) = a
-opsPattern (OpUn _ _) = parseThrow "unary operator in pattern"
-opsPattern (OpBin o l r) = PatCons o [opsPattern l, opsPattern r]
+opsPattern :: SrcLoc -> Ops Pattern -> Pattern
+opsPattern _ (OpAtom a) = a
+opsPattern loc (OpUn _ _) = stageError StageParse loc "unary operator in pattern"
+opsPattern loc (OpBin o l r) = PatCons o [opsPattern loc l, opsPattern loc r]
 
 instance HasVar Exp where
   var = Var

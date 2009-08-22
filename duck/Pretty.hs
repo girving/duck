@@ -6,6 +6,7 @@ module Pretty
   , pprint
   , pshow
   , pshowlist
+  , qshow
   , guard
   , vjoin
 
@@ -35,6 +36,9 @@ pprint = puts . pshow
 
 pshow :: Pretty t => t -> String
 pshow = render . pretty
+
+qshow :: Pretty t => t -> String
+qshow = render . quotes . pretty
 
 pshowlist :: Pretty t => [t] -> String
 pshowlist = render . prettylist

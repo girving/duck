@@ -1,3 +1,4 @@
+{-# LANGUAGE ScopedTypeVariables #-}
 -- | Duck interpreter
 
 module Main where
@@ -19,46 +20,31 @@ import qualified Base
 import qualified Infer
 import ExecMonad
 import InferMonad
-import Control.Monad
+import Control.Monad 
 import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Data.Map as Map
 import Data.List
 import Util
+import Stage
 
 -- Options
 
-data Phase = PAst | PIr | PLir | PLink | PInfer | PEnv
-  deriving (Enum, Bounded, Ord, Eq)
-
-instance Pretty Phase where
-  pretty = pretty . f where
-    f PAst = "ast"
-    f PIr = "ir"
-    f PLir = "lir"
-    f PLink = "link"
-    f PInfer = "infer"
-    f PEnv = "env"
-
 data Flags = Flags
-  { phases :: Set Phase
+  { phases :: Set Stage
   , compileOnly :: Bool
   , path :: [FilePath]
   }
 type Option = OptDescr (Flags -> IO Flags)
 
-enumOption :: (Pretty e, Enum e, Bounded e) => [Char] -> [String] -> String -> e -> (e -> Flags -> Flags) -> String -> Option
-enumOption short long name x f help = Option short long (ReqArg process name) help' where
-  help' = help ++ " (one of " ++ concat (intersperse ", " (map pshow values)) ++ ")"
-  values = enumFrom (minBound `asTypeOf` x)
-  process :: String -> Flags -> IO Flags
-  process s flags = case lookup s [(pshow x,x) | x <- values] of
-    Nothing -> die ("invalid argument "++s++" to --"++head long)
-    Just x -> return (f x flags)
+enumOption :: forall e . (Read e, Show e, Enum e, Bounded e) => [Char] -> [String] -> String -> (e -> Flags -> Flags) -> String -> Option
+enumOption short long name f help = Option short long (ReqArg process name) help' where
+  help' = help ++ " (one of " ++ intercalate "," (map show (allOf :: [e])) ++ ")"
+  process p = return . f (read p)
 
 options :: [Option]
 options =
-  [ enumOption ['d'] ["dump"] "PHASE" (undefined :: Phase) (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
+  [ enumOption ['d'] ["dump"] "PHASE" (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
   , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main"
   , Option ['I'] ["include"] (ReqArg (\p f -> return $ f { path = p : path f }) "DIRECTORY") "add DIRECTORY to module search path"
   , Option ['h'] ["help"] (NoArg $ \_ -> putStr usage >> exitSuccess) "show this help" ]
@@ -110,19 +96,19 @@ main = do
   let ifv p = when (Set.member p (phases flags))
   let phase p io = do
         ifv p $ putStr ("\n-- "++pshow p++" --\n")
-        r <- io
+        r <- catchFatal io
         ifv p $ pprint r
         return r
       phase' p = phase p . return
 
-  ast <- phase PAst (loadModule Set.empty (path flags) f)
-  ir <- phase PIr (Ir.prog ast)
-  lir <- phase' PLir (Lir.prog ir)
-  lir <- phase' PLink (Lir.union Base.base lir)
+  ast <- phase StageParse (loadModule Set.empty (path flags) f)
+  ir <- phase StageIr (Ir.prog ast)
+  lir <- phase' StageLir (Lir.prog ir)
+  lir <- phase' StageLink (Lir.union Base.base lir)
   Lir.check lir
-  lir <- phase PInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
+  lir <- phase StageInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
   unless (compileOnly flags) $ rerunInfer [] lir (Infer.main lir)
-  env <- phase PEnv (runExec $ Interp.prog lir)
+  env <- phase StageEnv (runExec $ Interp.prog lir)
 
   unless (compileOnly flags) $ do
     unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
