@@ -14,6 +14,7 @@ import Prelude hiding (lookup)
 import Data.List hiding (lookup)
 import Var
 import Type
+import Prims
 import Pretty
 import qualified Lir
 import Data.Map (Map)
@@ -27,7 +28,7 @@ data Value
   | ValDelay Env Lir.Exp
     -- Monadic IO
   | ValLiftIO !Value
-  | ValPrimIO !Lir.PrimIO [Value]
+  | ValPrimIO !PrimIO [Value]
   | ValBindIO !Var !TValue Env Lir.Exp
 
 type TValue = (Value, Type)

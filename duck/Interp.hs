@@ -19,13 +19,14 @@ import SrcLoc
 import Pretty
 import Lir hiding (prog)
 import qualified Ptrie
-import qualified Prims
 import qualified Data.Map as Map
 import Util
 import ExecMonad
 import Control.Monad hiding (guard)
 import Control.Monad.Trans
 import qualified Infer
+import qualified Prims
+import qualified Base
 
 -- Environments
 
@@ -116,8 +117,8 @@ expr prog global env loc = exp where
       _ -> execError loc (pshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
   exp (Prim op el) = do
     (dl,tl) <- unzip =.< mapM exp el
-    d <- Prims.prim loc op dl
-    t <- liftInfer prog $ Prims.primType loc op tl
+    d <- Base.prim loc op dl
+    t <- liftInfer prog $ Base.primType loc op tl
     return (d,t)
   exp (Bind v e1 e2) = do
     d <- exp e1
@@ -129,7 +130,7 @@ expr prog global env loc = exp where
     return (ValLiftIO d, TyIO t)
   exp (PrimIO p el) = do
     (dl,tl) <- unzip =.< mapM exp el
-    t <- liftInfer prog $ Prims.primIOType loc p tl
+    t <- liftInfer prog $ Base.primIOType loc p tl
     return (ValPrimIO p dl, TyIO t)
   exp (Spec e ts) = do
     (d,t) <- exp e
@@ -210,8 +211,8 @@ main prog global = runExec $ do
 
 runIO :: Prog -> Globals -> TValue -> Exec TValue
 runIO _ _ (ValLiftIO d, TyIO t) = return (d,t)
-runIO prog global (ValPrimIO TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
-runIO _ _ (ValPrimIO p args, TyIO t) = Prims.primIO p args >.= \d -> (d,t)
+runIO prog global (ValPrimIO Prims.TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
+runIO _ _ (ValPrimIO p args, TyIO t) = Base.primIO p args >.= \d -> (d,t)
 runIO prog global (ValBindIO v m env e, TyIO t) = do
   d <- runIO prog global m
   d' <- expr prog global (Map.insert v d env) noLoc e

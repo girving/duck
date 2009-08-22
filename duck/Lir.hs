@@ -5,7 +5,7 @@ module Lir
   ( Prog(..)
   , Datatype(..), Overload(..), Definition(..)
   , Overloads
-  , Exp(..), Binop(..), Prim(..), PrimIO(..)
+  , Exp(..)
   , overTypes
   , Ir.binopString
   , prog
@@ -31,7 +31,7 @@ import qualified Ptrie
 import Pretty
 import Data.List hiding (union)
 import qualified Ir
-import Ir (Prim, Binop, PrimIO)
+import Prims
 
 -- Lifted IR data structures
 

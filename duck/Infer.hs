@@ -26,7 +26,7 @@ import Control.Monad.Error hiding (guard, join)
 import InferMonad
 import qualified Ptrie
 import Prelude hiding (lookup)
-import qualified Prims
+import qualified Base
 import Data.Maybe
 import SrcLoc
 
@@ -161,14 +161,14 @@ expr prog env loc = exp where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       _ -> typeError loc (pshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
   exp (Prim op el) =
-    Prims.primType loc op =<< mapM exp el
+    Base.primType loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
     t1 <- runIO =<< exp e1
     t2 <- expr prog (Map.insert v t1 env) loc e2
     checkIO t2
   exp (Return e) =
     exp e >.= TyIO
-  exp (PrimIO p el) = mapM exp el >>= Prims.primIOType loc p >.= TyIO
+  exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= TyIO
   exp (Spec e ts) = do
     t <- exp e
     result <- runMaybeT $ unify (applyTry prog) ts t

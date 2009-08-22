@@ -15,7 +15,7 @@ import qualified Ast
 import qualified Ir
 import qualified Lir
 import qualified Interp
-import qualified Prims
+import qualified Base
 import qualified Infer
 import ExecMonad
 import InferMonad
@@ -118,7 +118,7 @@ main = do
   ast <- phase PAst (loadModule Set.empty (path flags) f)
   ir <- phase PIr (Ir.prog ast)
   lir <- phase' PLir (Lir.prog ir)
-  lir <- phase' PLink (Lir.union Prims.prelude lir)
+  lir <- phase' PLink (Lir.union Base.base lir)
   Lir.check lir
   lir <- phase PInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
   env <- phase PEnv (runExec $ Interp.prog lir)
