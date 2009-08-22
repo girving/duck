@@ -225,7 +225,12 @@ resolve prog f args loc = do
       prune o = runMaybeT $ unifyList (applyTry prog) (overTypes o) args >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
   let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Infer Bool
-      isSpecOf a b = isJust =.< runMaybeT (unifyListSkolem (applyTry prog) (overTypes b) (overTypes a))
+      isSpecOf a b = do
+        let ta = overTypes a
+            tb = overTypes b
+        if length ta /= length tb
+          then return False -- overloads with different arities should not be considered specializations of each other
+          else isJust =.< runMaybeT (unifyListSkolem (applyTry prog) tb ta)
       isMinimal o = allM (\o' -> do
         less <- isSpecOf o o'
         more <- isSpecOf o' o
