@@ -18,6 +18,9 @@ module Prims
   , tyChr
   , tsChr
   , isTyChr
+  , tyIO
+  , tsIO
+  , isTyIO
   ) where
 
 import Pretty
@@ -84,6 +87,16 @@ tsChr = singleton tyChr
 isTyChr :: Type -> Bool
 isTyChr (TyCons (V "Chr") []) = True
 isTyChr _ = False
+
+tyIO :: Type -> Type
+tyIO t = TyCons (V "IO") [t]
+
+tsIO :: TypeSet -> TypeSet
+tsIO t = TsCons (V "IO") [t]
+
+isTyIO :: Type -> Maybe Type
+isTyIO (TyCons (V "IO") [t]) = Just t
+isTyIO _ = Nothing
 
 -- Pretty printing
 

@@ -168,8 +168,8 @@ expr prog env loc = exp where
     t2 <- expr prog (Map.insert v t1 env) loc e2
     checkIO t2
   exp (Return e) =
-    exp e >.= TyIO
-  exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= TyIO
+    exp e >.= tyIO
+  exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= tyIO
   exp (Spec e ts) = do
     t <- exp e
     result <- runMaybeT $ unify (applyTry prog) ts t
@@ -287,9 +287,9 @@ cache prog f args (Over _ atypes r vl e) loc = do
 
 -- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
-runIO (TyIO t) = return t
+runIO io | Just t <- isTyIO io = return t
 runIO t = typeError noLoc ("expected IO type, got "++pshow t)
 
 -- Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type
-checkIO t = TyIO =.< runIO t
+checkIO t = tyIO =.< runIO t

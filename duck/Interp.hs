@@ -127,11 +127,11 @@ expr prog global env loc = exp where
     return (ValBindIO v d env e2, t)
   exp (Return e) = do
     (d,t) <- exp e
-    return (ValLiftIO d, TyIO t)
+    return (ValLiftIO d, tyIO t)
   exp (PrimIO p el) = do
     (dl,tl) <- unzip =.< mapM exp el
     t <- liftInfer prog $ Base.primIOType loc p tl
-    return (ValPrimIO p dl, TyIO t)
+    return (ValPrimIO p dl, tyIO t)
   exp (Spec e ts) = do
     (d,t) <- exp e
     result <- runMaybeT $ unify (applyTry prog) ts t
@@ -198,9 +198,9 @@ typeof prog (ValCons c args) = do
     _ -> execError noLoc ("failed to unify types "++pshowlist tl++" with "++pshowlist tl')
 typeof _ (ValClosure _ _ _) = return $ tyArrow TyVoid TyVoid
 typeof _ (ValDelay _ _) = return $ tyArrow tyUnit TyVoid
-typeof _ (ValBindIO _ _ _ _) = return $ TyIO TyVoid
-typeof _ (ValPrimIO _ _) = return $ TyIO TyVoid
-typeof _ (ValLiftIO _) = return $ TyIO TyVoid
+typeof _ (ValBindIO _ _ _ _) = return $ tyIO TyVoid
+typeof _ (ValPrimIO _ _) = return $ tyIO TyVoid
+typeof _ (ValLiftIO _) = return $ tyIO TyVoid
 
 -- IO and main
 main :: Prog -> Globals -> IO ()
@@ -210,10 +210,10 @@ main prog global = runExec $ do
   return ()
 
 runIO :: Prog -> Globals -> TValue -> Exec TValue
-runIO _ _ (ValLiftIO d, TyIO t) = return (d,t)
-runIO prog global (ValPrimIO TestAll [], TyIO t) = testAll prog global >.= \d -> (d,t)
-runIO _ _ (ValPrimIO p args, TyIO t) = Base.primIO p args >.= \d -> (d,t)
-runIO prog global (ValBindIO v m env e, TyIO t) = do
+runIO _ _ (ValLiftIO d, io) | Just t <- isTyIO io = return (d,t)
+runIO prog global (ValPrimIO TestAll [], io) | Just t <- isTyIO io = testAll prog global >.= \d -> (d,t)
+runIO _ _ (ValPrimIO p args, io) | Just t <- isTyIO io = Base.primIO p args >.= \d -> (d,t)
+runIO prog global (ValBindIO v m env e, io) | Just t <- isTyIO io = do
   d <- runIO prog global m
   d' <- expr prog global (Map.insert v d env) noLoc e
   cast prog t $ runIO prog global d'

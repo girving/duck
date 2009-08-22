@@ -225,7 +225,6 @@ unmatched :: Loc Token -> P a
 unmatched (Loc l t) = parseError (ParseError l ("unmatched '"++show t++"' from "++show l))
 
 tscons :: CVar -> [TypeSet] -> TypeSet
-tscons (V "IO") [t] = TsIO t
 tscons (V "Void") [] = TsVoid
 tscons (V "Delayed") [t] = TsTrans Delayed t
 tscons c args = TsCons c args
