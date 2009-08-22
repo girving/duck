@@ -1,0 +1,17 @@
+import base
+main = exit 0
+
+-- Normally, if unification comes up with two variable assignments
+-- (x -> s) and (x -> t), we can merge them into (x -> union s t).
+-- However, once we've used a variable assignment in a contravariant
+-- context, the binding becomes rigid, since we're essentially adding
+-- an (x <= s) in addition to the previous (x >= s) constraint.
+-- This is subtle, so make sure type checking catches it:
+
+f :: a -> (a -> Int) -> a -> Int
+f x g y = g x + g y
+
+g :: List Void -> Int
+g [] = 3
+
+_ = f [] g [4]

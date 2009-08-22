@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances, ScopedTypeVariables #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, ScopedTypeVariables, FunctionalDependencies, MultiParamTypeClasses, UndecidableInstances #-}
 -- | Duck Types
 
 module Type
@@ -103,6 +103,15 @@ type TypeSetArg = TransType TypeSet
 
 type TypeEnv = Map Var Type
 
+-- |Constraints represent constraints on type variables in a typeset
+-- or list of typesets.  An entry x -> op t means the final type of x must
+-- satisfy S(x) op S(t).
+data ConstraintOp = Equal | Superset deriving (Eq)
+type Constraints = Map Var (ConstraintOp, Type)
+
+freeze :: Constraints -> TypeEnv
+freeze = Map.map snd
+
 -- |The type of functions which say how to apply closure types to types
 type Apply m = Type -> Type -> m Type
 
@@ -199,7 +208,7 @@ intersectList _ _ _ = nothing
 -- a variable substituion M s.t. S(s) <= S(t|M).
 --
 -- Note that the occurs check is unnecessary here due to directedness.  In
--- particular, all TypeEnv bindings are of the form v -> t, where t is a Type.
+-- particular, all constraint bindings are of the form v -> t, where t is a Type.
 -- Since Type contains no type variables, the occurs check succeeds trivially.
 --
 -- Operationally, @subset x y@ answers the question "Can we pass an x to a
@@ -213,12 +222,12 @@ intersectList _ _ _ = nothing
 -- of indeterminate subcomputations as it runs, and subset iterates on this
 -- until a fixed point is reached.
 subset :: MonadMaybe m => Apply m -> Type -> TypeSet -> m (TypeEnv, Leftovers)
-subset apply t t' = subsetFix apply Map.empty =<< subset' apply Map.empty t t'
+subset apply t t' = subset' apply Map.empty t t' >>= subsetFix apply Map.empty >.= first freeze
 
 type Leftover = (TypeFun Type, TypeFun TypeSet)
 type Leftovers = [Leftover]
 
-subsetFix :: MonadMaybe m => Apply m -> TypeEnv -> (TypeEnv, Leftovers) -> m (TypeEnv, Leftovers)
+subsetFix :: MonadMaybe m => Apply m -> Constraints -> (Constraints, Leftovers) -> m (Constraints, Leftovers)
 subsetFix _ _ r@(_, []) = return r -- finished leftovers, so done
 subsetFix _ prev r@(env, _) | prev == env = return r -- reached fixpoint without exhausing leftovers
 subsetFix apply _ (env, leftovers) = subsetFix apply env =<< foldM step (env, []) leftovers where
@@ -226,11 +235,12 @@ subsetFix apply _ (env, leftovers) = subsetFix apply env =<< foldM step (env, []
     (env, l) <- subsetFun' apply env f f'
     return (env, l ++ leftovers)
 
-subset' :: MonadMaybe m => Apply m -> TypeEnv -> Type -> TypeSet -> m (TypeEnv, Leftovers)
+subset' :: MonadMaybe m => Apply m -> Constraints -> Type -> TypeSet -> m (Constraints, Leftovers)
 subset' apply env t (TsVar v) =
   case Map.lookup v env of
-    Nothing -> return (Map.insert v t env, [])
-    Just t' -> union apply t t' >.= \t'' -> (Map.insert v t'' env, [])
+    Nothing -> return (Map.insert v (Superset,t) env, [])
+    Just (Superset,t') -> union apply t t' >.= \t'' -> (Map.insert v (Superset,t'') env, [])
+    Just (Equal,t') -> subset'' apply t t' >. (env, [])
 subset' apply env (TyCons c tl) (TsCons c' tl') | c == c' = subsetList' apply env tl tl'
 subset' apply env (TyFun f) (TsFun f') = subsetFun' apply env f f'
 subset' _ env TyVoid _ = return (env,[])
@@ -255,38 +265,43 @@ subset'' _ _ _ = nothing
 -- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
 -- lack the ability to do speculative computation and rollback.  Therefore,
 -- "intersect" currently means ignore all but the first entry.
-subsetFun' :: forall m. MonadMaybe m => Apply m -> TypeEnv -> TypeFun Type -> TypeFun TypeSet -> m (TypeEnv, Leftovers)
+subsetFun' :: forall m. MonadMaybe m => Apply m -> Constraints -> TypeFun Type -> TypeFun TypeSet -> m (Constraints, Leftovers)
 subsetFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
   seq env [] $ map (arrow al' cl') al ++ map (closure al' cl') cl
   where
-  seq :: TypeEnv -> Leftovers -> [TypeEnv -> m (TypeEnv, Leftovers)] -> m (TypeEnv, Leftovers)
+  seq :: Constraints -> Leftovers -> [Constraints -> m (Constraints, Leftovers)] -> m (Constraints, Leftovers)
   seq env leftovers [] = return (env,leftovers)
   seq env leftovers (m:ml) = do
     (env,l1) <- m env
     (env,l2) <- seq env leftovers ml
     return (env,l1++l2)
 
-  arrow :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Type,Type) -> TypeEnv -> m (TypeEnv, Leftovers)
-  arrow al' _ (s,t) env
-    | List.elem (singleton s, singleton t) al' = return (env,[]) -- succeed if (s,t) appears in al
-  arrow ((s',t'):_) _ (s,t) env = do
+  -- For each var in the list, change any Superset constraints to Equal.
+  freezeVars :: Constraints -> [Var] -> Constraints
+  freezeVars = foldl (\env v -> Map.adjust (first (const Equal)) v env)
+
+  arrow :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Type,Type) -> Constraints -> m (Constraints, Leftovers)
+  arrow al' _ f env
+    | List.elem (singleton f) al' = return (env,[]) -- succeed if f appears in al'
+  arrow ((s',t'):_) _ f env = do
     case unsingleton' env s' of
       Nothing -> return (env,[(ft,ft')])
-      Just s' -> do
-        subset'' apply s' s -- reverse arguments for contravariance
-        subset' apply env t t' -- back to covariant
-  arrow [] _ _ _ = nothing -- arrows are never considered as general as closures
+      Just s'' -> do
+        t <- apply (TyFun (TypeFun [f] [])) s''
+        let env' = freezeVars env (vars s') -- We're about to feed these vars to apply, so they'll become rigid
+        subset' apply env' t t'
+  arrow [] _ _ _ = nothing
 
-  closure :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Var,[Type]) -> TypeEnv -> m (TypeEnv, Leftovers)
+  closure :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Var,[Type]) -> Constraints -> m (Constraints, Leftovers)
   closure _ fl' f env
-    | f_ <- second (map singleton) f
-    , List.elem f_ fl' = return (env,[]) -- succeed if f' appears in fl
+    | List.elem (singleton f) fl' = return (env,[]) -- succeed if f appears in fl'
   closure ((s',t'):_) _ f env = do
     case unsingleton' env s' of
       Nothing -> return (env,[(ft,ft')])
-      Just s' -> do
-        t <- apply (TyFun (TypeFun [] [f])) s'
-        subset' apply env t t'
+      Just s'' -> do
+        t <- apply (TyFun (TypeFun [] [f])) s''
+        let env' = freezeVars env (vars s') -- We're about to feed these vars to apply, so they'll become rigid
+        subset' apply env' t t'
   closure [] _ _ _ = nothing
 
 -- |Subset for singleton function types.
@@ -313,9 +328,9 @@ subsetFun'' apply (TypeFun al cl) (TypeFun al' cl') = do
 -- be at least as long as the first (think of the first as being the types of
 -- values passed to a function taking the second as arguments).
 subsetList :: MonadMaybe m => Apply m -> [Type] -> [TypeSet] -> m (TypeEnv, Leftovers)
-subsetList apply tl tl' = subsetFix apply Map.empty =<< subsetList' apply Map.empty tl tl'
+subsetList apply tl tl' = subsetList' apply Map.empty tl tl' >>= subsetFix apply Map.empty >.= first freeze
 
-subsetList' :: MonadMaybe m => Apply m -> TypeEnv -> [Type] -> [TypeSet] -> m (TypeEnv, Leftovers)
+subsetList' :: MonadMaybe m => Apply m -> Constraints -> [Type] -> [TypeSet] -> m (Constraints, Leftovers)
 subsetList' _ env [] _ = return (env,[])
 subsetList' apply env (t:tl) (t':tl') = do
   (env,l1) <- subset' apply env t t'
@@ -334,7 +349,7 @@ subsetList'' _ _ _ = nothing
 -- |'subsetList' for the case of two type sets.  Here the two sets of variables are
 -- considered to come from separate namespaces.  To make this clear, we implement
 -- this function using skolemization, by turning all variables in the second
--- TypeEnv into TyConses.
+-- TypeSet into TyConses.
 subsetListSkolem :: MonadMaybe m => Apply m -> [TypeSet] -> [TypeSet] -> m ()
 subsetListSkolem apply x y = subsetList apply (map skolemize x) y >. ()
 
@@ -385,29 +400,41 @@ occurs' :: Var -> Type -> Bool
 occurs' _ _ = False
 
 -- |This way is easy
-singleton :: Type -> TypeSet
-singleton (TyCons c tl) = TsCons c (map singleton tl)
-singleton (TyFun f) = TsFun (singletonFun f)
-singleton TyVoid = TsVoid
+--
+-- For convenience, we overload the singleton function a lot.
+class Singleton a b | a -> b where
+  singleton :: a -> b
 
-singletonFun :: TypeFun Type -> TypeFun TypeSet
-singletonFun (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
-  arrow (s,t) = (singleton s, singleton t)
-  closure (f,tl) = (f, map singleton tl)
+instance Singleton Type TypeSet where
+  singleton (TyCons c tl) = TsCons c (singleton tl)
+  singleton (TyFun f) = TsFun (singleton f)
+  singleton TyVoid = TsVoid
+
+instance Singleton a b => Singleton [a] [b] where
+  singleton = map singleton
+
+instance (Singleton a b, Singleton a' b') => Singleton (a,a') (b,b') where
+  singleton (s,t) = (singleton s, singleton t)
+
+instance Singleton Var Var where
+  singleton = id
+
+instance Singleton a b => Singleton (TypeFun a) (TypeFun b) where
+  singleton (TypeFun al cl) = TypeFun (singleton al) (singleton cl)
  
 -- |Convert a singleton typeset to a type if possible
 unsingleton :: TypeSet -> Maybe Type
 unsingleton = unsingleton' Map.empty
 
-unsingleton' :: TypeEnv -> TypeSet -> Maybe Type
-unsingleton' env (TsVar v) | Just t <- Map.lookup v env = return t
+unsingleton' :: Constraints -> TypeSet -> Maybe Type
+unsingleton' env (TsVar v) | Just (_,t) <- Map.lookup v env = return t
 unsingleton' _ (TsVar _) = nothing
 unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
 unsingleton' env (TsFun f) = TyFun =.< unsingletonFun' env f
 unsingleton' env (TsTrans c t) = transType c =.< unsingleton' env t
 unsingleton' _ TsVoid = return TyVoid
 
-unsingletonFun' :: TypeEnv -> TypeFun TypeSet -> Maybe (TypeFun Type)
+unsingletonFun' :: Constraints -> TypeFun TypeSet -> Maybe (TypeFun Type)
 unsingletonFun' env (TypeFun al cl) = do
   al <- mapM arrow al
   cl <- mapM closure cl
@@ -435,19 +462,24 @@ skolemizeFun (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
   arrow (s,t) = (skolemize s, skolemize t)
   closure (f,tl) = (f, map skolemize tl)
 
+-- |Find the set of free variables in a typeset
+vars :: TypeSet -> [Var]
+vars (TsVar v) = [v]
+vars (TsCons _ tl) = concatMap vars tl
+vars (TsFun f) = varsFun f
+vars (TsTrans _ t) = vars t
+vars TsVoid = []
+
+varsFun :: TypeFun TypeSet -> [Var]
+varsFun (TypeFun al cl) = concatMap arrow al ++ concatMap closure cl where
+  arrow (s,t) = vars s ++ vars t
+  closure (_,tl) = concatMap vars tl
+
 -- |If leftovers remain after unification, this function explains which
 -- variables caused the problem.
 contravariantVars :: Leftovers -> [Var]
 contravariantVars = concatMap cv where
   cv (_, TypeFun al _) = concatMap (vars . fst) al
-  vars (TsVar v) = [v]
-  vars (TsCons _ tl) = concatMap vars tl
-  vars (TsFun f) = varsFun f
-  vars (TsTrans _ t) = vars t
-  vars TsVoid = []
-  varsFun (TypeFun al cl) = concatMap arrow al ++ concatMap closure cl where
-    arrow (s,t) = vars s ++ vars t
-    closure (_,tl) = concatMap vars tl
 
 showContravariantVars :: Leftovers -> String
 showContravariantVars leftovers = case contravariantVars leftovers of
