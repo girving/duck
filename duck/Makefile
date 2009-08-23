@@ -20,7 +20,7 @@ duck: Duck.hs $(OTHERS)
 
 %.hs: %.y
 	@rm -f $@
-	umask $$(( `umask` | 222 )) ; \
+	umask a-w ; \
 	$(HAPPY) $(HAPPYFLAGS) $< -o $@
 
 %.info: %.y
@@ -28,7 +28,7 @@ duck: Duck.hs $(OTHERS)
 
 %.hs: %.x
 	@rm -f $@
-	umask $$(( `umask` | 222 )) ; \
+	umask a-w ; \
 	$(ALEX) $(ALEXFLAGS) $< -o $@
 
 ALL_TESTS = $(TESTS) $(TESTS_C) $(TESTS_FAIL)

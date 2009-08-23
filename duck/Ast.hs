@@ -108,13 +108,8 @@ instance Pretty Decl where
     pretty "data" <+> pretty t <+> prettylist args $$ nest 2 (vcat (
       (equals <+> f hd) : map (\x -> pretty "|" <+> f x) tl))
     where f (c,args) = pretty c <+> prettylist args
-  pretty (Infix (p,d) syms) =
-    pretty s <+> pretty p <+> hcat (intersperse (pretty ", ") (map (\ (V s) -> pretty s) syms))
-    where
-    s = case d of
-      LeftFix -> "infixl"
-      RightFix -> "infixr"
-      NonFix -> "infix"
+  pretty (Infix pf syms) =
+    pretty pf <+> hcat (intersperse (pretty ", ") (map (\ (V s) -> pretty s) syms))
   pretty (Import v) =
     pretty "import" <+> pretty v
 

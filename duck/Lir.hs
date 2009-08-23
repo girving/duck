@@ -134,7 +134,7 @@ check prog = do
   var :: Map Var SrcLoc -> Loc Var -> IO (Map Var SrcLoc)
   var env (Loc l v) = case Map.lookup v env of
     Nothing -> return $ Map.insert v l env
-    Just l' -> die (show l++": duplicate definition of '"++pshow v++"', previously declared at "++show l')
+    Just l' -> die (show l++": duplicate definition of "++qshow v++", previously declared at "++show l')
 
   funs :: (Var,[Overload t]) -> IO ()
   funs (f,fl) = mapM_ (fun f) fl
@@ -142,7 +142,7 @@ check prog = do
   fun :: Var -> Overload t -> IO ()
   fun f (Over l _ _ vl _) = case duplicates (filter (/= V "_") vl) of
     [] -> success
-    v:_ -> die (show l++": '"++pshow v++"' appears more than once in argument list for "++pshow f)
+    v:_ -> die (show l++": "++qshow v++" appears more than once in argument list for "++qshow f)
 
 decl_vars :: Set Var -> Ir.Decl -> Set Var
 decl_vars s (Ir.LetD (Loc _ v) _) = Set.insert v s
@@ -152,19 +152,18 @@ decl_vars s (Ir.Data _ _ _) = s
 
 -- |Statements are added in reverse order
 decl :: Ir.Decl -> State Prog ()
-decl (Ir.LetD v e@(Ir.Lambda _ _)) = do
-  let (vl,e') = unwrapLambda e
-  e <- expr (Set.fromList vl) noLoc e'
+decl (Ir.LetD v e) | (vl@(_:_),e') <- unwrapLambda noLoc e = do
+  e <- expr (Set.fromList vl) noLocExpr e'
   function v vl e
 decl (Ir.Over v t e) = do
   let (tl,r,vl,e') = unwrapTypeLambda t e
-  e <- expr (Set.fromList vl) noLoc e'
+  e <- expr (Set.fromList vl) noLocExpr e'
   overload v tl r vl e
 decl (Ir.LetD v e) = do
-  e <- expr Set.empty noLoc e
+  e <- expr Set.empty noLocExpr e
   definition [v] e
 decl (Ir.LetM vl e) = do
-  e <- expr Set.empty noLoc e
+  e <- expr Set.empty noLocExpr e
   definition vl e
 decl (Ir.Data (Loc l tc) tvl cases) =
   modify $ \p -> p { progDatatypes = Map.insert tc (Data l tvl cases) (progDatatypes p) }
@@ -184,11 +183,13 @@ function v vl e = overload v (map ((,) Nothing) tl) r vl e where
   (tl,r) = generalType vl
 
 -- |Unwrap a lambda as far as we can
-unwrapLambda :: Ir.Exp -> ([Var], Ir.Exp)
-unwrapLambda (Ir.Lambda v e) = (v:vl, e') where
-  (vl, e') = unwrapLambda e
-unwrapLambda (Ir.ExpLoc _ e) = unwrapLambda e
-unwrapLambda e = ([], e)
+unwrapLambda :: SrcLoc -> Ir.Exp -> ([Var], Ir.Exp)
+unwrapLambda l (Ir.Lambda v e) = (v:vl, e') where
+  (vl, e') = unwrapLambda l e
+unwrapLambda _ (Ir.ExpLoc l e) = unwrapLambda l e
+unwrapLambda l e
+  | hasLoc l = ([], Ir.ExpLoc l e)
+  | otherwise = ([], e)
 
 generalType :: [a] -> ([TypeSet], TypeSet)
 generalType vl = (tl,r) where
@@ -215,15 +216,12 @@ unwrapTypeLambda a (Ir.Lambda v e) | Just (t,tl) <- isTsArrow a =
     (typeArg t:tl', r, v:vl, e')
 unwrapTypeLambda t e = ([], t, [], e)
 
+-- |Expr uses both location and current variable being defined
+noLocExpr :: (SrcLoc, Maybe Var)
+noLocExpr = (noLoc,Nothing)
+
 -- |Lambda lift an expression
-expr :: Set Var -> SrcLoc -> Ir.Exp -> State Prog Exp
-expr locals l (Ir.Let v (Ir.ExpLoc _ e) rest) =
-  expr locals l (Ir.Let v e rest)
-expr locals l (Ir.Let v e@(Ir.Lambda _ _) rest) = do
-  e <- lambda locals v l e
-  rest <- expr (Set.insert v locals) l rest
-  return $ Let v e rest
-expr locals l e@(Ir.Lambda _ _) = lambda locals (V "f") l e
+expr :: Set Var -> (SrcLoc, Maybe Var) -> Ir.Exp -> State Prog Exp
 expr _ _ (Ir.Int i) = return $ Int i
 expr _ _ (Ir.Chr c) = return $ Chr c
 expr _ _ (Ir.Var v) = return $ Var v
@@ -231,10 +229,11 @@ expr locals l (Ir.Apply e1 e2) = do
   e1 <- expr locals l e1
   e2 <- expr locals l e2
   return $ Apply e1 e2
-expr locals l (Ir.Let v e rest) = do
-  e <- expr locals l e
+expr locals l@(loc,_) (Ir.Let v e rest) = do
+  e <- expr locals (loc,Just v) e
   rest <- expr (Set.insert v locals) l rest
   return $ Let v e rest
+expr locals l e@(Ir.Lambda _ _) = lambda locals l e
 expr locals l (Ir.Cons c el) = do
   el <- mapM (expr locals l) el
   return $ Cons c el
@@ -253,18 +252,18 @@ expr locals l (Ir.Bind v e rest) = do
 expr locals l (Ir.Return e) = Return =.< expr locals l e
 expr locals l (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals l) el
 expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> Spec e t
-expr locals _ (Ir.ExpLoc l e) = ExpLoc l =.< expr locals l e
+expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l =.< expr locals (l,v) e
 
 -- |Lift a single lambda expression
-lambda :: Set Var -> Var -> SrcLoc -> Ir.Exp -> State Prog Exp
-lambda locals v l e = do
-  f <- freshenM v -- use the suggested function name
-  let (vl,e') = unwrapLambda e
+lambda :: Set Var -> (SrcLoc,Maybe Var) -> Ir.Exp -> State Prog Exp
+lambda locals l@(loc,v) e = do
+  f <- freshenM $ fromMaybe (V "f") v -- use the suggested function name
+  let (vl,e') = unwrapLambda loc e
       localsPlus = foldl (flip Set.insert) locals vl
       localsMinus = foldl (flip Set.delete) locals vl
   e <- expr localsPlus l e'
   let vs = free localsMinus e
-  function (Loc l f) (vs ++ vl) e
+  function (Loc loc f) (vs ++ vl) e
   return $ foldl Apply (Var f) (map Var vs)
 
 -- |Generate a fresh variable

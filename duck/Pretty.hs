@@ -49,6 +49,9 @@ guard prec x
   | otherwise = doc
   where (inner, doc) = pretty' x
 
+instance Pretty Doc where
+  pretty = id
+
 instance Pretty t => Pretty [t] where
   pretty = vcat . map pretty
 

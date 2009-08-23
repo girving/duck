@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
 -- | Duck Variables
 
 module Var 
@@ -31,7 +31,7 @@ import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map (Map)
 
-newtype Var = V String deriving (Eq, Ord)
+newtype Var = V { unV :: String } deriving (Eq, Ord)
 type CVar = Var
 
 type Precedence = Int
@@ -44,12 +44,19 @@ instance Show Var where
 
 instance Pretty Var where
   pretty' (V v) = (100,
-    let c = head v in
-    if isAlpha c || c == '_' || c == '(' || c == '[' then
-      pretty v
-    else parens $ pretty v)
+    (case v of
+      c:_ | isAlpha c || c == '_' || c == '(' || c == '[' -> id
+      _ -> parens) (pretty v))
 
 type InScopeSet = Set Var
+
+instance Pretty Fixity where
+  pretty LeftFix = pretty "infixl"
+  pretty RightFix = pretty "infixr"
+  pretty NonFix = pretty "infix"
+
+instance Pretty PrecFix where
+  pretty (p,d) = pretty d <+> pretty p
 
 addVar :: Var -> InScopeSet -> InScopeSet
 addVar (V "_") = id
@@ -93,9 +100,11 @@ tupleCons [_] = error "no singleton tuples"
 tupleCons (_:l) = V ([',' | _ <- l])
 
 istuple :: Var -> Bool
+istuple (V "()") = True
 istuple (V s) = all (',' ==) s
 
 tuplelen :: Var -> Maybe Int
+tuplelen (V "()") = Just 0
 tuplelen (V s) | istuple (V s) = Just (1 + length s)
 tuplelen _ = Nothing
 

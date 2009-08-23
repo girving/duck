@@ -25,6 +25,7 @@ import Util
 import ExecMonad
 import Control.Monad hiding (guard)
 import Control.Monad.Trans
+import Data.Monoid
 import qualified Infer
 import qualified Base
 
@@ -44,10 +45,10 @@ lookup prog global env loc v
   | Just (o:_) <- Map.lookup v (progFunctions prog) = let tt = fst $ head $ overArgs o in return (
       ValClosure v [] (Ptrie.empty tt), -- this should never be used
       tyClosure v [])
-  | otherwise = execError loc ("unbound variable " ++ show v)
+  | otherwise = execError loc ("unbound variable " ++ qshow v)
 
 lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [TypeSet])
-lookupConstructor prog c = maybe (execError noLoc ("unbound constructor " ++ show c)) return $
+lookupConstructor prog c = maybe (execError noLoc ("unbound constructor " ++ qshow c)) return $
   Infer.lookupConstructor' prog c
 
 -- Process a list of definitions into the global environment.
@@ -58,13 +59,14 @@ prog :: Prog -> Exec Globals
 prog prog = foldM (definition prog) Map.empty (progDefinitions prog)
 
 definition :: Prog -> Globals -> Definition -> Exec Globals
-definition prog env (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head vl) $ do -- XXX head
+definition prog env (Def vl e) = withFrame (V $ intercalate "," $ map unV vars) [] (mconcat locs) $ do
   d <- expr prog env Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
           (_, (ValCons c dl, TyCons c' tl)) | istuple c, c == c', length vl == length dl, length vl == length tl -> return $ zip dl tl
-          _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++pshow d)
+          _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++qshow d)
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
+  where (locs,vars) = unzipLoc vl
 
 -- Perform a computation and then cast the result to a (more general) type.
 -- For now, this cast is a nop on the data, but in future it may not be.
@@ -100,13 +102,13 @@ expr prog global env loc = exp where
                   tl' = map (substVoid tenv) tl
               cast prog t $ expr prog global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl (zip dl tl'))) loc e'
             else
-              execError loc ("arity mismatch in pattern: "++pshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
-                ++" but got ["++concat (intersperse "," (map (show . pretty) vl))++"]")
+              execError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
+                ++" but got ["++intercalate "," (map pshow vl)++"]")
             where a = length vl
           Nothing -> case def of
-            Nothing -> execError loc ("pattern match failed: exp = " ++ pshow d ++ ", cases = " ++ show pl)
+            Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
             Just (v,e') -> cast prog t $ expr prog global (Map.insert v d env) loc e' 
-      _ -> execError loc ("expected block, got " ++ pshow d)
+      _ -> execError loc ("expected block, got " ++ qshow d)
   exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el
     (tv,vl,tl) <- lookupConstructor prog c
@@ -114,7 +116,7 @@ expr prog global env loc = exp where
     case result of
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      _ -> execError loc (pshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
+      _ -> execError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
   exp (Prim op el) = do
     (dl,tl) <- unzip =.< mapM exp el
     d <- Base.prim loc op dl
@@ -137,8 +139,8 @@ expr prog global env loc = exp where
     result <- runMaybeT $ subset (applyTry prog) t ts
     case result of
       Just (tenv,[]) -> return (d,substVoid tenv ts)
-      Nothing -> execError loc (pshow e++" has type '"++pshow t++"', which is incompatible with type specification '"++pshow ts++"'")
-      Just (_,leftovers) -> execError loc ("type specification '"++pshow ts++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
+      Nothing -> execError loc (qshow e++" has type "++qshow t++", which is incompatible with type specification "++qshow ts)
+      Just (_,leftovers) -> execError loc ("type specification "++qshow ts++" is invalid; can't overload on contravariant "++showContravariantVars leftovers)
   exp (ExpLoc l e) = expr prog global env l e
 
 transExpr :: Locals -> Trans -> Exp -> Exec Value
@@ -218,7 +220,7 @@ runIO prog global (ValBindIO v m env e, io) | Just t <- isTyIO io = do
   d' <- expr prog global (Map.insert v d env) noLoc e
   cast prog t $ runIO prog global d'
 runIO _ _ d =
-  execError noLoc ("expected IO computation, got "++pshow d)
+  execError noLoc ("expected IO computation, got "++qshow d)
 
 testAll :: Prog -> Globals -> Exec Value
 testAll prog global = do

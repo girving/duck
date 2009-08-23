@@ -6,7 +6,6 @@ module Util
   , puts
   , debug
   , debugVal
-  , foldmap
   , duplicates
   , merge
   , groupPairs
@@ -61,17 +60,10 @@ puts :: String -> IO ()
 puts s = fputs stdout (s++"\n")
 
 debug :: Show a => a -> b -> b
-debug a b =
-  unsafePerformIO (puts (show a) >> return b)
+debug a b = unsafePerformIO (puts (show a)) `seq` b
 
 debugVal :: Show a => a -> a
-debugVal a = unsafePerformIO (puts (show a)) `seq` a
-
-foldmap :: (a -> b -> (a,c)) -> a -> [b] -> (a,[c])
-foldmap _ x [] = (x,[])
-foldmap f x (h:t) = (x'',h':t') where
-  (x',h') = f x h
-  (x'',t') = foldmap f x' t
+debugVal a = debug a a
 
 -- |Find all entries that occur more than once
 duplicates :: Eq a => [a] -> [a]
@@ -152,7 +144,7 @@ data Stack a b
 (++.) (h:t) r = h :. (t ++. r)
 
 instance (Show a, Show b) => Show (Stack a b) where
-  show s = '[' : concat (intersperse "," (map show a)) ++ " . " ++ show b ++ "]" where
+  show s = '[' : intercalate "," (map show a) ++ " . " ++ show b ++ "]" where
     (a,b) = splitStack s
 
 splitStack :: Stack a b -> ([a],b)

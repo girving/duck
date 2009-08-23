@@ -1,0 +1,13 @@
+import base
+
+call6 [] = let x = undefined in 0
+call5 i = id call6 [i]
+call3 f i = f \ if i > 0 then -i else i
+call2 f i = call3 f (i+1)
+call1 l = 
+  let call4 l = delay call5 () l in
+  map (call2 call4) l
+
+_ = call1 [0]
+
+main = returnIO ()

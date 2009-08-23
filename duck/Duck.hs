@@ -70,7 +70,7 @@ loadModule s l m = do
   (f,c) <- case m of
     "" -> ((,) "<stdin>") =.< getContents
     m -> runMaybeT (findModule l m) >>= maybe 
-      (fail ("module '" ++ pshow m ++ "' not found"))
+      (fail ("module " ++ qshow m ++ " not found"))
       (\f -> ((,) (dropExtension f)) =.< readFile f)
   let l' = l `union` [takeDirectory f]
       s' = Set.insert m s

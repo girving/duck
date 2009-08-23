@@ -6,6 +6,7 @@ module SrcLoc
   , before
   , startLoc
   , incrLoc
+  , unzipLoc, zipLoc
   , sameLine
   , noLoc
   , hasLoc
@@ -61,6 +62,14 @@ incrLoc :: SrcLoc -> Char -> SrcLoc
 incrLoc l@(SrcNone _) _ = l
 incrLoc l '\n' = l{ srcLine = succ $ srcLine l, srcCol = 1 }
 incrLoc l _    = l{ srcCol = succ $ srcCol l }
+
+unzipLoc :: [Loc a] -> ([SrcLoc], [a])
+unzipLoc [] = ([],[])
+unzipLoc (Loc l a:la) = (l:ls,a:as) where (ls,as) = unzipLoc la
+
+zipLoc :: ([SrcLoc], [a]) -> [Loc a]
+zipLoc (l:ls,a:as) = Loc l a : zipLoc (ls,as)
+zipLoc _ = []
 
 sameLine :: SrcLoc -> SrcLoc -> Bool
 sameLine s t = srcLine s == srcLine t

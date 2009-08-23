@@ -30,6 +30,7 @@ import qualified Ptrie
 import Prelude hiding (lookup)
 import qualified Base
 import Data.Maybe
+import Data.Monoid
 import SrcLoc
 
 ---- Algorithm discussion:
@@ -69,17 +70,17 @@ lookup prog env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
   | Just _ <- Map.lookup v (progFunctions prog) = return $ tyClosure v [] -- if we find overloads, make a new closure
-  | otherwise = typeError loc ("unbound variable " ++ show v)
+  | otherwise = typeError loc ("unbound variable " ++ qshow v)
 
 lookupDatatype :: Prog -> SrcLoc -> CVar -> Infer Datatype
 lookupDatatype prog loc tv
   | Just d <- Map.lookup tv (progDatatypes prog) = return d
-  | otherwise = typeError loc ("unbound datatype constructor " ++ show tv)
+  | otherwise = typeError loc ("unbound datatype constructor " ++ qshow tv)
 
 lookupOverloads :: Prog -> SrcLoc -> Var -> Infer [Overload TypeSet]
 lookupOverloads prog loc f
   | Just o <- Map.lookup f (progFunctions prog) = return o
-  | otherwise = typeError loc ("unbound function " ++ show f)
+  | otherwise = typeError loc ("unbound function " ++ qshow f)
 
 lookupConstructor' :: Prog -> Var -> Maybe (CVar, [Var], [TypeSet])
 lookupConstructor' prog c
@@ -91,7 +92,7 @@ lookupConstructor' prog c
 
 lookupConstructor :: Prog -> SrcLoc -> Var -> Infer (CVar, [Var], [TypeSet])
 lookupConstructor prog loc c = 
-  maybe (typeError loc ("unbound constructor " ++ show c)) return $
+  maybe (typeError loc ("unbound constructor " ++ qshow c)) return $
     lookupConstructor' prog c
 
 lookupCons :: [(Loc CVar, [TypeSet])] -> CVar -> Maybe [TypeSet]
@@ -108,13 +109,14 @@ prog prog = do
   return $ prog{ progOverloads = info }
 
 definition :: Prog -> Definition -> Infer Prog
-definition prog (Def vl e) = withFrame (unLoc $ head vl) [] (srcLoc $ head vl) $ do -- XXX head
+definition prog (Def vl e) = withFrame (V $ intercalate "," $ map unV vars) [] (mconcat locs) $ do
   t <- expr prog Map.empty noLoc e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
           (_, TyCons c tl) | istuple c, length vl == length tl -> return tl
           _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++pshow t)
   return $ prog { progGlobalTypes = foldl (\g (v,t) -> Map.insert (unLoc v) t g) (progGlobalTypes prog) (zip vl tl) }
+  where (locs,vars) = unzipLoc vl
 
 expr :: Prog -> Locals -> SrcLoc -> Exp -> Infer Type
 expr prog env loc = exp where
@@ -142,18 +144,18 @@ expr prog env loc = exp where
                   if length vl == a then
                     let tl' = map (subst tenv) tl in
                     case mapM unsingleton tl' of
-                      Nothing -> typeError loc ("datatype declaration "++pshow tv++" is invalid, constructor "++pshow c++" has nonconcrete types "++pshowlist tl')
+                      Nothing -> typeError loc ("datatype declaration "++qshow tv++" is invalid, constructor "++qshow c++" has nonconcrete types "++pshowlist tl')
                       Just tl -> expr prog (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
                   else
-                    typeError loc ("arity mismatch in pattern: "++pshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
-                      ++" but got ["++concat (intersperse ", " (map (show . pretty) vl))++"]")
-              | otherwise = typeError loc ("datatype "++pshow tv++" has no constructor "++pshow c)
+                    typeError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
+                      ++" but got ["++intercalate ", " (map pshow vl)++"]")
+              | otherwise = typeError loc ("datatype "++qshow tv++" has no constructor "++qshow c)
             defaultType Nothing = return []
             defaultType (Just (v,e')) = expr prog (Map.insert v t env) loc e' >.= \t -> [t]
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
         joinList prog loc (caseResults ++ defaultResults)
-      _ -> typeError loc ("expected datatype, got "++pshow t)
+      _ -> typeError loc ("expected datatype, got "++qshow t)
   exp (Cons c el) = do
     args <- mapM exp el
     (tv,vl,tl) <- lookupConstructor prog loc c
@@ -161,7 +163,7 @@ expr prog env loc = exp where
     case result of
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      _ -> typeError loc (pshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
+      _ -> typeError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args)
   exp (Prim op el) =
     Base.primType loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
@@ -176,8 +178,8 @@ expr prog env loc = exp where
     result <- runMaybeT $ subset (applyTry prog) t ts
     case result of
       Just (tenv,[]) -> return $ substVoid tenv ts
-      Nothing -> typeError loc (pshow e++" has type '"++pshow t++"', which is incompatible with type specification '"++pshow ts++"'")
-      Just (_,leftovers) -> typeError loc ("type specification '"++pshow ts++"' is invalid; can't overload on contravariant "++showContravariantVars leftovers)
+      Nothing -> typeError loc (qshow e++" has type "++qshow t++", which is incompatible with type specification "++qshow ts)
+      Just (_,leftovers) -> typeError loc ("type specification "++qshow ts++" is invalid; can't overload on contravariant "++showContravariantVars leftovers)
   exp (ExpLoc l e) = expr prog env l e
 
 join :: Prog -> SrcLoc -> Type -> Type -> Infer Type
@@ -185,7 +187,7 @@ join prog loc t1 t2 = do
   result <- runMaybeT $ union (applyTry prog) t1 t2
   case result of
     Just t -> return t
-    _ -> typeError loc ("failed to unify types "++pshow t1++" and "++pshow t2)
+    _ -> typeError loc ("failed to unify types "++qshow t1++" and "++qshow t2)
 
 -- In future, we might want this to produce more informative error messages
 joinList :: Prog -> SrcLoc -> [Type] -> Infer Type
@@ -204,7 +206,7 @@ apply prog (TyFun (TypeFun al cl)) t2 loc = do
     result <- runMaybeT $ subset'' (applyTry prog) t2 a
     case result of
       Just () -> return r
-      Nothing -> typeError loc ("cannot apply '"++(pshow (tyArrow a r))++"' to '"++pshow t2++"'")
+      Nothing -> typeError loc ("cannot apply "++qshow (tyArrow a r)++" to "++qshow t2)
   closure :: (Var,[Type]) -> Infer Type
   closure (f,args) = do
     r <- lookupOver f args'
@@ -213,7 +215,7 @@ apply prog (TyFun (TypeFun al cl)) t2 loc = do
       Just (Right t) -> return (overRet t) -- fully applied
       Just (Left _) -> return $ tyClosure f args' -- partially applied
     where args' = args ++ [t2]
-apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ pshow t1)
+apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ qshow t1)
 
 applyTry :: Prog -> Type -> Type -> MaybeT Infer Type
 applyTry prog f t = catchError (lift $ apply prog f t noLoc) (\_ -> nothing)
@@ -222,7 +224,7 @@ applyTry prog f t = catchError (lift $ apply prog f t noLoc) (\_ -> nothing)
 resolve :: Prog -> Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overload TypeSet))
 resolve prog f args loc = do
   rawOverloads <- lookupOverloads prog loc f -- look up possibilities
-  let call = show (pretty f <+> prettylist args)
+  let call = qshow $ pretty f <+> prettylist args
       prune o = runMaybeT $ subsetList (applyTry prog) args (overTypes o) >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
   let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Infer Bool
@@ -236,7 +238,7 @@ resolve prog f args loc = do
         less <- isSpecOf o o'
         more <- isSpecOf o' o
         return $ less || not more) overloads
-      options overs = concatMap (\ o -> "\n  "++(pshow (foldr tsArrow (overRet o) (overTypes o)))) overs
+      options overs = concatMap (\ o -> "\n  "++pshow (foldr tsArrow (overRet o) (overTypes o))) overs
   filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
   case filtered of
     [] -> typeError loc (call++" doesn't match any overload, possibilities are"++options rawOverloads)
@@ -256,7 +258,7 @@ apply' prog f args loc = do
   let tt = either id (map fst . overArgs) overload
   ctt <- lookupOverTrans f args
   unless (and $ zipWith (==) tt ctt) $
-    typeError loc (show (pretty f <+> prettylist args) ++ " has conflicting type transforms with other overloads")
+    typeError loc (qshow (pretty f <+> prettylist args) ++ " has conflicting type transforms with other overloads")
   case overload of
     Left tt -> do
       let t = tyClosure f args
@@ -274,9 +276,9 @@ cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
 cache prog f args (Over _ atypes r vl e) loc = do
   let (tt,types) = unzip atypes
   Just (tenv, leftovers) <- runMaybeT $ subsetList (applyTry prog) args types
-  let call = show (pretty f <+> prettylist args)
+  let call = qshow (pretty f <+> prettylist args)
   unless (null leftovers) $ 
-    typeError loc (call++" uses invalid overload "++(pshow (foldr tsArrow r types))++"; can't overload on contravariant "++showContravariantVars leftovers)
+    typeError loc (call++" uses invalid overload "++qshow (foldr tsArrow r types)++"; can't overload on contravariant "++showContravariantVars leftovers)
   let al = zip tt args
       tl = map (argType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv r
@@ -285,7 +287,7 @@ cache prog f args (Over _ atypes r vl e) loc = do
         r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) loc e)
         result <- runMaybeT $ union (applyTry prog) r' rs
         case result of
-          Nothing -> typeError loc ("in call "++call++", failed to unify result "++pshow r'++" with return signature "++pshow rs)
+          Nothing -> typeError loc ("in call "++call++", failed to unify result "++qshow r'++" with return signature "++qshow rs)
           Just r 
             | r == prev -> return prev
             | otherwise -> fix r e
@@ -298,12 +300,12 @@ main prog = do
   result <- runMaybeT $ subset'' (applyTry prog) main (tyIO tyUnit)
   case result of
     Just () -> success
-    Nothing -> typeError noLoc ("main has type "++pshow main++", but should have type IO ()")
+    Nothing -> typeError noLoc ("main has type "++qshow main++", but should have type IO ()")
 
 -- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
 runIO io | Just t <- isTyIO io = return t
-runIO t = typeError noLoc ("expected IO type, got "++pshow t)
+runIO t = typeError noLoc ("expected IO type, got "++qshow t)
 
 -- Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type

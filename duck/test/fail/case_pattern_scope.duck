@@ -1,0 +1,10 @@
+import base
+main = exit 0
+
+mv [] a = a
+mv [a] _ = a
+mv [b,a] _ = a
+mv [c,b,a] _ = a
+mv _ c = a
+
+_ = mv [1,2,3,4] 9
