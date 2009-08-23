@@ -1,10 +1,12 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances, ScopedTypeVariables, FunctionalDependencies, MultiParamTypeClasses, UndecidableInstances #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, ScopedTypeVariables, FunctionalDependencies, MultiParamTypeClasses, UndecidableInstances, TypeSynonymInstances #-}
 -- | Duck Types
 
 module Type
   ( Type(..)
   , TypeSet(..)
   , TypeFun(..)
+  , TypeInfo(..)
+  , Variance(..)
   , TypeEnv
   , subset
   , subset''
@@ -12,12 +14,12 @@ module Type
   , subsetList''
   , subsetListSkolem
   , union
-  , unionList
   , subst
   , substVoid
   , occurs
   , singleton
   , unsingleton
+  , freeVars
   , contravariantVars
   , showContravariantVars
   ) where
@@ -88,6 +90,39 @@ data TypeSet
 
 type TypeEnv = Map Var Type
 
+-- |TypeInfo stores type information about programs for use by the various
+-- type manipulation functions.
+--
+-- typeApply says how to apply closure types to types, and typeVariances
+-- gives variance information for datatype constructor.
+--
+-- Note: skolemization turns type variables into nullary type constructors.
+-- To make this work transparently, typeVariances should return [] for
+-- nonexistent type constructors.
+data TypeInfo m = TypeInfo
+  { typeApply :: Type -> Type -> m Type
+  , typeVariances :: Var -> [Variance] }
+
+-- |Variance of type constructor arguments.
+--
+-- Each type argument to a type constructor is treated as either covariant or
+-- invariant.  A covariant argument occurs as concrete data, while an invariant
+-- type appears as an argument to a function (or similar).  For example, in
+--
+--     data T a b = A a b (a -> Int)
+--
+-- "b" is covariant but "a" is invariant.  In terms of subtype relations, we get
+--
+--     T Int Void <= T Int Int   --   since Void <= Int
+--
+-- but not
+--
+--     T Void Int <= T Int Void  -- fails, since the first argument is invariant
+--
+-- For more explanation of covariance and invariance, see
+--     http://en.wikipedia.org/wiki/Covariance_and_contravariance_(computer_science)
+data Variance = Covariant | Invariant
+
 -- |Constraints represent constraints on type variables in a typeset
 -- or list of typesets.  An entry x -> op t means the final type of x must
 -- satisfy S(x) op S(t).
@@ -97,54 +132,63 @@ type Constraints = Map Var (ConstraintOp, Type)
 freeze :: Constraints -> TypeEnv
 freeze = Map.map snd
 
--- |The type of functions which say how to apply closure types to types
-type Apply m = Type -> Type -> m Type
+-- |Exact type equality
+equal :: MonadMaybe m => TypeInfo m -> Type -> Type -> m ()
+equal info (TyCons c tl) (TyCons c' tl') | c == c' = mapM_ (uncurry $ equal info) =<< zipCheck tl tl'
+equal info (TyFun f) (TyFun f') = equalFun info f f'
+equal _ TyVoid TyVoid = success
+equal _ _ _ = nothing
+
+-- |Exact type equality for function types.
+equalFun :: MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun Type -> m ()
+equalFun info f f' = do
+  subsetFun'' info f f'
+  subsetFun'' info f' f
 
 -- |@z <- union x y@ means that a value of type x or y can be safely viewed as
 -- having type z.  Viewed as sets, this means S(z) >= union S(x) S(y), where
 -- equality holds if the union of values can be exactly represented as a type.
---
--- The first argument says how to apply closure types to types.
-union :: MonadMaybe m => Apply m -> Type -> Type -> m Type
-union apply (TyCons c tl) (TyCons c' tl') | c == c' = TyCons c =.< unionList apply tl tl'
-union apply (TyFun f) (TyFun f') = TyFun =.< unionFun apply f f'
+union :: MonadMaybe m => TypeInfo m -> Type -> Type -> m Type
+union info (TyCons c tl) (TyCons c' tl') | c == c' = do
+  let var = typeVariances info c
+  guard' $ length tl == length tl' && length tl <= length var
+  TyCons c =.< zipWith3M arg var tl tl'
+  where
+  arg Covariant t t' = union info t t'
+  arg Invariant t t' = equal info t t' >. t
+union info (TyFun f) (TyFun f') = TyFun =.< unionFun info f f'
 union _ TyVoid t = return t
 union _ t TyVoid = return t
 union _ _ _ = nothing
 
 -- |The equivalent of 'union' for lists.  The two lists must have the same size.
-unionList :: MonadMaybe m => Apply m -> [Type] -> [Type] -> m [Type]
-unionList _ [] [] = return []
-unionList apply (t:tl) (t':tl') = do
-  t'' <- union apply t t'
-  tl'' <- unionList apply tl tl'
-  return (t'':tl'')
-unionList _ _ _ = nothing
+_unionList :: MonadMaybe m => TypeInfo m -> [Type] -> [Type] -> m [Type]
+_unionList info tl tl' = zipCheck tl tl' >>= mapM (uncurry $ union info)
 
 -- |Union two type functions.  Except in special cases, this means unioning the lists.
-unionFun :: MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m (TypeFun Type)
-unionFun apply (TypeFun al cl) (TypeFun al' cl') = do
-  al'' <- reduceArrows apply (al++al')
+unionFun :: MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun Type -> m (TypeFun Type)
+unionFun info (TypeFun al cl) (TypeFun al' cl') = do
+  al'' <- reduceArrows info (al++al')
   return $ TypeFun (List.sort al'') (merge cl cl')
 
 -- |Given a union list of arrow types, attempt to reduce them into a
 -- smaller equivalent list.  This can either successfully reduce, do nothing,
 -- or fail (detect that the union is impossible).
-reduceArrows :: MonadMaybe m => Apply m -> [(Type,Type)] -> m [(Type,Type)]
+reduceArrows :: MonadMaybe m => TypeInfo m -> [(Type,Type)] -> m [(Type,Type)]
 reduceArrows _ [] = return []
-reduceArrows apply ((s,t):al) = do
+reduceArrows info ((s,t):al) = do
   r <- reduce [] al
   case r of
-    Nothing -> ((s,t) :) =.< reduceArrows apply al
-    Just al -> reduceArrows apply al -- keep trying, maybe we can reduce more
+    Nothing -> ((s,t) :) =.< reduceArrows info al
+    Just al -> reduceArrows info al -- keep trying, maybe we can reduce more
   where
   reduce _ [] = return Nothing
   reduce prev (a@(s',t') : next) = do
-    ss <- intersect apply s s' -- function arguments are contravariant, so intersect
+    ss <- intersect info s s' -- function arguments are contravariant, so intersect
     case ss of
       Nothing -> reduce (a:prev) next
       Just ss -> do
-        tt <- union apply t t' -- return values are covariant, so union 
+        tt <- union info t t' -- return values are covariant, so union 
         return $ Just $ (ss,tt) : reverse prev ++ next
 
 -- |@z <- intersect x y@ means that a value of type z can be safely viewed as
@@ -154,8 +198,14 @@ reduceArrows apply ((s,t):al) = do
 -- intersect can either succeed (the result is representable), fail
 -- (intersection is definitely invalid), or be indeterminant (we don't know).
 -- The indeterminate case returns Nothing.
-intersect :: MonadMaybe m => Apply m -> Type -> Type -> m (Maybe Type)
-intersect apply (TyCons c tl) (TyCons c' tl') | c == c' = fmap (TyCons c) =.< intersectList apply tl tl'
+intersect :: MonadMaybe m => TypeInfo m -> Type -> Type -> m (Maybe Type)
+intersect info (TyCons c tl) (TyCons c' tl') | c == c' = do
+  guard' $ length tl == length tl' && length tl <= length var
+  fmap (TyCons c) =.< sequence =.< zipWith3M arg var tl tl'
+  where
+  var = typeVariances info c
+  arg Covariant t t' = intersect info t t'
+  arg Invariant t t' = equal info t t' >. Just t
 intersect _ (TyFun f) (TyFun f') = return (
   if f == f' then Just (TyFun f)
   else Nothing) -- intersect is indeterminant
@@ -167,15 +217,8 @@ intersect _ _ _ = nothing
 --
 -- If we come across an indeterminate value early in the list, we still process the rest
 -- of this in case we find a clear failure.
-intersectList :: MonadMaybe m => (Type -> Type -> m Type) -> [Type] -> [Type] -> m (Maybe [Type])
-intersectList _ [] [] = return (Just [])
-intersectList apply (t:tl) (t':tl') = do
-  t'' <- intersect apply t t'
-  tl'' <- intersectList apply tl tl'
-  return (case (t'',tl'') of
-    (Just t,Just tl) -> Just (t:tl)
-    _ -> Nothing)
-intersectList _ _ _ = nothing
+_intersectList :: MonadMaybe m => TypeInfo m -> [Type] -> [Type] -> m (Maybe [Type])
+_intersectList info tl tl' = zipCheck tl tl' >>= mapM (uncurry $ intersect info) >.= sequence
 
 -- |@subset s t@ tries to turn @t@ into @s@ via variable substitutions,
 -- but not the other way round.  In other words, subset succeeds if it finds
@@ -195,36 +238,66 @@ intersectList _ _ _ = nothing
 -- the function part can be checked.  To handle this, subset' produces a list
 -- of indeterminate subcomputations as it runs, and subset iterates on this
 -- until a fixed point is reached.
-subset :: MonadMaybe m => Apply m -> Type -> TypeSet -> m (TypeEnv, Leftovers)
-subset apply t t' = subset' apply Map.empty t t' >>= subsetFix apply Map.empty >.= first freeze
+subset :: MonadMaybe m => TypeInfo m -> Type -> TypeSet -> m (TypeEnv, Leftovers)
+subset info t t' = subset' info t t' Map.empty >>= subsetFix info Map.empty >.= first freeze
 
-type Leftover = (TypeFun Type, TypeFun TypeSet)
+type Leftover = (Type, TypeSet)
 type Leftovers = [Leftover]
 
-subsetFix :: MonadMaybe m => Apply m -> Constraints -> (Constraints, Leftovers) -> m (Constraints, Leftovers)
+type Subset m = Constraints -> m (Constraints, Leftovers)
+
+successS :: Monad m => Subset m
+successS env = return (env,[])
+
+failureS :: MonadMaybe m => Subset m
+failureS _ = nothing
+
+sequenceS :: Monad m => [Subset m] -> Subset m
+sequenceS [] env = return (env,[])
+sequenceS (x:xl) env = do
+  (env,l1) <- x env
+  (env,l2) <- sequenceS xl env
+  return (env,l1++l2)
+
+subsetFix :: MonadMaybe m => TypeInfo m -> Constraints -> (Constraints, Leftovers) -> m (Constraints, Leftovers)
 subsetFix _ _ r@(_, []) = return r -- finished leftovers, so done
 subsetFix _ prev r@(env, _) | prev == env = return r -- reached fixpoint without exhausing leftovers
-subsetFix apply _ (env, leftovers) = subsetFix apply env =<< foldM step (env, []) leftovers where
-  step (env, leftovers) (f,f') = do
-    (env, l) <- subsetFun' apply env f f'
+subsetFix info _ (env, leftovers) = subsetFix info env =<< foldM step (env, []) leftovers where
+  step (env, leftovers) (t,t') = do
+    (env, l) <- subset' info t t' env
     return (env, l ++ leftovers)
 
-subset' :: MonadMaybe m => Apply m -> Constraints -> Type -> TypeSet -> m (Constraints, Leftovers)
-subset' apply env t (TsVar v) =
+-- For each var in the list, change any Superset constraints to Equal.
+freezeVars :: Constraints -> [Var] -> Constraints
+freezeVars = foldl (\env v -> Map.adjust (first (const Equal)) v env)
+
+subset' :: MonadMaybe m => TypeInfo m -> Type -> TypeSet -> Subset m
+subset' info t (TsVar v) = \env ->
   case Map.lookup v env of
     Nothing -> return (Map.insert v (Superset,t) env, [])
-    Just (Superset,t') -> union apply t t' >.= \t'' -> (Map.insert v (Superset,t'') env, [])
-    Just (Equal,t') -> subset'' apply t t' >. (env, [])
-subset' apply env (TyCons c tl) (TsCons c' tl') | c == c' = subsetList' apply env tl tl'
-subset' apply env (TyFun f) (TsFun f') = subsetFun' apply env f f'
-subset' _ env TyVoid _ = return (env,[])
-subset' _ _ _ _ = nothing
+    Just (Superset,t') -> union info t t' >.= \t'' -> (Map.insert v (Superset,t'') env, [])
+    Just (Equal,t') -> subset'' info t t' >. (env, [])
+subset' info (TyCons c tl) (TsCons c' tl') | c == c' = \env -> do
+  guard' $ length tl == length tl' && length tl <= length var
+  sequenceS (zipWith3 arg var tl tl') env
+  where
+  var = typeVariances info c
+  arg Covariant t t' = subset' info t t'
+  arg Invariant t t' = \env ->
+    case unsingleton' env t' of
+      Nothing -> return (env,[(t,t')])
+      Just t'' -> do
+        equal info t t''
+        return (freezeVars env (freeVars t'),[]) -- freeze any vars seen by unsingleton
+subset' info (TyFun f) (TsFun f') = subsetFun' info f f'
+subset' _ TyVoid _ = successS
+subset' _ _ _ = failureS
 
 -- |Same as 'subset'', but the first argument is a type.
 -- subset s t succeeds if S(s) <= S(t).
-subset'' :: MonadMaybe m => Apply m -> Type -> Type -> m ()
-subset'' apply (TyCons c tl) (TyCons c' tl') | c == c' = subsetList'' apply tl tl'
-subset'' apply (TyFun f) (TyFun f') = subsetFun'' apply f f'
+subset'' :: MonadMaybe m => TypeInfo m -> Type -> Type -> m ()
+subset'' info (TyCons c tl) (TyCons c' tl') | c == c' = subsetList'' info tl tl'
+subset'' info (TyFun f) (TyFun f') = subsetFun'' info f f'
 subset'' _ TyVoid _ = success
 subset'' _ _ _ = nothing
 
@@ -239,31 +312,18 @@ subset'' _ _ _ = nothing
 -- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
 -- lack the ability to do speculative computation and rollback.  Therefore,
 -- "intersect" currently means ignore all but the first entry.
-subsetFun' :: forall m. MonadMaybe m => Apply m -> Constraints -> TypeFun Type -> TypeFun TypeSet -> m (Constraints, Leftovers)
-subsetFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
-  seq env [] $ map (arrow al' cl') al ++ map (closure al' cl') cl
-  where
-  seq :: Constraints -> Leftovers -> [Constraints -> m (Constraints, Leftovers)] -> m (Constraints, Leftovers)
-  seq env leftovers [] = return (env,leftovers)
-  seq env leftovers (m:ml) = do
-    (env,l1) <- m env
-    (env,l2) <- seq env leftovers ml
-    return (env,l1++l2)
-
-  -- For each var in the list, change any Superset constraints to Equal.
-  freezeVars :: Constraints -> [Var] -> Constraints
-  freezeVars = foldl (\env v -> Map.adjust (first (const Equal)) v env)
-
+subsetFun' :: forall m. MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun TypeSet -> Subset m
+subsetFun' info ft@(TypeFun al cl) ft'@(TypeFun al' cl') = sequenceS (map (arrow al' cl') al ++ map (closure al' cl') cl) where
   arrow :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Type,Type) -> Constraints -> m (Constraints, Leftovers)
   arrow al' _ f env
     | List.elem (singleton f) al' = return (env,[]) -- succeed if f appears in al'
   arrow ((s',t'):_) _ f env = do
     case unsingleton' env s' of
-      Nothing -> return (env,[(ft,ft')])
+      Nothing -> return (env,[(TyFun ft,TsFun ft')])
       Just s'' -> do
-        t <- apply (TyFun (TypeFun [f] [])) s''
-        let env' = freezeVars env (vars s') -- We're about to feed these vars to apply, so they'll become rigid
-        subset' apply env' t t'
+        t <- typeApply info (TyFun (TypeFun [f] [])) s''
+        let env' = freezeVars env (freeVars s') -- We're about to feed these vars to apply, so they'll become rigid
+        subset' info t t' env'
   arrow [] _ _ _ = nothing
 
   closure :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Var,[Type]) -> Constraints -> m (Constraints, Leftovers)
@@ -271,61 +331,56 @@ subsetFun' apply env ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
     | List.elem (singleton f) fl' = return (env,[]) -- succeed if f appears in fl'
   closure ((s',t'):_) _ f env = do
     case unsingleton' env s' of
-      Nothing -> return (env,[(ft,ft')])
+      Nothing -> return (env,[(TyFun ft,TsFun ft')])
       Just s'' -> do
-        t <- apply (TyFun (TypeFun [] [f])) s''
-        let env' = freezeVars env (vars s') -- We're about to feed these vars to apply, so they'll become rigid
-        subset' apply env' t t'
+        t <- typeApply info (TyFun (TypeFun [] [f])) s''
+        let env' = freezeVars env (freeVars s') -- We're about to feed these vars to apply, so they'll become rigid
+        subset' info t t' env'
   closure [] _ _ _ = nothing
 
 -- |Subset for singleton function types.
-subsetFun'' :: forall m. MonadMaybe m => Apply m -> TypeFun Type -> TypeFun Type -> m ()
-subsetFun'' apply (TypeFun al cl) (TypeFun al' cl') = do
+subsetFun'' :: forall m. MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun Type -> m ()
+subsetFun'' info (TypeFun al cl) (TypeFun al' cl') = do
   mapM_ (arrow al' cl') al
   mapM_ (closure al' cl') cl
   where
   arrow :: [(Type,Type)] -> [(Var,[Type])] -> (Type,Type) -> m ()
   arrow al' _ a | List.elem a al' = success -- succeed if a appears in al'
   arrow ((s',t'):_) _ (s,t) = do
-    subset'' apply s' s -- contravariant
-    subset'' apply t t' -- covariant
+    subset'' info s' s -- contravariant
+    subset'' info t t' -- covariant
   arrow [] _ _ = nothing -- arrows are never considered as general as closures
 
   closure :: [(Type,Type)] -> [(Var,[Type])] -> (Var,[Type]) -> m ()
   closure _ fl' f | List.elem f fl' = success -- succeed if f appears in fl'
   closure ((s',t'):_) _ f = do
-    t <- apply (TyFun (TypeFun [] [f])) s'
-    subset'' apply t t'
+    t <- typeApply info (TyFun (TypeFun [] [f])) s'
+    subset'' info t t'
   closure [] _ _ = nothing
 
 -- |The equivalent of 'subset' for lists.  To succeed, the second argument must
 -- be at least as long as the first (think of the first as being the types of
 -- values passed to a function taking the second as arguments).
-subsetList :: MonadMaybe m => Apply m -> [Type] -> [TypeSet] -> m (TypeEnv, Leftovers)
-subsetList apply tl tl' = subsetList' apply Map.empty tl tl' >>= subsetFix apply Map.empty >.= first freeze
+subsetList :: MonadMaybe m => TypeInfo m -> [Type] -> [TypeSet] -> m (TypeEnv, Leftovers)
+subsetList info tl tl' = subsetList' info tl tl' Map.empty >>= subsetFix info Map.empty >.= first freeze
 
-subsetList' :: MonadMaybe m => Apply m -> Constraints -> [Type] -> [TypeSet] -> m (Constraints, Leftovers)
-subsetList' _ env [] _ = return (env,[])
-subsetList' apply env (t:tl) (t':tl') = do
-  (env,l1) <- subset' apply env t t'
-  (env,l2) <- subsetList' apply env tl tl'
-  return (env, l1 ++ l2)
-subsetList' _ _ _ _ = nothing
+subsetList' :: MonadMaybe m => TypeInfo m -> [Type] -> [TypeSet] -> Subset m
+subsetList' info tl tl'
+  | length tl <= length tl' = sequenceS $ zipWith (subset' info) tl tl'
+  | otherwise = failureS
 
 -- |Same as 'subsetList'', but for Type instead of TypeSet
-subsetList'' :: MonadMaybe m => Apply m -> [Type] -> [Type] -> m ()
-subsetList'' _ [] _ = success
-subsetList'' apply (t:tl) (t':tl') = do
-  subset'' apply t t'
-  subsetList'' apply tl tl'
-subsetList'' _ _ _ = nothing
+subsetList'' :: MonadMaybe m => TypeInfo m -> [Type] -> [Type] -> m ()
+subsetList'' info tl tl'
+  | length tl <= length tl' = zipWithM_ (subset'' info) tl tl'
+  | otherwise = nothing
 
 -- |'subsetList' for the case of two type sets.  Here the two sets of variables are
 -- considered to come from separate namespaces.  To make this clear, we implement
 -- this function using skolemization, by turning all variables in the second
 -- TypeSet into TyConses.
-subsetListSkolem :: MonadMaybe m => Apply m -> [TypeSet] -> [TypeSet] -> m ()
-subsetListSkolem apply x y = subsetList apply (map skolemize x) y >. ()
+subsetListSkolem :: MonadMaybe m => TypeInfo m -> [TypeSet] -> [TypeSet] -> m ()
+subsetListSkolem info x y = subsetList info (map skolemize x) y >. ()
 
 -- |Type environment substitution
 subst :: TypeEnv -> TypeSet -> TypeSet
@@ -432,22 +487,22 @@ skolemizeFun (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
   closure (f,tl) = (f, map skolemize tl)
 
 -- |Find the set of free variables in a typeset
-vars :: TypeSet -> [Var]
-vars (TsVar v) = [v]
-vars (TsCons _ tl) = concatMap vars tl
-vars (TsFun f) = varsFun f
-vars TsVoid = []
-
-varsFun :: TypeFun TypeSet -> [Var]
-varsFun (TypeFun al cl) = concatMap arrow al ++ concatMap closure cl where
-  arrow (s,t) = vars s ++ vars t
-  closure (_,tl) = concatMap vars tl
+freeVars :: TypeSet -> [Var]
+freeVars (TsVar v) = [v]
+freeVars (TsCons _ tl) = concatMap freeVars tl
+freeVars (TsFun (TypeFun al cl)) = concatMap arrow al ++ concatMap closure cl where
+  arrow (s,t) = freeVars s ++ freeVars t
+  closure (_,tl) = concatMap freeVars tl
+freeVars TsVoid = []
 
 -- |If leftovers remain after unification, this function explains which
 -- variables caused the problem.
 contravariantVars :: Leftovers -> [Var]
-contravariantVars = concatMap cv where
-  cv (_, TypeFun al _) = concatMap (vars . fst) al
+contravariantVars = concatMap (cv . snd) where
+  cv (TsVar _) = []
+  cv (TsCons _ tl) = concatMap cv tl
+  cv (TsFun (TypeFun al _)) = concatMap (freeVars . fst) al
+  cv TsVoid = []
 
 showContravariantVars :: Leftovers -> String
 showContravariantVars leftovers = case contravariantVars leftovers of

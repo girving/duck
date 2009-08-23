@@ -9,6 +9,7 @@ module Lir
   , Trans(..)
   , overTypes
   , Ir.binopString
+  , empty
   , prog
   , union
   , check
@@ -40,6 +41,7 @@ import Prims
 
 data Prog = Prog
   { progDatatypes :: Map CVar Datatype
+  , progVariances :: Map CVar [Variance] -- type constructor variances
   , progFunctions :: Map Var [Overload TypeSet]
   , progGlobals :: Set Var -- used to generate fresh variables
   , progConses :: Map Var CVar -- map constructors to datatypes (type inference will make this go away)
@@ -98,17 +100,20 @@ overTypes = map snd . overArgs
 
 -- Lambda lifting: IR to Lifted IR conversion
 
-emptyProg :: Prog
-emptyProg = Prog Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
+empty :: Prog
+empty = Prog Map.empty Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
 
 prog :: [Ir.Decl] -> Prog
-prog decls = flip execState emptyProg $ do
+prog decls = flip execState empty $ do
   modify $ \p -> p { progGlobals = foldl decl_vars Set.empty decls }
   mapM_ decl decls
   modify $ \p -> p { progDefinitions = reverse (progDefinitions p) }
+  modify $ \p -> p { progVariances = variances (progDatatypes p) }
   p <- get
   mapM_ datatype (Map.toList (progDatatypes p))
+
   where
+
   datatype :: (CVar, Datatype) -> State Prog ()
   datatype (tc, Data _ _ cases) = mapM_ f cases where
     f :: (Loc CVar, [TypeSet]) -> State Prog ()
@@ -118,6 +123,33 @@ prog decls = flip execState emptyProg $ do
         [] -> definition [c] (Cons (unLoc c) [])
         _ -> function c vl (Cons (unLoc c) (map Var vl)) where
           vl = take (length tyl) standardVars
+
+  -- Compute datatype argument variances via fixpoint iteration.  We start out
+  -- assuming everything is covariant and gradually grow the set of invariant
+  -- argument slots.  Argument slots are represented as pairs (c,i) where c is
+  -- a datatype constructor and i is the argument position (starting at 0).
+  variances :: Map CVar Datatype -> Map CVar [Variance]
+  variances datatypes = finish (fixpoint grow Set.empty) where
+    fixpoint f x =
+      if x == y then y else fixpoint f y
+      where y = f x
+    grow inv = Map.foldWithKey growCons inv datatypes
+    growCons c datatype inv = foldl update inv (zip [0..] (dataTyVars datatype)) where
+      update :: Set (CVar,Int) -> (Int,Var) -> Set (CVar,Int)
+      update inv (i,v) = if Set.member v ivars then Set.insert (c,i) inv else inv
+      ivars = Set.fromList (dataConses datatype >>= snd >>= invVars)
+      -- The set of (currently known to be) invariant vars in a typeset
+      invVars :: TypeSet -> [Var]
+      invVars (TsVar _) = []
+      invVars (TsCons c tl) = concat [invVars t | (i,t) <- zip [0..] tl, Set.member (c,i) inv]
+      invVars (TsFun (TypeFun al cl)) = concatMap arrow al ++ concatMap closure cl where
+        arrow (s,t) = freeVars s ++ invVars t
+        closure (_,tl) = concatMap freeVars tl
+      invVars TsVoid = []
+    finish inv = Map.mapWithKey f datatypes where
+      f c datatype = map variance [0..arity-1] where
+        arity = length (dataTyVars datatype)
+        variance i = if Set.member (c,i) inv then Invariant else Covariant
 
 -- |A few consistency checks on Lir programs
 check :: Prog -> IO ()
@@ -299,6 +331,7 @@ free locals e = Set.toList (Set.intersection locals (f e)) where
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
   { progDatatypes = Map.unionWithKey conflict (progDatatypes p2) (progDatatypes p1)
+  , progVariances = Map.unionWithKey conflict (progVariances p2) (progVariances p1)
   , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
   , progGlobals = Set.union (progGlobals p1) (progGlobals p2)
   , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1)

@@ -5,7 +5,7 @@ module Infer
   ( prog
   , expr
   , apply
-  , applyTry
+  , typeInfo
   , resolve
   , lookupOver
   , lookupDatatype
@@ -159,7 +159,7 @@ expr prog env loc = exp where
   exp (Cons c el) = do
     args <- mapM exp el
     (tv,vl,tl) <- lookupConstructor prog loc c
-    result <- runMaybeT $ subsetList (applyTry prog) args tl
+    result <- runMaybeT $ subsetList (typeInfo prog) args tl
     case result of
       Just (tenv,[]) -> return $ TyCons tv targs where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
@@ -175,7 +175,7 @@ expr prog env loc = exp where
   exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= tyIO
   exp (Spec e ts) = do
     t <- exp e
-    result <- runMaybeT $ subset (applyTry prog) t ts
+    result <- runMaybeT $ subset (typeInfo prog) t ts
     case result of
       Just (tenv,[]) -> return $ substVoid tenv ts
       Nothing -> typeError loc (qshow e++" has type "++qshow t++", which is incompatible with type specification "++qshow ts)
@@ -184,7 +184,7 @@ expr prog env loc = exp where
 
 join :: Prog -> SrcLoc -> Type -> Type -> Infer Type
 join prog loc t1 t2 = do
-  result <- runMaybeT $ union (applyTry prog) t1 t2
+  result <- runMaybeT $ union (typeInfo prog) t1 t2
   case result of
     Just t -> return t
     _ -> typeError loc ("failed to unify types "++qshow t1++" and "++qshow t2)
@@ -203,7 +203,7 @@ apply prog (TyFun (TypeFun al cl)) t2 loc = do
   where
   arrow :: (Type,Type) -> Infer Type
   arrow (a,r) = do
-    result <- runMaybeT $ subset'' (applyTry prog) t2 a
+    result <- runMaybeT $ subset'' (typeInfo prog) t2 a
     case result of
       Just () -> return r
       Nothing -> typeError loc ("cannot apply "++qshow (tyArrow a r)++" to "++qshow t2)
@@ -217,6 +217,15 @@ apply prog (TyFun (TypeFun al cl)) t2 loc = do
     where args' = args ++ [t2]
 apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ qshow t1)
 
+typeInfo :: Prog -> TypeInfo (MaybeT Infer)
+typeInfo prog = TypeInfo
+  { typeApply = applyTry prog
+  , typeVariances = \c ->
+      case Map.lookup c (progVariances prog) of
+        Just vars -> vars
+        Nothing -> [] -- return [] instead of bailing so that skolemization works cleanly
+  }
+
 applyTry :: Prog -> Type -> Type -> MaybeT Infer Type
 applyTry prog f t = catchError (lift $ apply prog f t noLoc) (\_ -> nothing)
 
@@ -225,7 +234,7 @@ resolve :: Prog -> Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overl
 resolve prog f args loc = do
   rawOverloads <- lookupOverloads prog loc f -- look up possibilities
   let call = qshow $ pretty f <+> prettylist args
-      prune o = runMaybeT $ subsetList (applyTry prog) args (overTypes o) >. o
+      prune o = runMaybeT $ subsetList (typeInfo prog) args (overTypes o) >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
   let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Infer Bool
       isSpecOf a b = do
@@ -233,7 +242,7 @@ resolve prog f args loc = do
             tb = overTypes b
         if length ta /= length tb
           then return False -- overloads with different arities should not be considered specializations of each other
-          else isJust =.< runMaybeT (subsetListSkolem (applyTry prog) ta tb)
+          else isJust =.< runMaybeT (subsetListSkolem (typeInfo prog) ta tb)
       isMinimal o = allM (\o' -> do
         less <- isSpecOf o o'
         more <- isSpecOf o' o
@@ -275,7 +284,7 @@ apply' prog f args loc = do
 cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
 cache prog f args (Over _ atypes r vl e) loc = do
   let (tt,types) = unzip atypes
-  Just (tenv, leftovers) <- runMaybeT $ subsetList (applyTry prog) args types
+  Just (tenv, leftovers) <- runMaybeT $ subsetList (typeInfo prog) args types
   let call = qshow (pretty f <+> prettylist args)
   unless (null leftovers) $ 
     typeError loc (call++" uses invalid overload "++qshow (foldr tsArrow r types)++"; can't overload on contravariant "++showContravariantVars leftovers)
@@ -285,7 +294,7 @@ cache prog f args (Over _ atypes r vl e) loc = do
       fix prev e = do
         insertOver f al (Over noLoc (zip tt tl) prev vl (Just e))
         r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) loc e)
-        result <- runMaybeT $ union (applyTry prog) r' rs
+        result <- runMaybeT $ union (typeInfo prog) r' rs
         case result of
           Nothing -> typeError loc ("in call "++call++", failed to unify result "++qshow r'++" with return signature "++qshow rs)
           Just r 
@@ -297,7 +306,7 @@ cache prog f args (Over _ atypes r vl e) loc = do
 main :: Prog -> Infer ()
 main prog = do
   main <- lookup prog Map.empty noLoc (V "main")
-  result <- runMaybeT $ subset'' (applyTry prog) main (tyIO tyUnit)
+  result <- runMaybeT $ subset'' (typeInfo prog) main (tyIO tyUnit)
   case result of
     Just () -> success
     Nothing -> typeError noLoc ("main has type "++qshow main++", but should have type IO ()")

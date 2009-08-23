@@ -112,7 +112,7 @@ expr prog global env loc = exp where
   exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el
     (tv,vl,tl) <- lookupConstructor prog c
-    result <- runMaybeT $ subsetList (applyTry prog) types tl
+    result <- runMaybeT $ subsetList (typeInfo prog) types tl
     case result of
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
         targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
@@ -136,7 +136,7 @@ expr prog global env loc = exp where
     return (ValPrimIO p dl, tyIO t)
   exp (Spec e ts) = do
     (d,t) <- exp e
-    result <- runMaybeT $ subset (applyTry prog) t ts
+    result <- runMaybeT $ subset (typeInfo prog) t ts
     case result of
       Just (tenv,[]) -> return (d,substVoid tenv ts)
       Nothing -> execError loc (qshow e++" has type "++qshow t++", which is incompatible with type specification "++qshow ts)
@@ -171,9 +171,11 @@ apply prog global (ValDelay env e, ta) _ _ loc | Just (_,t) <- isTyArrow ta =
   cast prog t $ expr prog global env loc e
 apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ pshow v ++ " :: " ++ pshow t)
 
-applyTry :: Prog -> Type -> Type -> MaybeT Exec Type
-applyTry prog t1 t2 = do
-  mapMaybeT (liftInfer prog) (Infer.applyTry prog t1 t2)
+typeInfo :: Prog -> TypeInfo (MaybeT Exec)
+typeInfo prog = TypeInfo
+  { typeApply = \t1 t2 -> mapMaybeT (liftInfer prog) (typeApply info t1 t2)
+  , typeVariances = typeVariances info }
+  where info = Infer.typeInfo prog
 
 {- further resolution no longer necessary
 -- Overloaded function application
@@ -193,7 +195,7 @@ typeof _ (ValChr _) = return tyChr
 typeof prog (ValCons c args) = do
   tl <- mapM (typeof prog) args
   (tv, vl, tl') <- lookupConstructor prog c
-  result <- runMaybeT $ subsetList (applyTry prog) tl tl'
+  result <- runMaybeT $ subsetList (typeInfo prog) tl tl'
   case result of
     Just (tenv,[]) -> return $ TyCons tv targs where
       targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl

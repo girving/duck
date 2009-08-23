@@ -10,6 +10,10 @@ module Util
   , merge
   , groupPairs
   , spanJust
+  , zipCheck
+  , zipWithCheckM
+  , zipWith3M
+  , uncurry3
   , first, second
   , sameLength
   , allOf
@@ -22,7 +26,7 @@ module Util
   , splitStack
   , nop
   , (>.), (>.=), (>=.)
-  , (=.<), (.=<)
+  , (.<), (=.<), (.=<)
   , foldM1
   , allM
   , firstM
@@ -30,6 +34,7 @@ module Util
   , MaybeT(..)
   , MonadMaybe(..)
   , success
+  , guard'
   , returnIf
   , MonadInterrupt(..)
   , mapMaybeT
@@ -93,6 +98,20 @@ spanJust :: (a -> Maybe b) -> [a] -> ([b],[a])
 spanJust _ [] = ([],[])
 spanJust f l@(x:r) = maybe ([],l) (\y -> first (y:) $ spanJust f r) $ f x
 
+-- |Same as zip, but bails if the lists aren't equal size
+zipCheck :: MonadMaybe m => [a] -> [b] -> m [(a,b)]
+zipCheck x y | length x == length y = return $ zip x y
+             | otherwise = nothing
+
+zipWithCheckM :: MonadMaybe m => (a -> b -> m c) -> [a] -> [b] -> m [c]
+zipWithCheckM f x y = mapM (uncurry f) =<< zipCheck x y
+
+uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
+uncurry3 f (a,b,c) = f a b c
+
+zipWith3M :: Monad m => (a -> b -> c -> m d) -> [a] -> [b] -> [c] -> m [d]
+zipWith3M f x y z = mapM (uncurry3 f) (zip3 x y z)
+
 -- more efficient than Arrow instances
 first :: (a -> c) -> (a,b) -> (c,b)
 first f (a,b) = (f a,b)
@@ -155,14 +174,16 @@ splitStack (a :. s) = (a:l,b) where
 -- Some convenient extra monad operators
 
 infixl 1 >., >.=, >=.
-infixr 1 =.<, .=<
+infixr 1 .<, =.<, .=<
 (>.) :: Monad m => m a -> b -> m b
+(.<) :: Monad m => b -> m a -> m b
 (>.=) :: Monad m => m a -> (a -> b) -> m b
 (=.<) :: Monad m => (a -> b) -> m a -> m b
 (>=.) :: Monad m => (a -> m b) -> (b -> c) -> a -> m c
 (.=<) :: Monad m => (b -> c) -> (a -> m b) -> a -> m c
 
 (>.) e r = e >> return r
+(.<) r e = e >> return r
 (>.=) e r = e >>= return . r
 (=.<) r e = return . r =<< e -- fmap, <$>, liftM
 (>=.) e r = e >=> return . r
@@ -209,6 +230,11 @@ instance Monad m => MonadPlus (MaybeT m) where
 
 success :: Monad m => m ()
 success = return ()
+
+-- |Same as the normal guard, but for MonadMaybe instead of MonadPlus
+guard' :: MonadMaybe m => Bool -> m ()
+guard' True = success
+guard' False = nothing
 
 returnIf :: MonadMaybe m => a -> Bool -> m a
 returnIf x True = return x

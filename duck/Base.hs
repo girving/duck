@@ -87,7 +87,7 @@ primIOType _ TestAll [] = return tyUnit
 primIOType loc p args = typeError loc ("invalid arguments"++pshowlist args++" to "++show p)
 
 base :: Lir.Prog
-base = Lir.prog $ decTuples ++ prims ++ io where
+base = Lir.union types (Lir.prog (decTuples ++ prims ++ io)) where
   primop p = Ir.Over
       (Loc noLoc $ V (primName p)) 
       (foldr tsArrow (singleton $ primRet p) (map singleton $ primArgs p))
@@ -99,6 +99,12 @@ base = Lir.prog $ decTuples ++ prims ++ io where
   decTuple i = Data c vars [(c, map TsVar vars)] where
     c = Loc noLoc $ tupleCons vars
     vars = take i standardVars
+
+  types = Lir.empty { Lir.progVariances = Map.fromList
+    [ (V "Int", [])
+    , (V "Chr", [])
+    , (V "IO", [Covariant]) 
+    , (V "Delayed", [Covariant]) ] }
 
 io :: [Decl]
 io = [map',join,exit,ioPutChr,testAll,returnIO] where
