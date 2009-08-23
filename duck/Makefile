@@ -43,6 +43,9 @@ $(TESTS_C):
 $(TESTS_FAIL):
 	./duck -Itest test/$@.duck; s=$$?; if [ $$s -eq 1 ]; then :; else echo $@ failed: exit status $$s != 1; false; fi
 
+tags: $(filter-out $(OTHERS),$(wildcard *.hs)) Parse.y Lex.x
+	hasktags -c $^
+
 .PHONY: clean
 clean:
 	rm -f *.o *.hi *.info duck $(OTHERS)
