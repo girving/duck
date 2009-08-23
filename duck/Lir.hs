@@ -86,7 +86,7 @@ data Exp
   | Apply Exp Exp
   | Let !Var Exp Exp
   | Cons !CVar [Exp]
-  | Case Exp [(CVar, [Var], Exp)] (Maybe (Var,Exp))
+  | Case Var [(CVar, [Var], Exp)] (Maybe Exp)
   | Spec Exp !TypeSet
   | Prim !Prim [Exp]
     -- Monadic IO
@@ -269,11 +269,10 @@ expr locals l e@(Ir.Lambda _ _) = lambda locals l e
 expr locals l (Ir.Cons c el) = do
   el <- mapM (expr locals l) el
   return $ Cons c el
-expr locals l (Ir.Case e pl def) = do
-  e <- expr locals l e
+expr locals l (Ir.Case v pl def) = do
   pl <- mapM (\ (c,vl,e) -> expr (foldl (flip Set.insert) locals vl) l e >.= \e -> (c,vl,e)) pl
-  def <- mapM (\ (v,e) -> expr (Set.insert v locals) l e >.= \e -> (v,e)) def
-  return $ Case e pl def
+  def <- mapM (expr locals l) def
+  return $ Case v pl def
 expr locals l (Ir.Prim prim el) = do
   el <- mapM (expr locals l) el
   return $ Prim prim el
@@ -316,8 +315,8 @@ free locals e = Set.toList (Set.intersection locals (f e)) where
   f (Apply e1 e2) = Set.union (f e1) (f e2)
   f (Let v e rest) = Set.union (f e) (Set.delete v (f rest))
   f (Cons _ el) = Set.unions (map f el)
-  f (Case e pl def) = Set.unions (f e
-    : maybe [] (\ (v,e) -> [Set.delete v (f e)]) def
+  f (Case v pl def) = Set.unions (Set.singleton v
+    : maybe [] (\ e -> [f e]) def
     ++ [f e Set.\\ Set.fromList vl | (_,vl,e) <- pl])
   f (Prim _ el) = Set.unions (map f el)
   f (Bind v e rest) = Set.union (f e) (Set.delete v (f rest))
@@ -379,7 +378,7 @@ revert (Var v) = Ir.Var v
 revert (Apply e1 e2) = Ir.Apply (revert e1) (revert e2)
 revert (Let v e rest) = Ir.Let v (revert e) (revert rest)
 revert (Cons c el) = Ir.Cons c (map revert el)
-revert (Case e pl def) = Ir.Case (revert e) [(c,vl,revert e) | (c,vl,e) <- pl] (fmap (\ (v,e) -> (v,revert e)) def)
+revert (Case v pl def) = Ir.Case v [(c,vl,revert e) | (c,vl,e) <- pl] (fmap revert def)
 revert (Prim prim el) = Ir.Prim prim (map revert el)
 revert (Bind v e rest) = Ir.Bind v (revert e) (revert rest)
 revert (Return e) = Ir.Return (revert e)

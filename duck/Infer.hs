@@ -131,9 +131,9 @@ expr prog env loc = exp where
     t <- exp e
     expr prog (Map.insert v t env) loc body
   exp (Case _ [] Nothing) = return TyVoid
-  exp (Case e [] (Just (v,body))) = exp (Let v e body) -- equivalent to a let
-  exp (Case e pl def) = do
-    t <- exp e
+  exp (Case _ [] (Just body)) = exp body
+  exp (Case v pl def) = do
+    t <- lookup prog env loc v
     case t of
       TyVoid -> return TyVoid
       TyCons tv types -> do
@@ -151,7 +151,7 @@ expr prog env loc = exp where
                       ++" but got ["++intercalate ", " (map pshow vl)++"]")
               | otherwise = typeError loc ("datatype "++qshow tv++" has no constructor "++qshow c)
             defaultType Nothing = return []
-            defaultType (Just (v,e')) = expr prog (Map.insert v t env) loc e' >.= \t -> [t]
+            defaultType (Just e') = expr prog env loc e' >.= (:[])
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
         joinList prog loc (caseResults ++ defaultResults)

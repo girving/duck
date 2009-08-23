@@ -102,7 +102,7 @@ main = do
       phase' p = phase p . return
 
   ast <- phase StageParse (loadModule Set.empty (path flags) f)
-  ir <- phase StageIr (Ir.prog ast)
+  ir <- phase StageIr (return $! Ir.prog ast)
   lir <- phase' StageLir (Lir.prog ir)
   lir <- phase' StageLink (Lir.union Base.base lir)
   Lir.check lir

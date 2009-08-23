@@ -87,10 +87,10 @@ expr prog global env loc = exp where
     d <- exp e
     expr prog global (Map.insert v d env) loc body
   exp (Case _ [] Nothing) = execError loc ("pattern match failed: no cases")
-  exp (Case e [] (Just (v,body))) = exp (Let v e body) -- equivalent to a let
-  exp ce@(Case e pl def) = do
+  exp (Case _ [] (Just body)) = exp body
+  exp ce@(Case v pl def) = do
     t <- liftInfer prog $ Infer.expr prog (Map.map snd env) loc ce
-    d <- exp e
+    d <- lookup prog global env loc v
     case d of
       (ValCons c dl, TyCons tv types) -> do
         case find (\ (c',_,_) -> c == c') pl of
@@ -107,7 +107,7 @@ expr prog global env loc = exp where
             where a = length vl
           Nothing -> case def of
             Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
-            Just (v,e') -> cast prog t $ expr prog global (Map.insert v d env) loc e' 
+            Just e' -> cast prog t $ expr prog global env loc e' 
       _ -> execError loc ("expected block, got " ++ qshow d)
   exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el

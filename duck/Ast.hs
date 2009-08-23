@@ -55,6 +55,7 @@ data Pattern
   | PatList [Pattern]
   | PatOps !(Ops Pattern)
   | PatLambda [Pattern] !Pattern
+  | PatAs !Var !Pattern
   | PatSpec !Pattern !TypeSet
   | PatLoc SrcLoc !Pattern
   deriving Show
@@ -82,7 +83,6 @@ instance HasVar Exp where
   unVar (Var v) = Just v
   unVar Any = Just ignored
   unVar (ExpLoc _ e) = unVar e
-  unVar (Spec e _) = unVar e
   unVar (Ops e) = unVar e
   unVar _ = Nothing
 
@@ -91,7 +91,6 @@ instance HasVar Pattern where
   unVar (PatVar v) = Just v
   unVar PatAny = Just ignored
   unVar (PatLoc _ p) = unVar p
-  unVar (PatSpec p _) = unVar p
   unVar (PatOps p) = unVar p
   unVar _ = Nothing
 
@@ -143,6 +142,7 @@ instance Pretty Exp where
   pretty' (ExpLoc _ e) = pretty' e
 
 patToExp :: Pattern -> Exp
+patToExp (PatAs _v p) = patToExp p -- XXX
 patToExp (PatSpec p t) = Spec (patToExp p) t
 patToExp (PatCons c pl) = Apply (Var c) (map patToExp pl)
 patToExp (PatOps o) = Ops (fmap patToExp o)
