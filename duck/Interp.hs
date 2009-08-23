@@ -177,35 +177,6 @@ typeInfo prog = TypeInfo
   , typeVariances = typeVariances info }
   where info = Infer.typeInfo prog
 
-{- further resolution no longer necessary
--- Overloaded function application
-apply' :: Prog -> Globals -> Var -> [TValue] -> SrcLoc -> Exec TValue
-apply' prog global f args loc = do
-  let types = map snd args
-  overload <- liftInfer prog $ Infer.resolve prog f types loc
-  case overload of
-    Left _ -> return (ValClosure f args undefined, TyClosure [(f,types)])
-    Right o -> withFrame f args loc $ expr prog global (Map.fromList (zip (overVars o) args)) loc (overBody o)
--}
-
-_typeof = typeof -- unused for now
-typeof :: Prog -> Value -> Exec Type
-typeof _ (ValInt _) = return tyInt
-typeof _ (ValChr _) = return tyChr
-typeof prog (ValCons c args) = do
-  tl <- mapM (typeof prog) args
-  (tv, vl, tl') <- lookupConstructor prog c
-  result <- runMaybeT $ subsetList (typeInfo prog) tl tl'
-  case result of
-    Just (tenv,[]) -> return $ TyCons tv targs where
-      targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-    _ -> execError noLoc ("failed to unify types "++pshowlist tl++" with "++pshowlist tl')
-typeof _ (ValClosure _ _ _) = return $ tyArrow TyVoid TyVoid
-typeof _ (ValDelay _ _) = return $ tyArrow tyUnit TyVoid
-typeof _ (ValBindIO _ _ _ _) = return $ tyIO TyVoid
-typeof _ (ValPrimIO _ _) = return $ tyIO TyVoid
-typeof _ (ValLiftIO _) = return $ tyIO TyVoid
-
 -- IO and main
 main :: Prog -> Globals -> IO ()
 main prog global = runExec $ do
