@@ -105,7 +105,7 @@ main = do
   ir <- phase StageIr (return $! Ir.prog ast)
   lir <- phase' StageLir (Lir.prog ir)
   lir <- phase' StageLink (Lir.union Base.base lir)
-  Lir.check lir
+  catchFatal $ return $! Lir.check lir
   lir <- phase StageInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
   unless (compileOnly flags) $ rerunInfer [] lir (Infer.main lir)
   env <- phase StageEnv (runExec $ Interp.prog lir)

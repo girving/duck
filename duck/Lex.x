@@ -12,7 +12,6 @@ import Var
 import Token
 import SrcLoc
 import ParseMonad
-import Data.Monoid (mappend)
 import Numeric
 import qualified Data.Char as Char
 }
@@ -134,6 +133,6 @@ lexer = do
       lexer
     AlexToken s' len action -> do
       put s'
-      return $ Loc (mappend (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
+      return $ Loc (rangeLoc (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
 
 }

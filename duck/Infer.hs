@@ -30,7 +30,6 @@ import qualified Ptrie
 import Prelude hiding (lookup)
 import qualified Base
 import Data.Maybe
-import Data.Monoid
 import SrcLoc
 
 ---- Algorithm discussion:
@@ -109,14 +108,13 @@ prog prog = do
   return $ prog{ progOverloads = info }
 
 definition :: Prog -> Definition -> Infer Prog
-definition prog (Def vl e) = withFrame (V $ intercalate "," $ map unV vars) [] (mconcat locs) $ do
+definition prog d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl) [] (loc d) $ do
   t <- expr prog Map.empty noLoc e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
           (_, TyCons c tl) | istuple c, length vl == length tl -> return tl
           _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++pshow t)
   return $ prog { progGlobalTypes = foldl (\g (v,t) -> Map.insert (unLoc v) t g) (progGlobalTypes prog) (zip vl tl) }
-  where (locs,vars) = unzipLoc vl
 
 expr :: Prog -> Locals -> SrcLoc -> Exp -> Infer Type
 expr prog env loc = exp where

@@ -18,7 +18,7 @@ module Lir
   ) where
 
 import Prelude hiding (mapM)
-import Type hiding (union)
+import Data.List hiding (union)
 import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
@@ -33,7 +33,8 @@ import SrcLoc
 import Ptrie (Ptrie)
 import qualified Ptrie
 import Pretty
-import Data.List hiding (union)
+import Stage
+import Type hiding (union)
 import qualified Ir
 import Prims
 
@@ -54,6 +55,7 @@ data Datatype = Data
   , dataTyVars :: [Var]
   , dataConses :: [(Loc CVar, [TypeSet])]
   }
+instance HasLoc Datatype where loc = dataLoc
 
 data Overload t = Over
   { overLoc :: SrcLoc
@@ -62,6 +64,7 @@ data Overload t = Over
   , overVars :: [Var]
   , overBody :: Maybe Exp
   }
+instance HasLoc (Overload t) where loc = overLoc
 
 type Overloads = Ptrie Type (Maybe Trans) (Overload Type)
 
@@ -77,6 +80,7 @@ data Definition = Def
   { defVars :: [Loc Var]
   , defBody :: Exp
   }
+instance HasLoc Definition where loc = loc . defVars
 
 data Exp
   = ExpLoc SrcLoc !Exp
@@ -99,6 +103,9 @@ overTypes :: Overload t -> [t]
 overTypes = map snd . overArgs
 
 -- Lambda lifting: IR to Lifted IR conversion
+
+lirError :: SrcLoc -> String -> a
+lirError = stageError StageLir
 
 empty :: Prog
 empty = Prog Map.empty Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
@@ -152,33 +159,31 @@ prog decls = flip execState empty $ do
         variance i = if Set.member (c,i) inv then Invariant else Covariant
 
 -- |A few consistency checks on Lir programs
-check :: Prog -> IO ()
-check prog = do
-  foldM_ def Map.empty (progDefinitions prog) -- check for duplicate variable definitions
-  mapM_ funs (Map.toList $ progFunctions prog) -- check for duplicate variables in argument lists
-  success
-
+check :: Prog -> ()
+check prog = runSequence $ do
+  let fs = Map.map loc (progFunctions prog)
+  fds <- foldM def fs (progDefinitions prog)
+  mapM_ (funs (Map.keysSet fds)) $ Map.toList (progFunctions prog)
   where
+  def s (Def vl body) = do
+    let add s (Loc _ (V "_")) = return s
+        add s (Loc l v) = do
+          maybe nop (\l' -> lirError l $ "duplicate definition of "++qshow v++", previously declared at "++show l') $ Map.lookup v s
+          return $ Map.insert v l s 
+    s <- foldM add s vl
+    expr (Map.keysSet s) body
+    return s
+  funs s (f,fl) = mapM_ fun fl where
+    fun (Over l _ _ vl body) = do
+      vs <- foldM (\s v -> do
+        when (Set.member v s) $ lirError l $ qshow v++" appears more than once in argument list for "++qshow f
+        return $ addVar v s) Set.empty vl
+      maybe nop (expr (Set.union s vs)) body
+  expr s = mapM_ (\(v,l) -> lirError l $ qshow v ++ " undefined") . free s noLoc
 
-  def :: Map Var SrcLoc -> Definition -> IO (Map Var SrcLoc)
-  def env (Def vl _) = foldM var env vl
-
-  var :: Map Var SrcLoc -> Loc Var -> IO (Map Var SrcLoc)
-  var env (Loc l v) = case Map.lookup v env of
-    Nothing -> return $ Map.insert v l env
-    Just l' -> die (show l++": duplicate definition of "++qshow v++", previously declared at "++show l')
-
-  funs :: (Var,[Overload t]) -> IO ()
-  funs (f,fl) = mapM_ (fun f) fl
-
-  fun :: Var -> Overload t -> IO ()
-  fun f (Over l _ _ vl _) = case duplicates (filter (/= V "_") vl) of
-    [] -> success
-    v:_ -> die (show l++": "++qshow v++" appears more than once in argument list for "++qshow f)
-
-decl_vars :: Set Var -> Ir.Decl -> Set Var
-decl_vars s (Ir.LetD (Loc _ v) _) = Set.insert v s
-decl_vars s (Ir.LetM vl _) = foldl (flip Set.insert) s (map unLoc vl)
+decl_vars :: InScopeSet -> Ir.Decl -> InScopeSet
+decl_vars s (Ir.LetD (Loc _ v) _) = addVar v s
+decl_vars s (Ir.LetM vl _) = foldl (flip addVar) s (map unLoc vl)
 decl_vars s (Ir.Over (Loc _ v) _ _) = Set.insert v s
 decl_vars s (Ir.Data _ _ _) = s
 
@@ -207,7 +212,7 @@ definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefiniti
 -- |Add a global overload
 overload :: Loc Var -> [TypeSetArg] -> TypeSet -> [Var] -> Exp -> State Prog ()
 overload (Loc l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
-overload (Loc l v) tl _ vl _ = error (show l++": overload arity mismatch for "++pshow v++": argument types "++pshowlist tl++", variables "++pshowlist vl)
+overload (Loc l v) tl _ vl _ = lirError l $ "overload arity mismatch for "++pshow v++": argument types "++pshowlist tl++", variables "++pshowlist vl
 
 -- |Add an unoverloaded global function
 function :: Loc Var -> [Var] -> Exp -> State Prog ()
@@ -253,7 +258,7 @@ noLocExpr :: (SrcLoc, Maybe Var)
 noLocExpr = (noLoc,Nothing)
 
 -- |Lambda lift an expression
-expr :: Set Var -> (SrcLoc, Maybe Var) -> Ir.Exp -> State Prog Exp
+expr :: InScopeSet -> (SrcLoc, Maybe Var) -> Ir.Exp -> State Prog Exp
 expr _ _ (Ir.Int i) = return $ Int i
 expr _ _ (Ir.Chr c) = return $ Chr c
 expr _ _ (Ir.Var v) = return $ Var v
@@ -263,14 +268,14 @@ expr locals l (Ir.Apply e1 e2) = do
   return $ Apply e1 e2
 expr locals l@(loc,_) (Ir.Let v e rest) = do
   e <- expr locals (loc,Just v) e
-  rest <- expr (Set.insert v locals) l rest
+  rest <- expr (addVar v locals) l rest
   return $ Let v e rest
 expr locals l e@(Ir.Lambda _ _) = lambda locals l e
 expr locals l (Ir.Cons c el) = do
   el <- mapM (expr locals l) el
   return $ Cons c el
 expr locals l (Ir.Case v pl def) = do
-  pl <- mapM (\ (c,vl,e) -> expr (foldl (flip Set.insert) locals vl) l e >.= \e -> (c,vl,e)) pl
+  pl <- mapM (\ (c,vl,e) -> expr (foldl (flip addVar) locals vl) l e >.= \e -> (c,vl,e)) pl
   def <- mapM (expr locals l) def
   return $ Case v pl def
 expr locals l (Ir.Prim prim el) = do
@@ -278,7 +283,7 @@ expr locals l (Ir.Prim prim el) = do
   return $ Prim prim el
 expr locals l (Ir.Bind v e rest) = do
   e <- expr locals l e
-  rest <- expr (Set.insert v locals) l rest
+  rest <- expr (addVar v locals) l rest
   return $ Bind v e rest
 expr locals l (Ir.Return e) = Return =.< expr locals l e
 expr locals l (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals l) el
@@ -286,14 +291,14 @@ expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> Spec e t
 expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l =.< expr locals (l,v) e
 
 -- |Lift a single lambda expression
-lambda :: Set Var -> (SrcLoc,Maybe Var) -> Ir.Exp -> State Prog Exp
+lambda :: InScopeSet -> (SrcLoc,Maybe Var) -> Ir.Exp -> State Prog Exp
 lambda locals l@(loc,v) e = do
   f <- freshenM $ fromMaybe (V "f") v -- use the suggested function name
   let (vl,e') = unwrapLambda loc e
-      localsPlus = foldl (flip Set.insert) locals vl
-      localsMinus = foldl (flip Set.delete) locals vl
+      localsPlus = foldr addVar locals vl
+      localsMinus = foldr Set.delete locals vl
   e <- expr localsPlus l e'
-  let vs = free localsMinus e
+  let vs = freeOf localsMinus e
   function (Loc loc f) (vs ++ vl) e
   return $ foldl Apply (Var f) (map Var vs)
 
@@ -306,39 +311,46 @@ freshenM v = do
   return v'
 
 -- |Compute the list of free variables in an expression
-free :: Set Var -> Exp -> [Var]
-free locals e = Set.toList (Set.intersection locals (f e)) where
-  f :: Exp -> Set Var
-  f (Int _) = Set.empty
-  f (Chr _) = Set.empty
-  f (Var v) = Set.singleton v
-  f (Apply e1 e2) = Set.union (f e1) (f e2)
-  f (Let v e rest) = Set.union (f e) (Set.delete v (f rest))
-  f (Cons _ el) = Set.unions (map f el)
-  f (Case v pl def) = Set.unions (Set.singleton v
-    : maybe [] (\ e -> [f e]) def
-    ++ [f e Set.\\ Set.fromList vl | (_,vl,e) <- pl])
-  f (Prim _ el) = Set.unions (map f el)
-  f (Bind v e rest) = Set.union (f e) (Set.delete v (f rest))
-  f (Return e) = f e
-  f (PrimIO _ el) = Set.unions (map f el)
-  f (Spec e _) = f e
-  f (ExpLoc _ e) = f e
+freeOf :: InScopeSet -> Exp -> [Var]
+freeOf locals e = Set.toList (Set.intersection locals (f e)) where
+  f = Set.fromList . map fst . free Set.empty noLoc
+
+free :: InScopeSet -> SrcLoc -> Exp -> [(Var,SrcLoc)]
+free _ _ (Var (V "_")) = []
+free s l (Var v) 
+  | Set.notMember v s = [(v,l)]
+  | otherwise = []
+free _ _ (Int _) = []
+free _ _ (Chr _) = []
+free s l (Apply e1 e2) = free s l e1 ++ free s l e2
+free s l (Let v e c) = free s l e ++ free (addVar v s) l c
+free s l (Cons _ el) = concatMap (free s l) el
+free s l (Case v al d) = 
+  free s l (Var v) 
+  ++ concatMap (\(_,vl,e) -> free (foldr addVar s vl) l e) al
+  ++ maybe [] (free s l) d
+free s l (Prim _ el) = concatMap (free s l) el
+free s l (Bind v e c) = free s l e ++ free (addVar v s) l c
+free s l (Return e) = free s l e
+free s l (PrimIO _ el) = concatMap (free s l) el
+free s l (Spec e _) = free s l e
+free s _ (ExpLoc l e) = free s l e
 
 -- |Merge two programs into one
 
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
-  { progDatatypes = Map.unionWithKey conflict (progDatatypes p2) (progDatatypes p1)
+  { progDatatypes = Map.unionWithKey conflictLoc (progDatatypes p2) (progDatatypes p1)
   , progVariances = Map.unionWithKey conflict (progVariances p2) (progVariances p1)
   , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
   , progGlobals = Set.union (progGlobals p1) (progGlobals p2)
-  , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1)
-  , progOverloads = Map.unionWithKey conflict (progOverloads p2) (progOverloads p1)
+  , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1) -- XXX overloaded constructors?
+  , progOverloads = Map.unionWithKey conflict (progOverloads p2) (progOverloads p1) -- XXX cross-module overloads?
   , progGlobalTypes = Map.unionWithKey conflict (progGlobalTypes p2) (progGlobalTypes p1)
   , progDefinitions = progDefinitions p1 ++ progDefinitions p2 }
   where
-  conflict v _ _ = error ("conflicting datatype declarations for "++pshow v)
+  conflictLoc v o n = lirError (loc n) $ "conflicting declarations for "++pshow v ++ maybe "" ((", previously declared at " ++) . show) (maybeLoc o)
+  conflict v _ _ = lirError noLoc $ "conflicting declarations for "++pshow v
 
 -- Pretty printing
 

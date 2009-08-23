@@ -79,8 +79,8 @@ layout lex = do
     start :: Token -> [Context] -> P (Loc Token)
     start (TokLC _) _ = push (Explicit loc) >> accept -- found an explicit '{', so push an explicit context
     start _ ms -- no '{', so we need to insert one
-      | srcCol loc > top ms = push (Implicit (before loc) (srcCol loc)) >> advance >> inject TokLC -- we're to the left of the enclosing context, so insert '{' and push implicit context
-      | otherwise = push (Implicit (before loc) maxBound) >> inject TokLC -- otherwise insert '{' with a location such that '}' will be inserted immediately after
+      | srcCol loc > top ms = push (Implicit (beforeLoc loc) (srcCol loc)) >> advance >> inject TokLC -- we're to the left of the enclosing context, so insert '{' and push implicit context
+      | otherwise = push (Implicit (beforeLoc loc) maxBound) >> inject TokLC -- otherwise insert '{' with a location such that '}' will be inserted immediately after
 
     normal :: Token -> [Context] -> P (Loc Token)
     normal (TokRC _) (Explicit _:ms) = pop ms >> accept -- found '}' in an explicit context, so pop

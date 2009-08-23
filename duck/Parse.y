@@ -12,7 +12,7 @@ import Layout
 import Ast
 import Type
 import Prims
-import SrcLoc
+import SrcLoc hiding (loc)
 import ParseMonad
 import ParseOps
 import qualified Data.Map as Map

@@ -3,7 +3,8 @@
 module SrcLoc
   ( SrcLoc(srcCol)
   , srcFile
-  , before
+  , beforeLoc
+  , rangeLoc
   , startLoc
   , incrLoc
   , unzipLoc, zipLoc
@@ -11,9 +12,11 @@ module SrcLoc
   , noLoc
   , hasLoc
   , Loc(..)
+  , HasLoc(..)
   ) where
 
 import Data.Monoid
+import Data.Maybe
 import Pretty
 
 data SrcLoc 
@@ -34,13 +37,19 @@ data Loc a = Loc { srcLoc :: SrcLoc, unLoc :: !a }
 instance Functor Loc where
   fmap f (Loc l x) = Loc l (f x)
 
+showOff :: Int -> String -> String
+showOff 0 = ('$':)
+showOff n
+  | n < 0 = ('$':) . shows (negate n)
+  | otherwise = shows n
+
 instance Show SrcLoc where
-  show (SrcNone "") = "<unknown>"
-  show (SrcNone s) = s
-  show (SrcLoc file line col) = file ++ ':' : shows line (':' : show col)
-  show (SrcRng file line col line' col')
-    | line == line' = file ++ ':' : shows line (':' : shows col ('-' : show col'))
-    | otherwise = file ++ ':' : shows line (':' : shows col ('-' : shows line' (':' : show col')))
+  showsPrec _ (SrcNone "") = showString "<unknown>"
+  showsPrec _ (SrcNone s) = showString s
+  showsPrec _ (SrcLoc file line col) = (file++) . (':':) . showOff line . (':':) . showOff col
+  showsPrec _ (SrcRng file line col line' col')
+    | line == line' = (file++) . (':':) . showOff line . (':':) . showOff col . ('-':) . showOff col'
+    | otherwise = (file++) . (':':) . showOff line . (':':) . showOff col . ('-':) . showOff line' . (':':) . showOff col'
 
 -- By default, locations drop away when printing
 instance Show t => Show (Loc t) where
@@ -49,11 +58,25 @@ instance Show t => Show (Loc t) where
 instance Pretty t => Pretty (Loc t) where
   pretty' (Loc _ x) = pretty' x
 
+class HasLoc a where
+  loc :: a -> SrcLoc
+  maybeLoc :: a -> Maybe SrcLoc
+
+  loc = fromMaybe noLoc . maybeLoc
+  maybeLoc a = if hasLoc l then Just l else Nothing where l = loc a
+
+instance HasLoc SrcLoc where loc = id
+instance HasLoc (Loc a) where loc = srcLoc
+
+instance HasLoc a => HasLoc [a] where
+  loc = mconcat . map loc
+
 -- |The location immediately before another
-before :: SrcLoc -> SrcLoc
-before l@(SrcNone _) = l
-before (SrcLoc f l c) = SrcLoc f l (c-1)
-before (SrcRng f l c _ _) = SrcLoc f l (c-1)
+beforeLoc :: SrcLoc -> SrcLoc
+beforeLoc l@(SrcNone _) = l
+beforeLoc (SrcLoc f l 1) = SrcLoc f (pred l) 0
+beforeLoc (SrcLoc f l c) = SrcLoc f l (pred c)
+beforeLoc (SrcRng f l c _ _) = beforeLoc (SrcLoc f l c)
 
 startLoc :: String -> SrcLoc
 startLoc file = SrcLoc file 1 1
@@ -96,6 +119,9 @@ instance Monoid SrcLoc where
   mappend l (SrcNone s) = l{ srcFile = joinFile (srcFile l) s }
   mappend l (SrcLoc s2 r2 c2) = joinLocs l s2 r2 c2
   mappend l (SrcRng s2 _ _ r2 c2) = joinLocs l s2 r2 c2
+
+rangeLoc :: SrcLoc -> SrcLoc -> SrcLoc
+rangeLoc l = mappend l . beforeLoc
 
 noLoc :: SrcLoc
 noLoc = mempty

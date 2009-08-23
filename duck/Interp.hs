@@ -25,7 +25,6 @@ import Util
 import ExecMonad
 import Control.Monad hiding (guard)
 import Control.Monad.Trans
-import Data.Monoid
 import qualified Infer
 import qualified Base
 
@@ -59,14 +58,13 @@ prog :: Prog -> Exec Globals
 prog prog = foldM (definition prog) Map.empty (progDefinitions prog)
 
 definition :: Prog -> Globals -> Definition -> Exec Globals
-definition prog env (Def vl e) = withFrame (V $ intercalate "," $ map unV vars) [] (mconcat locs) $ do
+definition prog env d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl) [] (loc d) $ do
   d <- expr prog env Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
           (_, (ValCons c dl, TyCons c' tl)) | istuple c, c == c', length vl == length dl, length vl == length tl -> return $ zip dl tl
           _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++qshow d)
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
-  where (locs,vars) = unzipLoc vl
 
 -- Perform a computation and then cast the result to a (more general) type.
 -- For now, this cast is a nop on the data, but in future it may not be.

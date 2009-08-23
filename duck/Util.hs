@@ -38,6 +38,7 @@ module Util
   , returnIf
   , MonadInterrupt(..)
   , mapMaybeT
+  , Sequence, runSequence
   ) where
 
 import System.IO
@@ -262,3 +263,13 @@ instance MonadInterrupt m => MonadInterrupt (StateT s m) where
 
 instance (MonadInterrupt m, Error e) => MonadInterrupt (ErrorT e m) where
   handleE h = mapErrorT (handleE (runErrorT . h))
+
+newtype Sequence a = Sequence { runSequence :: a }
+
+instance Functor Sequence where
+  fmap f = Sequence . f . runSequence
+
+instance Monad Sequence where
+  return = Sequence
+  m >>= k = k $! runSequence m
+  m >> k = seq (runSequence m) k
