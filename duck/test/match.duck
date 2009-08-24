@@ -19,9 +19,9 @@ h x = case x of
 a = 99
 
 mv [] a = a
-mv [a] _ = a
-mv [b,a] _ = a
-mv [c,b,a] _ = a
+mv [a] (_ :: Int) = a
+mv [b,(a=_)] _ = a
+mv (l=[a,(b :: Int),c]) _ = case l of [_,_,a] -> a
 mv _ _ = a
 
 test_f = assert \ f ([],[]) == 1

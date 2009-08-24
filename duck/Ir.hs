@@ -183,7 +183,9 @@ prog p = decls p where
   pattern' s l (Ast.PatVar v)
     | Just l' <- Map.lookup v s = irError l $ "duplicate definition of "++qshow v++"; previously declared at "++show l'
     | otherwise = (anyPat { patVars = [v] }, Map.insert v l s)
-  pattern' s l (Ast.PatAs v p) = first (addPatVar v) $ pattern' s l p
+  pattern' s l (Ast.PatAs v p) 
+    | Just l' <- Map.lookup v s = irError l $ "duplicate definition of "++qshow v++"; previously declared at "++show l'
+    | otherwise = first (addPatVar v) $ pattern' (Map.insert v l s) l p
   pattern' s l (Ast.PatSpec p t) = first (addPatSpec t) $ pattern' s l p
   pattern' s _ (Ast.PatLoc l p) = pattern' s l p
   pattern' s l (Ast.PatOps o) = pattern' s l (Ast.opsPattern l $ sortOps precs l o)

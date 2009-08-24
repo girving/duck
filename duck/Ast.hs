@@ -42,6 +42,7 @@ data Exp
   | Any
   | List [Exp]
   | Ops !(Ops Exp)
+  | Equals !Var Exp -- ^ only for PatAs
   | Spec Exp !TypeSet
   | Case Exp [(Pattern,Exp)]
   | If Exp Exp Exp
@@ -139,10 +140,11 @@ instance Pretty Exp where
   pretty' (List el) = (100,
     brackets $ hcat (intersperse (pretty ", ") $ map (guard 2) el))
   pretty' (Ops o) = pretty' o
+  pretty' (Equals v e) = (1, pretty v <+> equals <+> guard 0 e)
   pretty' (ExpLoc _ e) = pretty' e
 
 patToExp :: Pattern -> Exp
-patToExp (PatAs _v p) = patToExp p -- XXX
+patToExp (PatAs v p) = Equals v (patToExp p)
 patToExp (PatSpec p t) = Spec (patToExp p) t
 patToExp (PatCons c pl) = Apply (Var c) (map patToExp pl)
 patToExp (PatOps o) = Ops (fmap patToExp o)

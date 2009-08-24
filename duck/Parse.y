@@ -98,6 +98,11 @@ constructor :: { (Loc CVar,[TypeSet]) }
 -- An underscore after a nonterminal (exp_) means it cannot contain a parenthesis-killing backslash expression.
 -- This duplication is unfortunately, but I finally got tired of the shift-reduce conflicts.
 
+-- read "negative one": must be parenthesized
+exp_1 :: { Loc Exp }
+  : lvar '=' exp_1 { loc $1 $> $ Equals (unLoc $1) (expLoc $3) }
+  | exp { $1 }
+
 exp :: { Loc Exp }
   : exp0 '::' exp0 {% ty $3 >.= \t -> loc $1 $> $ Spec (expLoc $1) (unLoc t) }
   | exp0 { $1 }
@@ -157,8 +162,8 @@ atom_ :: { Loc Exp }
   | lvar { fmap Var $1 }
   | cvar { fmap Var $ locVar $1 }
   | '_' { loc1 $1 Any }
-  | '(' exp ')' { $2 }
-  | '(' exp error {% unmatched $1 }
+  | '(' exp_1 ')' { $2 }
+  | '(' exp_1 error {% unmatched $1 }
   | '(' ')' { loc $1 $> $ Var (V "()") }
   | '[' ']' { loc $1 $> $ Var (V "[]") }
   | '[' commas(atom) ']' { loc $1 $> $ List (reverse (unLoc $2)) }
@@ -268,6 +273,7 @@ patternExp l (Var v) = return $ PatVar v
 patternExp l Any = return PatAny
 patternExp l (List el) = PatList =.< mapM (patternExp l) el
 patternExp l (Ops ops) = PatOps =.< patternOps l ops
+patternExp l (Equals v e) = patternExp l e >.= PatAs v
 patternExp l (Spec e t) = patternExp l e >.= \p -> PatSpec p t
 patternExp l (Lambda pl e) = PatLambda pl =.< patternExp l e
 patternExp _ (ExpLoc l e) = PatLoc l =.< patternExp l e
@@ -309,6 +315,7 @@ typeExp l (Let _ _ _) = parseError (ParseError l ("let expression not allowed in
 typeExp l (Case _ _) = parseError (ParseError l ("case expression not allowed in type"))
 typeExp l (If _ _ _) = parseError (ParseError l ("if expression not allowed in type"))
 typeExp l (Ops _) = parseError (ParseError l ("operator expression not allowed in type"))
+typeExp l (Equals _ _) = parseError (ParseError l ("equals expression not allowed in type"))
 typeExp l (Spec _ _) = parseError (ParseError l ("type specifier expression not allowed in type"))
 typeExp l (List _) = parseError (ParseError l ("list expression not allowed in type"))
 
