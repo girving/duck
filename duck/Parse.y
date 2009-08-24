@@ -91,7 +91,7 @@ constructors :: { [(Loc CVar,[TypeSet])] }
   | constructors ';'  constructor { $3 : $1 }
 
 constructor :: { (Loc CVar,[TypeSet]) }
-  : exp2 {% constructor $1 }
+  : exp2(atom) {% constructor $1 }
 
 --- Expressions ---
 
@@ -107,70 +107,45 @@ exp0 :: { Loc Exp }
 
 arrows :: { Loc (Stack Exp Exp) }
   : notarrow { loc1 $1 (Base (expLoc $1)) }
-  | exp1_ '->' arrows { loc $1 $> (expLoc $1 :. unLoc $3) }
+  | exp1(atom_) '->' arrows { loc $1 $> (expLoc $1 :. unLoc $3) }
 
 notarrow :: { Loc Exp }
   : let exp '=' exp in exp0 {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
   | case exp of '{' cases '}' { loc $1 $> $ Case (expLoc $2) (reverse $5) }
   | if exp then exp else exp0 { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
-  | exp1 { $1 }
+  | exp1(atom) { $1 }
 
 arrow :: { Loc (Pattern,Exp) }
-  : exp1_ '->' exp0 {% pattern $1 >.= \p -> loc $1 $> (patLoc p,expLoc $3) }
+  : exp1(atom_) '->' exp0 {% pattern $1 >.= \p -> loc $1 $> (patLoc p,expLoc $3) }
 
 cases :: { [(Pattern,Exp)] }
   : arrow { [unLoc $1] }
   | cases ';' arrow { unLoc $3 : $1 }
 
-exp1 :: { Loc Exp }
-  : commas { fmap tuple $1 }
+exp1(a) :: { Loc Exp }
+  : commas(a) { fmap tuple $1 }
 
-exp1_ :: { Loc Exp }
-  : commas_ { fmap tuple $1 }
+commas(a) :: { Loc [Exp] }
+  : exp2(a) { loc1 $1 [expLoc $1] }
+  | commas(atom_) ',' exp2(a) { loc $1 $> $ expLoc $3 : unLoc $1 }
 
-commas :: { Loc [Exp] }
-  : exp2 { loc1 $1 [expLoc $1] }
-  | commas_ ',' exp2 { loc $1 $> $ expLoc $3 : unLoc $1 }
+exp2(a) :: { Loc Exp }
+  : ops(a) { fmap ops $1 }
 
-commas_ :: { Loc [Exp] }
-  : exp2_ { loc1 $1 [expLoc $1] }
-  | commas_ ',' exp2_ { loc $1 $> $ expLoc $3 : unLoc $1 }
+ops(a) :: { Loc (Ops Exp) }
+  : ops(atom_) asym unops(a) { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
+  | unops(a) { $1 }
 
-exp2 :: { Loc Exp }
-  : ops { fmap ops $1 }
+unops(a) :: { Loc (Ops Exp) }
+  : exp3(a) { loc1 $1 $ OpAtom (expLoc $1) }
+  | '-' unops(a) { loc $1 $> $ OpUn (V "-") (unLoc $2) }
 
-exp2_ :: { Loc Exp }
-  : ops_ { fmap ops $1 }
+exp3(a) :: { Loc Exp }
+  : exps(a) { fmap apply $1 }
 
-ops :: { Loc (Ops Exp) }
-  : ops_ asym unops { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
-  | unops { $1 }
-
-ops_ :: { Loc (Ops Exp) }
-  : ops_ asym unops_ { loc $1 $> $ OpBin (unLoc $2) (unLoc $1) (unLoc $3) }
-  | unops_ { $1 }
-
-unops :: { Loc (Ops Exp) }
-  : exp3 { loc1 $1 $ OpAtom (expLoc $1) }
-  | '-' unops { loc $1 $> $ OpUn (V "-") (unLoc $2) }
-
-unops_ :: { Loc (Ops Exp) }
-  : exp3_ { loc1 $1 $ OpAtom (expLoc $1) }
-  | '-' unops_ { loc $1 $> $ OpUn (V "-") (unLoc $2) }
-
-exp3 :: { Loc Exp }
-  : exps { fmap apply $1 }
-
-exp3_ :: { Loc Exp }
-  : exps_ { fmap apply $1 }
-
-exps :: { Loc [Exp] }
-  : atom { fmap (:[]) $1 }
-  | exps_ atom { loc $1 $> $ expLoc $2 : unLoc $1 }
-
-exps_ :: { Loc [Exp] }
-  : atom_ { fmap (:[]) $1 }
-  | exps_ atom_ { loc $1 $> $ expLoc $2 : unLoc $1 }
+exps(a) :: { Loc [Exp] }
+  : a { fmap (:[]) $1 }
+  | exps(atom_) a { loc $1 $> $ expLoc $2 : unLoc $1 }
 
 atom :: { Loc Exp }
   : atom_ { $1 }
@@ -186,8 +161,8 @@ atom_ :: { Loc Exp }
   | '(' exp error {% unmatched $1 }
   | '(' ')' { loc $1 $> $ Var (V "()") }
   | '[' ']' { loc $1 $> $ Var (V "[]") }
-  | '[' commas ']' { loc $1 $> $ List (reverse (unLoc $2)) }
-  | '[' commas error {% unmatched $1 }
+  | '[' commas(atom) ']' { loc $1 $> $ List (reverse (unLoc $2)) }
+  | '[' commas(atom) error {% unmatched $1 }
 
 --- Variables ---
 
