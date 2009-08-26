@@ -26,6 +26,7 @@ data Value
   | ValCons !Var [Value]
   | ValClosure !Var [TValue] Lir.Overloads
   | ValDelay Env Lir.Exp
+  | ValType
     -- Monadic IO
   | ValLiftIO !Value
   | ValPrimIO !PrimIO [Value]
@@ -53,6 +54,7 @@ instance Pretty Value where
     extract (ValCons (V ":") [h,t]) = h : extract t
     extract e = error ("invalid tail "++pshow e++" in list")
   pretty' (ValCons c fields) = (2, pretty c <+> sep (map (guard 3) fields))
+  pretty' ValType = pretty' "_"
   -- pretty' (ValFun _ vl e) = -- conveniently ignore env
   --  (0, pretty "\\" <> prettylist vl <> pretty " -> " <> pretty e)
   pretty' (ValClosure v args _) = (2, pretty v <+> sep (map (guard 3) args))

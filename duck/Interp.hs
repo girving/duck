@@ -44,11 +44,8 @@ lookup prog global env loc v
   | Just (o:_) <- Map.lookup v (progFunctions prog) = let tt = fst $ head $ overArgs o in return (
       ValClosure v [] (Ptrie.empty tt), -- this should never be used
       tyClosure v [])
+  | Just _ <- Map.lookup v (progVariances prog) = return (ValType, tyType (TyCons v []))
   | otherwise = execError loc ("unbound variable " ++ qshow v)
-
-lookupConstructor :: Prog -> Var -> Exec (CVar, [Var], [TypeSet])
-lookupConstructor prog c = maybe (execError noLoc ("unbound constructor " ++ qshow c)) return $
-  Infer.lookupConstructor' prog c
 
 -- Process a list of definitions into the global environment.
 -- The global environment is threaded through function calls, so that
@@ -89,27 +86,29 @@ expr prog global env loc = exp where
   exp ce@(Case v pl def) = do
     t <- liftInfer prog $ Infer.expr prog (Map.map snd env) loc ce
     d <- lookup prog global env loc v
-    case d of
-      (ValCons c dl, TyCons tv types) -> do
-        case find (\ (c',_,_) -> c == c') pl of
-          Just (_,vl,e') ->
-            if a == length dl then do
-              td <- liftInfer prog $ Infer.lookupDatatype prog loc tv
-              let Just tl = Infer.lookupCons (dataConses td) c
-                  tenv = Map.fromList (zip (dataTyVars td) types)
-                  tl' = map (substVoid tenv) tl
-              cast prog t $ expr prog global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl (zip dl tl'))) loc e'
-            else
-              execError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
-                ++" but got ["++intercalate "," (map pshow vl)++"]")
-            where a = length vl
-          Nothing -> case def of
-            Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
-            Just e' -> cast prog t $ expr prog global env loc e' 
-      _ -> execError loc ("expected block, got " ++ qshow d)
+    (c,dl,conses) <- case d of
+      (v, TyCons tv types) -> do
+        conses <- liftInfer prog $ Infer.lookupDatatype prog loc tv types
+        case (v,conses) of
+          (ValCons c dl,_) -> return (c,dl,conses)
+          (ValType,[(Loc _ c,tl)]) -> return (c,map (const ValType) tl,conses)
+          _ -> execError loc ("expected block, got "++qshow v)
+      _ -> execError loc ("expected block, got "++qshow d)
+    case find (\ (c',_,_) -> c == c') pl of
+      Just (_,vl,e') ->
+        if a == length dl then do
+          let Just tl = Infer.lookupCons conses c
+          cast prog t $ expr prog global (foldl (\s (v,d) -> Map.insert v d s) env (zip vl (zip dl tl))) loc e'
+        else
+          execError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
+            ++" but got ["++intercalate "," (map pshow vl)++"]")
+        where a = length vl
+      Nothing -> case def of
+        Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
+        Just e' -> cast prog t $ expr prog global env loc e' 
   exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el
-    (tv,vl,tl) <- lookupConstructor prog c
+    (tv,vl,tl) <- liftInfer prog $ Infer.lookupConstructor prog loc c
     result <- runMaybeT $ subsetList (typeInfo prog) types tl
     case result of
       Just (tenv,[]) -> return (ValCons c args, TyCons tv targs) where
@@ -155,6 +154,10 @@ trans prog global env loc f e = do
   a <- expr prog global env loc e
   apply prog global f a (snd a) loc
 
+-- Because of the delay mechanism, we pass in two types related to the argument
+-- "a".  The second type "at" is the type of the value which was passed in, and
+-- is the type used for type inference/overload resolution.  The type inside
+-- "a" is the type that will be seen inside the function.
 apply :: Prog -> Globals -> TValue -> TValue -> Type -> SrcLoc -> Exec TValue
 apply prog global (ValClosure f args ov, ft) a at loc = do
   let args' = args ++ [a]
@@ -167,42 +170,18 @@ apply prog global (ValClosure f args ov, ft) a at loc = do
       Right (Over oloc at _ vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) oloc e
 apply prog global (ValDelay env e, ta) _ _ loc | Just (_,t) <- isTyArrow ta =
   cast prog t $ expr prog global env loc e
-apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ pshow v ++ " :: " ++ pshow t)
+apply prog _ (_,t1) (_,t2) _ loc | Just (TyCons c tl) <- isTyType t1, Just t <- isTyType t2 =
+  if length tl < length (Infer.lookupVariances prog c) then
+    return (ValType, tyType (TyCons c (tl++[t])))
+  else
+    execError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
+apply _ _ (v1,t1) (v2,t2) _ loc = execError loc ("can't apply '"++pshow v1++" :: "++pshow t1++"' to '"++pshow v2++" :: "++pshow t2++"'")
 
 typeInfo :: Prog -> TypeInfo (MaybeT Exec)
 typeInfo prog = TypeInfo
   { typeApply = \t1 t2 -> mapMaybeT (liftInfer prog) (typeApply info t1 t2)
   , typeVariances = typeVariances info }
   where info = Infer.typeInfo prog
-
-{- further resolution no longer necessary
--- Overloaded function application
-apply' :: Prog -> Globals -> Var -> [TValue] -> SrcLoc -> Exec TValue
-apply' prog global f args loc = do
-  let types = map snd args
-  overload <- liftInfer prog $ Infer.resolve prog f types loc
-  case overload of
-    Left _ -> return (ValClosure f args undefined, TyClosure [(f,types)])
-    Right o -> withFrame f args loc $ expr prog global (Map.fromList (zip (overVars o) args)) loc (overBody o)
--}
-
-_typeof = typeof -- unused for now
-typeof :: Prog -> Value -> Exec Type
-typeof _ (ValInt _) = return tyInt
-typeof _ (ValChr _) = return tyChr
-typeof prog (ValCons c args) = do
-  tl <- mapM (typeof prog) args
-  (tv, vl, tl') <- lookupConstructor prog c
-  result <- runMaybeT $ subsetList (typeInfo prog) tl tl'
-  case result of
-    Just (tenv,[]) -> return $ TyCons tv targs where
-      targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-    _ -> execError noLoc ("failed to unify types "++pshowlist tl++" with "++pshowlist tl')
-typeof _ (ValClosure _ _ _) = return $ tyArrow TyVoid TyVoid
-typeof _ (ValDelay _ _) = return $ tyArrow tyUnit TyVoid
-typeof _ (ValBindIO _ _ _ _) = return $ tyIO TyVoid
-typeof _ (ValPrimIO _ _) = return $ tyIO TyVoid
-typeof _ (ValLiftIO _) = return $ tyIO TyVoid
 
 -- IO and main
 main :: Prog -> Globals -> IO ()

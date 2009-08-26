@@ -163,15 +163,17 @@ check :: Prog -> ()
 check prog = runSequence $ do
   let fs = Map.map loc (progFunctions prog)
   fds <- foldM def fs (progDefinitions prog)
-  mapM_ (funs (Map.keysSet fds)) $ Map.toList (progFunctions prog)
+  mapM_ (funs (Set.union (Map.keysSet fds) types)) $ Map.toList (progFunctions prog)
+  mapM_ datatype (Map.toList $ progDatatypes prog)
   where
+  types = Map.keysSet (progVariances prog)
   def s (Def vl body) = do
     let add s (Loc _ (V "_")) = return s
         add s (Loc l v) = do
           maybe nop (\l' -> lirError l $ "duplicate definition of "++qshow v++", previously declared at "++show l') $ Map.lookup v s
           return $ Map.insert v l s 
     s <- foldM add s vl
-    expr (Map.keysSet s) body
+    expr (Set.union (Map.keysSet s) types) body
     return s
   funs s (f,fl) = mapM_ fun fl where
     fun (Over l _ _ vl body) = do
@@ -180,6 +182,11 @@ check prog = runSequence $ do
         return $ addVar v s) Set.empty vl
       maybe nop (expr (Set.union s vs)) body
   expr s = mapM_ (\(v,l) -> lirError l $ qshow v ++ " undefined") . free s noLoc
+  datatype (_, Data _ vl conses) = mapM_ cons conses where
+    cons (Loc l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList vl of
+      [] -> success
+      [v] -> lirError l $ "variable "++qshow v++" is unbound in constructor "++qshow (TsCons c tl)
+      fv -> lirError l $ "variables '"++pshowlist fv++"' are unbound in constructor "++qshow (TsCons c tl)
 
 decl_vars :: InScopeSet -> Ir.Decl -> InScopeSet
 decl_vars s (Ir.LetD (Loc _ v) _) = addVar v s

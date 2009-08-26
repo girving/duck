@@ -104,7 +104,9 @@ base = Lir.union types (Lir.prog (decTuples ++ prims ++ io)) where
     [ (V "Int", [])
     , (V "Chr", [])
     , (V "IO", [Covariant]) 
-    , (V "Delayed", [Covariant]) ] }
+    , (V "Delayed", [Covariant])
+    , (V "Type", [Invariant])
+    ] }
 
 io :: [Decl]
 io = [map',join,exit,ioPutChr,testAll,returnIO] where

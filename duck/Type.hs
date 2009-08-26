@@ -12,7 +12,7 @@ module Type
   , subset''
   , subsetList
   , subsetList''
-  , subsetListSkolem
+  , specializationList
   , union
   , subst
   , substVoid
@@ -49,6 +49,7 @@ module Type
 
 import Var
 import Pretty
+import Data.Maybe
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -244,15 +245,15 @@ subset info t t' = subset' info t t' Map.empty >>= subsetFix info Map.empty >.= 
 type Leftover = (Type, TypeSet)
 type Leftovers = [Leftover]
 
-type Subset m = Constraints -> m (Constraints, Leftovers)
+type Env m = Constraints -> m (Constraints, Leftovers)
 
-successS :: Monad m => Subset m
+successS :: Monad m => Env m
 successS env = return (env,[])
 
-failureS :: MonadMaybe m => Subset m
+failureS :: MonadMaybe m => Env m
 failureS _ = nothing
 
-sequenceS :: Monad m => [Subset m] -> Subset m
+sequenceS :: Monad m => [Env m] -> Env m
 sequenceS [] env = return (env,[])
 sequenceS (x:xl) env = do
   (env,l1) <- x env
@@ -271,27 +272,36 @@ subsetFix info _ (env, leftovers) = subsetFix info env =<< foldM step (env, []) 
 freezeVars :: Constraints -> [Var] -> Constraints
 freezeVars = foldl (\env v -> Map.adjust (first (const Equal)) v env)
 
-subset' :: MonadMaybe m => TypeInfo m -> Type -> TypeSet -> Subset m
-subset' info t (TsVar v) = \env ->
-  case Map.lookup v env of
-    Nothing -> return (Map.insert v (Superset,t) env, [])
-    Just (Superset,t') -> union info t t' >.= \t'' -> (Map.insert v (Superset,t'') env, [])
-    Just (Equal,t') -> subset'' info t t' >. (env, [])
+constrain :: MonadMaybe m => TypeInfo m -> Var -> ConstraintOp -> Type -> Env m
+constrain info v op t env = c op (Map.lookup v env) where
+  c op Nothing = return (Map.insert v (op,t) env,[])
+  c Superset (Just (Superset,t')) = union info t t' >.= \t'' -> (Map.insert v (Superset,t'') env,[])
+  c Equal    (Just (Superset,t')) = subset'' info t' t >. (Map.insert v (Equal,t) env,[])
+  c Superset (Just (Equal,t')) = subset'' info t t' >. (env,[])
+  c Equal    (Just (Equal,t')) = equal info t t' >. (env,[])
+
+subset' :: MonadMaybe m => TypeInfo m -> Type -> TypeSet -> Env m
+subset' info t (TsVar v) = constrain info v Superset t
 subset' info (TyCons c tl) (TsCons c' tl') | c == c' = \env -> do
   guard' $ length tl == length tl' && length tl <= length var
   sequenceS (zipWith3 arg var tl tl') env
   where
   var = typeVariances info c
   arg Covariant t t' = subset' info t t'
-  arg Invariant t t' = \env ->
-    case unsingleton' env t' of
-      Nothing -> return (env,[(t,t')])
-      Just t'' -> do
-        equal info t t''
-        return (freezeVars env (freeVars t'),[]) -- freeze any vars seen by unsingleton
+  arg Invariant t t' = equal' info t t'
 subset' info (TyFun f) (TsFun f') = subsetFun' info f f'
 subset' _ TyVoid _ = successS
 subset' _ _ _ = failureS
+
+equal' :: MonadMaybe m => TypeInfo m -> Type -> TypeSet -> Env m
+equal' info t (TsVar v) = constrain info v Equal t
+equal' info (TyCons c tl) (TsCons c' tl') | c == c' = \env -> do
+  guard' $ length tl == length tl' && length tl <= length var
+  sequenceS (zipWith (equal' info) tl tl') env
+  where var = typeVariances info c
+equal' info (TyFun f) (TsFun f') = equalFun' info f f'
+equal' _ TyVoid TsVoid = successS
+equal' _ _ _ = failureS
 
 -- |Same as 'subset'', but the first argument is a type.
 -- subset s t succeeds if S(s) <= S(t).
@@ -312,7 +322,7 @@ subset'' _ _ _ = nothing
 -- TODO: Currently all we know is that m is a MonadMaybe, and therefore we
 -- lack the ability to do speculative computation and rollback.  Therefore,
 -- "intersect" currently means ignore all but the first entry.
-subsetFun' :: forall m. MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun TypeSet -> Subset m
+subsetFun' :: forall m. MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun TypeSet -> Env m
 subsetFun' info ft@(TypeFun al cl) ft'@(TypeFun al' cl') = sequenceS (map (arrow al' cl') al ++ map (closure al' cl') cl) where
   arrow :: [(TypeSet,TypeSet)] -> [(Var,[TypeSet])] -> (Type,Type) -> Constraints -> m (Constraints, Leftovers)
   arrow al' _ f env
@@ -337,6 +347,12 @@ subsetFun' info ft@(TypeFun al cl) ft'@(TypeFun al' cl') = sequenceS (map (arrow
         let env' = freezeVars env (freeVars s') -- We're about to feed these vars to apply, so they'll become rigid
         subset' info t t' env'
   closure [] _ _ _ = nothing
+
+-- TODO: This is implemented only for primitive functions (single entry TypeFun's)
+equalFun' :: forall m. MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun TypeSet -> Env m
+equalFun' info (TypeFun [(s,t)] []) (TypeFun [(s',t')] []) = sequenceS [equal' info s s', equal' info t t']
+equalFun' info (TypeFun [] [(v,tl)]) (TypeFun [] [(v',tl')]) | v == v', length tl == length tl' = sequenceS (zipWith (equal' info) tl tl')
+equalFun' _ _ _ = failureS
 
 -- |Subset for singleton function types.
 subsetFun'' :: forall m. MonadMaybe m => TypeInfo m -> TypeFun Type -> TypeFun Type -> m ()
@@ -364,7 +380,7 @@ subsetFun'' info (TypeFun al cl) (TypeFun al' cl') = do
 subsetList :: MonadMaybe m => TypeInfo m -> [Type] -> [TypeSet] -> m (TypeEnv, Leftovers)
 subsetList info tl tl' = subsetList' info tl tl' Map.empty >>= subsetFix info Map.empty >.= first freeze
 
-subsetList' :: MonadMaybe m => TypeInfo m -> [Type] -> [TypeSet] -> Subset m
+subsetList' :: MonadMaybe m => TypeInfo m -> [Type] -> [TypeSet] -> Env m
 subsetList' info tl tl'
   | length tl <= length tl' = sequenceS $ zipWith (subset' info) tl tl'
   | otherwise = failureS
@@ -375,12 +391,39 @@ subsetList'' info tl tl'
   | length tl <= length tl' = zipWithM_ (subset'' info) tl tl'
   | otherwise = nothing
 
--- |'subsetList' for the case of two type sets.  Here the two sets of variables are
--- considered to come from separate namespaces.  To make this clear, we implement
--- this function using skolemization, by turning all variables in the second
--- TypeSet into TyConses.
-subsetListSkolem :: MonadMaybe m => TypeInfo m -> [TypeSet] -> [TypeSet] -> m ()
-subsetListSkolem info x y = subsetList info (map skolemize x) y >. ()
+-- |Check whether one typeset list is a specialization of another.  Note that
+-- "specialization" is very different from "subset" in that it ignores the
+-- variances of type arguments and some details of function types.
+--
+-- Since this function is used only for overload decisions, the soundness of
+-- type system does not depend on its correctness.  This is why it is safe to
+-- ignore the covariant/invariant distinction.
+_specialization :: TypeSet -> TypeSet -> Bool
+_specialization t t' = isJust (specialization' t t' Map.empty)
+
+specialization' :: TypeSet -> TypeSet -> Map Var TypeSet -> Maybe (Map Var TypeSet)
+specialization' t (TsVar v') env =
+  case Map.lookup v' env of
+    Nothing -> Just (Map.insert v' t env)
+    Just t2 | t == t2 -> Just env
+    Just _ -> Nothing
+specialization' (TsCons c tl) (TsCons c' tl') env | c == c' = specializationList' tl tl' env
+specialization' (TsFun f) (TsFun f') env = specializationFun' f f' env
+specialization' _ _ _ = Nothing
+
+specializationList :: [TypeSet] -> [TypeSet] -> Bool
+specializationList tl tl' = isJust (specializationList' tl tl' Map.empty)
+
+specializationList' :: [TypeSet] -> [TypeSet] -> Map Var TypeSet -> Maybe (Map Var TypeSet)
+specializationList' tl tl' env = foldl (>>=) (return env) =<< zipWithCheck specialization' tl tl'
+
+specializationFun' :: TypeFun TypeSet -> TypeFun TypeSet -> Map Var TypeSet -> Maybe (Map Var TypeSet)
+specializationFun' (TypeFun al cl) (TypeFun al' cl') env = foldl (>>=) (return env) (map arrow al' ++ map closure cl') where
+  -- Succeed if we can find some left-hand function that specializes us
+  arrow :: (TypeSet,TypeSet) -> Map Var TypeSet -> Maybe (Map Var TypeSet)
+  arrow (_,t') env | List.null cl = msum $ map (\ (_,t) -> specialization' t t' env) al
+                   | otherwise = Just env -- treat closures as specializations of all arrow
+  closure c' env = if List.elem c' cl then Just env else Nothing
 
 -- |Type environment substitution
 subst :: TypeEnv -> TypeSet -> TypeSet
@@ -475,6 +518,7 @@ unsingletonFun' env (TypeFun al cl) = do
 -- variables in TsCons and TsVar is disjoint.  When this fails in the future,
 -- skolemize will need to be fixed to turn TsVar variables into fresh TyCons
 -- variables.
+_ignore = skolemize
 skolemize :: TypeSet -> Type
 skolemize (TsVar v) = TyCons v [] -- skolemization
 skolemize (TsCons c tl) = TyCons c (map skolemize tl)

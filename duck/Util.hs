@@ -11,6 +11,7 @@ module Util
   , groupPairs
   , spanJust
   , zipCheck
+  , zipWithCheck
   , zipWithCheckM
   , zipWith3M
   , uncurry3
@@ -103,6 +104,9 @@ spanJust f l@(x:r) = maybe ([],l) (\y -> first (y:) $ spanJust f r) $ f x
 zipCheck :: MonadMaybe m => [a] -> [b] -> m [(a,b)]
 zipCheck x y | length x == length y = return $ zip x y
              | otherwise = nothing
+
+zipWithCheck :: MonadMaybe m => (a -> b -> c) -> [a] -> [b] -> m [c]
+zipWithCheck f x y = map (uncurry f) =.< zipCheck x y
 
 zipWithCheckM :: MonadMaybe m => (a -> b -> m c) -> [a] -> [b] -> m [c]
 zipWithCheckM f x y = mapM (uncurry f) =<< zipCheck x y

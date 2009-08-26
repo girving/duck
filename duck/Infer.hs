@@ -10,7 +10,8 @@ module Infer
   , lookupOver
   , lookupDatatype
   , lookupCons
-  , lookupConstructor'
+  , lookupConstructor
+  , lookupVariances
   , runIO
   , main
   ) where
@@ -69,11 +70,16 @@ lookup prog env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
   | Just _ <- Map.lookup v (progFunctions prog) = return $ tyClosure v [] -- if we find overloads, make a new closure
+  | Just _ <- Map.lookup v (progVariances prog) = return $ tyType (TyCons v []) -- found a type constructor, return Type v
   | otherwise = typeError loc ("unbound variable " ++ qshow v)
 
-lookupDatatype :: Prog -> SrcLoc -> CVar -> Infer Datatype
-lookupDatatype prog loc tv
-  | Just d <- Map.lookup tv (progDatatypes prog) = return d
+lookupDatatype :: Prog -> SrcLoc -> CVar -> [Type] -> Infer [(Loc CVar, [Type])]
+lookupDatatype _ loc (V "Type") [t] = case t of
+  TyCons c tl -> return [(Loc noLoc c, map tyType tl)]
+  TyVoid -> return [(Loc noLoc (V "Void"), [])]
+  TyFun _ -> typeError loc ("can't pattern match on "++qshow (tyType t)++"; matching on function types isn't implemented yet")
+lookupDatatype prog loc tv types
+  | Just (Data _ vl cons) <- Map.lookup tv (progDatatypes prog) = return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
   | otherwise = typeError loc ("unbound datatype constructor " ++ qshow tv)
 
 lookupOverloads :: Prog -> SrcLoc -> Var -> Infer [Overload TypeSet]
@@ -81,20 +87,15 @@ lookupOverloads prog loc f
   | Just o <- Map.lookup f (progFunctions prog) = return o
   | otherwise = typeError loc ("unbound function " ++ qshow f)
 
-lookupConstructor' :: Prog -> Var -> Maybe (CVar, [Var], [TypeSet])
-lookupConstructor' prog c
+lookupConstructor :: Prog -> SrcLoc -> Var -> Infer (CVar, [Var], [TypeSet])
+lookupConstructor prog loc c
   | Just tc <- Map.lookup c (progConses prog)
   , Just td <- Map.lookup tc (progDatatypes prog)
   , Just tl <- lookupCons (dataConses td) c 
-  = Just (tc,dataTyVars td,tl)
-  | otherwise = Nothing
+  = return (tc,dataTyVars td,tl)
+  | otherwise = typeError loc ("unbound constructor " ++ qshow c)
 
-lookupConstructor :: Prog -> SrcLoc -> Var -> Infer (CVar, [Var], [TypeSet])
-lookupConstructor prog loc c = 
-  maybe (typeError loc ("unbound constructor " ++ qshow c)) return $
-    lookupConstructor' prog c
-
-lookupCons :: [(Loc CVar, [TypeSet])] -> CVar -> Maybe [TypeSet]
+lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 
 -- Process a list of definitions into the global environment.
@@ -135,15 +136,11 @@ expr prog env loc = exp where
     case t of
       TyVoid -> return TyVoid
       TyCons tv types -> do
-        td <- lookupDatatype prog loc tv
-        let tenv = Map.fromList (zip (dataTyVars td) types)
-            caseType (c,vl,e')
-              | Just tl <- lookupCons (dataConses td) c, a <- length tl =
+        conses <- lookupDatatype prog loc tv types
+        let caseType (c,vl,e')
+              | Just tl <- lookupCons conses c, a <- length tl =
                   if length vl == a then
-                    let tl' = map (subst tenv) tl in
-                    case mapM unsingleton tl' of
-                      Nothing -> typeError loc ("datatype declaration "++qshow tv++" is invalid, constructor "++qshow c++" has nonconcrete types "++pshowlist tl')
-                      Just tl -> expr prog (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
+                    expr prog (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
                   else
                     typeError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
                       ++" but got ["++intercalate ", " (map pshow vl)++"]")
@@ -213,40 +210,38 @@ apply prog (TyFun (TypeFun al cl)) t2 loc = do
       Just (Right t) -> return (overRet t) -- fully applied
       Just (Left _) -> return $ tyClosure f args' -- partially applied
     where args' = args ++ [t2]
-apply _ t1 _ loc = typeError loc ("expected a -> b, got " ++ qshow t1)
+apply prog t1 t2 loc | Just (TyCons c tl) <- isTyType t1, Just t <- isTyType t2 =
+  if length tl < length (lookupVariances prog c) then
+    return (tyType (TyCons c (tl++[t])))
+  else
+    typeError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
+apply _ t1 t2 loc = typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
 
 typeInfo :: Prog -> TypeInfo (MaybeT Infer)
 typeInfo prog = TypeInfo
   { typeApply = applyTry prog
-  , typeVariances = \c ->
-      case Map.lookup c (progVariances prog) of
-        Just vars -> vars
-        Nothing -> [] -- return [] instead of bailing so that skolemization works cleanly
+  , typeVariances = lookupVariances prog
   }
 
 applyTry :: Prog -> Type -> Type -> MaybeT Infer Type
 applyTry prog f t = catchError (lift $ apply prog f t noLoc) (\_ -> nothing)
 
+lookupVariances :: Prog -> Var -> [Variance]
+lookupVariances prog c | Just vars <- Map.lookup c (progVariances prog) = vars
+lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization works cleanly
+
 -- Resolve an overload.  A result of Nothing means all overloads are still partially applied.
 resolve :: Prog -> Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overload TypeSet))
 resolve prog f args loc = do
   rawOverloads <- lookupOverloads prog loc f -- look up possibilities
-  let call = qshow $ pretty f <+> prettylist args
-      prune o = runMaybeT $ subsetList (typeInfo prog) args (overTypes o) >. o
+  let prune o = runMaybeT $ subsetList (typeInfo prog) args (overTypes o) >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
-  let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Infer Bool
-      isSpecOf a b = do
-        let ta = overTypes a
-            tb = overTypes b
-        if length ta /= length tb
-          then return False -- overloads with different arities should not be considered specializations of each other
-          else isJust =.< runMaybeT (subsetListSkolem (typeInfo prog) ta tb)
-      isMinimal o = allM (\o' -> do
-        less <- isSpecOf o o'
-        more <- isSpecOf o' o
-        return $ less || not more) overloads
+  let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Bool
+      isSpecOf a b = specializationList (overTypes a) (overTypes b)
+      isMinimal o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) overloads
+      filtered = filter isMinimal overloads -- prune away overloads which are more general than some other overload
       options overs = concatMap (\ o -> "\n  "++pshow (foldr tsArrow (overRet o) (overTypes o))) overs
-  filtered <- filterM isMinimal overloads -- prune away overloads which are more general than some other overload
+      call = qshow $ pretty f <+> prettylist args
   case filtered of
     [] -> typeError loc (call++" doesn't match any overload, possibilities are"++options rawOverloads)
     os -> case partition ((length args ==) . length . overVars) os of
