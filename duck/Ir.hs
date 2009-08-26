@@ -16,6 +16,7 @@ import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Foldable as Fold
 import Control.Monad hiding (guard)
+import Data.Monoid
 import GHC.Exts
 import Util
 import Pretty
@@ -156,17 +157,18 @@ prog p = decls p where
   --   f x = ...
   decls :: [Loc Ast.Decl] -> [Decl]
   decls [] = []
-  decls decs@(Loc loc (Ast.DefD f _ _):_) = LetD f body : decls rest where
-    body = lambdacases (Set.insert (unLoc f) globals) loc n defs
+  decls decs@(Loc _ (Ast.DefD (Loc _ f) _ _):_) = LetD (Loc l f) body : decls rest where
+    body = lambdacases (Set.insert f globals) l n (map unLoc defs)
+    l = loc defs
     (defs,rest) = spanJust isfcase decs
-    isfcase (Loc _ (Ast.DefD (Loc _ f') a b)) | unLoc f == f' = Just (a,b)
+    isfcase (Loc l (Ast.DefD (Loc _ f') a b)) | f == f' = Just (Loc l (a,b))
     isfcase _ = Nothing
-    n = case group $ map (length . fst) defs of
+    n = case group $ map (length . fst . unLoc) defs of
       [n:_] -> n
-      _ -> irError loc $ "equations for " ++ qshow f ++ " have different numbers of arguments"
-  decls (Loc loc (Ast.SpecD f t) : rest) = case decls rest of
-    LetD (Loc _ f') e : rest | unLoc f == f' -> Over f t e : rest
-    _ -> irError loc $ "type specification for "++qshow f++" must be followed by its definition"
+      _ -> irError l $ "equations for " ++ qshow f ++ " have different numbers of arguments"
+  decls (Loc l (Ast.SpecD (Loc _ f) t) : rest) = case decls rest of
+    LetD (Loc l' f') e : rest | f == f' -> Over (Loc (mappend l l') f) t e : rest
+    _ -> irError l $ "type specification for "++qshow f++" must be followed by its definition"
   decls (Loc l (Ast.LetD ap ae) : rest) = d : decls rest where
     d = case Map.toList vm of
       [(v,l)] -> LetD (Loc l v) $ body $ Var v

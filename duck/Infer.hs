@@ -280,7 +280,7 @@ apply' prog f args loc = do
 -- TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
 cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
-cache prog f args (Over _ atypes r vl e) loc = do
+cache prog f args (Over oloc atypes r vl e) loc = do
   let (tt,types) = unzip atypes
   Just (tenv, leftovers) <- runMaybeT $ subsetList (typeInfo prog) args types
   let call = qshow (pretty f <+> prettylist args)
@@ -290,8 +290,8 @@ cache prog f args (Over _ atypes r vl e) loc = do
       tl = map (argType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv r
       fix prev e = do
-        insertOver f al (Over noLoc (zip tt tl) prev vl (Just e))
-        r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) loc e)
+        insertOver f al (Over oloc (zip tt tl) prev vl (Just e))
+        r' <- withFrame f args loc (expr prog (Map.fromList (zip vl tl)) oloc e)
         result <- runMaybeT $ union (typeInfo prog) r' rs
         case result of
           Nothing -> typeError loc ("in call "++call++", failed to unify result "++qshow r'++" with return signature "++qshow rs)

@@ -164,7 +164,7 @@ apply prog global (ValClosure f args ov, ft) a at loc = do
     Just ov -> case Ptrie.unPtrie ov of
       Left _ -> return (ValClosure f args' ov, t)
       Right (Over _ _ _ _ Nothing) -> return (ValClosure f args' ov, t)
-      Right (Over _ at _ vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) loc e
+      Right (Over oloc at _ vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) oloc e
 apply prog global (ValDelay env e, ta) _ _ loc | Just (_,t) <- isTyArrow ta =
   cast prog t $ expr prog global env loc e
 apply _ _ (v,t) _ _ loc = execError loc ("expected a -> b, got " ++ pshow v ++ " :: " ++ pshow t)
