@@ -156,6 +156,7 @@ check :: Prog -> IO ()
 check prog = do
   foldM_ def Map.empty (progDefinitions prog) -- check for duplicate variable definitions
   mapM_ funs (Map.toList $ progFunctions prog) -- check for duplicate variables in argument lists
+  mapM_ datatype (Map.toList $ progDatatypes prog) -- verify that datatype declarations are sane
   success
 
   where
@@ -175,6 +176,12 @@ check prog = do
   fun f (Over l _ _ vl _) = case duplicates (filter (/= V "_") vl) of
     [] -> success
     v:_ -> die (show l++": "++qshow v++" appears more than once in argument list for "++qshow f)
+
+  datatype (_, Data _ vl conses) = mapM_ cons conses where
+    cons (Loc l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList vl of
+      [] -> success
+      [v] -> die (show l++": variable "++qshow v++" is unbound in constructor "++qshow (TsCons c tl))
+      fv -> die (show l++": variables '"++pshowlist fv++"' are unbound in constructor "++qshow (TsCons c tl))
 
 decl_vars :: Set Var -> Ir.Decl -> Set Var
 decl_vars s (Ir.LetD (Loc _ v) _) = Set.insert v s

@@ -24,6 +24,8 @@ module Prims
   , tyIO
   , tsIO
   , isTyIO
+  , tyType
+  , isTyType
   ) where
 
 import Pretty
@@ -106,6 +108,13 @@ tsIO t = TsCons (V "IO") [t]
 isTyIO :: Type -> Maybe Type
 isTyIO (TyCons (V "IO") [t]) = Just t
 isTyIO _ = Nothing
+
+tyType :: Type -> Type
+tyType t = TyCons (V "Type") [t]
+
+isTyType :: Type -> Maybe Type
+isTyType (TyCons (V "Type") [t]) = Just t
+isTyType _ = Nothing
 
 -- Pretty printing
 

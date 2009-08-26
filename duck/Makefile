@@ -6,7 +6,7 @@ ALEX = alex
 ALEXFLAGS = -g
 
 OTHERS = Parse.hs Lex.hs
-TESTS = basic layout curry delay match io tyfun success
+TESTS = basic layout curry delay match io tyfun success types
 TESTS_C = apply base ops null
 TESTS_FAIL := $(patsubst test/fail/%.duck, fail/%, $(wildcard test/fail/*.duck))
 
@@ -36,11 +36,11 @@ ALL_TESTS = $(TESTS) $(TESTS_C) $(TESTS_FAIL)
 test: $(ALL_TESTS)
 	@echo
 	@echo All tests passed!
-$(TESTS):
+$(TESTS): duck
 	./duck test/$@.duck
-$(TESTS_C):
+$(TESTS_C): duck
 	./duck -c test/$@.duck
-$(TESTS_FAIL):
+$(TESTS_FAIL): duck
 	./duck -Itest test/$@.duck; s=$$?; if [ $$s -eq 1 ]; then :; else echo $@ failed: exit status $$s != 1; false; fi
 
 tags: $(filter-out $(OTHERS),$(wildcard *.hs)) Parse.y Lex.x
