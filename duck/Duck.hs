@@ -3,15 +3,23 @@
 
 module Main where
 
-import Parse
-import ParseMonad
-import Pretty
+import qualified Data.Set as Set
+import Data.Set (Set)
+import qualified Data.Map as Map
+import Data.List
+import Control.Monad 
 import System.Environment
 import System.FilePath
 import System.Directory
 import System.Console.GetOpt
 import System.IO
 import System.Exit
+
+import Util
+import Stage
+import Pretty
+import Parse
+import ParseMonad
 import qualified Ast
 import qualified Ir
 import qualified Lir
@@ -20,13 +28,6 @@ import qualified Base
 import qualified Infer
 import ExecMonad
 import InferMonad
-import Control.Monad 
-import qualified Data.Set as Set
-import Data.Set (Set)
-import qualified Data.Map as Map
-import Data.List
-import Util
-import Stage
 
 -- Options
 
@@ -77,7 +78,7 @@ loadModule s l m = do
       imp v
         | Set.member v s' = return []
         | otherwise = loadModule s' l' v
-  ast <- runP parse f c
+      ast = runP parse f c
   asts <- mapM imp $ Ast.imports ast
   return $ concat asts ++ ast
 

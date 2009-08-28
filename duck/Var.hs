@@ -14,13 +14,17 @@ module Var
   , freshen
   , freshVars
   , standardVars
-  , ignored
-  , precedence
-  , tupleCons
-  , istuple
-  , tuplelen
-  , isCons
   , HasVar(..)
+  -- * Primitive values/variables/constructors
+  -- 
+  -- These might make more sense in "Prims".
+  , ignored
+  , tupleCons
+  , isTuple
+  , tupleLen
+  , isCons
+  -- ** Pretty printing helpers
+  , precedence
   ) where
 
 import Pretty
@@ -82,9 +86,6 @@ standardVars = letters ++ others where
   letters = [V [x] | x <- ['a'..'z']]
   others = [V ("t" ++ show i) | i <- [1..] :: [Int]]
 
-ignored :: Var
-ignored = V "_"
-
 precedence :: Var -> Maybe Int
 precedence (V op) = case head op of
   '+' -> Just 20
@@ -93,24 +94,27 @@ precedence (V op) = case head op of
   '/' -> Just 30 
   _ -> Nothing
 
+ignored :: Var
+ignored = V "_"
 
 tupleCons :: [a] -> Var
 tupleCons [] = V "()"
 tupleCons [_] = error "no singleton tuples"
 tupleCons (_:l) = V ([',' | _ <- l])
 
-istuple :: Var -> Bool
-istuple (V "()") = True
-istuple (V s) = all (',' ==) s
+isTuple :: Var -> Bool
+isTuple (V "()") = True
+isTuple (V s) = all (',' ==) s
 
-tuplelen :: Var -> Maybe Int
-tuplelen (V "()") = Just 0
-tuplelen (V s) | istuple (V s) = Just (1 + length s)
-tuplelen _ = Nothing
+tupleLen :: Var -> Maybe Int
+tupleLen (V "()") = Just 0
+tupleLen (V s) | isTuple (V s) = Just (1 + length s)
+tupleLen _ = Nothing
 
 isCons :: Var -> Bool
 isCons (V (c:_)) | isUpper c || elem c "([:," = True
 isCons _ = False
+
 
 class HasVar a where
   var :: Var -> a

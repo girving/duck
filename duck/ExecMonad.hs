@@ -1,5 +1,11 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, ScopedTypeVariables, Rank2Types #-}
 -- | Duck execution monad
+--
+-- Execution tracing monad.  This accomplishes:
+--
+-- (1) Hoisting duck IO out to haskell IO (not quite yet)
+--
+-- (2) Stack tracing
 
 module ExecMonad
   ( Exec
@@ -9,17 +15,15 @@ module ExecMonad
   , liftInfer
   ) where
 
--- Execution tracing monad.  This accomplishes
---   1. Hoisting duck IO out to haskell IO (not quite yet)
---   2. Stack tracing
-
 import Prelude hiding (catch)
+import Control.Monad.State hiding (guard)
+import Control.Exception
+
+import Util
+import Pretty
 import Var
 import Value
 import SrcLoc
-import Control.Monad.State hiding (guard)
-import Control.Exception
-import Util
 import CallStack
 import InferMonad hiding (withFrame)
 import qualified Lir
@@ -45,7 +49,7 @@ runExec e = evalStateT (unExec e) []
 -- distinguished from the better kinds of errors.
 execError :: SrcLoc -> String -> Exec a
 execError loc msg = Exec $ get >>= \s ->
-  liftIO (dieWith 3 (showStack s ++ "RuntimeError: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
+  liftIO (dieWith 3 (pshow s ++ "\nRuntimeError: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
 
 liftInfer :: Lir.Prog -> Infer a -> Exec a
 liftInfer prog infer = Exec $ do

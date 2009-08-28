@@ -1,16 +1,16 @@
 {-# LANGUAGE RelaxedPolyRec #-}
 -- | Duck prefix trie data structure
 --
--- A prefix trie represents a partial map [k] -> v with the property that no
+-- A prefix trie represents a partial map @[k] -> v@ with the property that no
 -- key is a proper prefix of any other key.  This version additionaly maps
--- every strict prefix [k] -> a.
+-- every strict prefix @[k] -> a@.
 -- 
 -- For example, a prefix trie can be used to represent the types of overloaded
 -- curried functions.
 --
--- In order to represent argument transformation macros, Ptrie's have an
+-- In order to represent argument transformation macros, Ptries have an
 -- additional field on each node that describes something about the edges
--- out of that node.  This is the middle "a" type argument to Ptrie.  At some
+-- out of that node.  This is the middle @a@ type argument to Ptrie.  At some
 -- point this field may want to shift to live on each edge; in terms of
 -- overloads this change would correspond to allowing different macro
 -- transforms depending on the type of the argument.
@@ -18,11 +18,7 @@
 module Ptrie
   ( Ptrie
   , empty
-  , isEmpty
-  , leaf
   , unPtrie
-  , singleton
-  , insert
   , mapInsert
   , lookup
   , assocs
@@ -39,16 +35,18 @@ data Ptrie k a v
   | Node !a (Map k (Ptrie k a v))
   deriving (Eq)
 
--- |A very special ptrie that is an exception to the nonempty rule.
+-- |A very special Ptrie that is an exception to the nonempty rule.
 empty :: a -> Ptrie k a v
 empty a = Node a Map.empty
 
 leaf :: v -> Ptrie k a v
 leaf = Leaf
+_leaf = leaf
 
 isEmpty :: Ptrie k a v -> Bool
 isEmpty (Node _ m) | Map.null m = True
 isEmpty _ = False
+_isEmpty = isEmpty
 
 unPtrie :: Ptrie k a v -> Either a v
 unPtrie (Node a _) = Left a

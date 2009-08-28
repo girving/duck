@@ -3,7 +3,6 @@
 
 module InferMonad
   ( Infer
-  , FunctionInfo
   , typeError
   , withFrame
   , runInfer
@@ -13,20 +12,21 @@ module InferMonad
   , debugInfer
   ) where
 
-import Var
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Control.Monad.State hiding (guard)
 import Control.Monad.Error hiding (guard)
+import Control.Exception
+
 import Util
+import Var
 import Pretty
 import Type
 import Lir (Overloads, Prog, progOverloads)
-import Data.Map (Map)
-import qualified Data.Map as Map
-import Control.Exception
 import CallStack
 import SrcLoc
 
--- Stores our current knowledge about the types of functions
+-- |Stores our current knowledge about the types of functions
 type FunctionInfo = Map Var Overloads
 
 type InferState = FunctionInfo
@@ -40,7 +40,7 @@ newtype Infer a = Infer { unInfer :: StateT (CallStack Type, InferState) (ErrorT
   deriving (Monad, MonadIO, MonadError TypeError, MonadInterrupt)
 
 showError :: TypeError -> String
-showError (TypeError stack loc msg) = showStack stack ++ "Type error: "++msg++(if hasLoc loc then " at " ++ show loc else [])
+showError (TypeError stack loc msg) = pshow stack ++ "\nType error: "++msg++(if hasLoc loc then " at " ++ show loc else [])
 
 makeTypeError :: SrcLoc -> String -> Infer TypeError
 makeTypeError loc msg = Infer $ get >.= \ (s,_) -> TypeError s loc msg
@@ -62,7 +62,7 @@ withFrame f args loc e =
 runInfer :: CallStack Type -> FunctionInfo -> Infer a -> IO (a, FunctionInfo)
 runInfer stack info e = runErrorT (runStateT (unInfer e) (stack, info) >.= second snd) >>= either (die . showError) return
 
--- Takes a prog instead of FunctionInfo, and discards any extra function info
+-- |Takes a 'Prog' instead of 'FunctionInfo', and discards any extra function info
 -- computed during the extra inference.
 rerunInfer :: CallStack Type -> Prog -> Infer a -> IO a
 rerunInfer stack prog e = liftM fst (runInfer stack (progOverloads prog) e)

@@ -1,13 +1,21 @@
 {-# LANGUAGE PatternGuards, ScopedTypeVariables #-}
 -- | Duck type inference
+--
+-- Algorithm discussion:
+--
+-- The state of the type inference algorithm consists of
+--
+-- (1) A set of function type primitives (functors) representing maps from types to types.
+--
+-- (2) A map from variables to (possibly primitive) types.
+--
+-- (3) A set of in-progress type applications to compute fixed points in the case of recursion.
 
 module Infer
   ( prog
   , expr
   , apply
   , typeInfo
-  , resolve
-  , lookupOver
   , lookupDatatype
   , lookupCons
   , lookupConstructor
@@ -16,30 +24,24 @@ module Infer
   , main
   ) where
 
-import Var
-import Type
-import Prims
-import Util
-import Pretty
-import Lir hiding (prog, union)
+import Prelude hiding (lookup)
+import Data.Maybe
 import qualified Data.Map as Map
 import Data.List hiding (lookup, union)
 import qualified Data.List as List
 import Control.Monad.Error hiding (guard, join)
+
+import Util
+import Pretty
+import Var
+import SrcLoc
+import Type
+import TypeSet
+import Prims
+import Lir hiding (prog, union)
 import InferMonad
 import qualified Ptrie
-import Prelude hiding (lookup)
 import qualified Base
-import Data.Maybe
-import SrcLoc
-
----- Algorithm discussion:
-
--- The state of the type inference algorithm consists of
---
--- 1. A set of function type primitives (functors) representing maps from types to types.
--- 2. A map from variables to (possibly primitive) types.
--- 3. A set of in-progress type applications to compute fixed points in the case of recursion.
 
 -- Some aliases for documentation purposes
 
@@ -82,12 +84,12 @@ lookupDatatype prog loc tv types
   | Just (Data _ vl cons) <- Map.lookup tv (progDatatypes prog) = return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
   | otherwise = typeError loc ("unbound datatype constructor " ++ qshow tv)
 
-lookupOverloads :: Prog -> SrcLoc -> Var -> Infer [Overload TypeSet]
+lookupOverloads :: Prog -> SrcLoc -> Var -> Infer [Overload TypePat]
 lookupOverloads prog loc f
   | Just o <- Map.lookup f (progFunctions prog) = return o
   | otherwise = typeError loc ("unbound function " ++ qshow f)
 
-lookupConstructor :: Prog -> SrcLoc -> Var -> Infer (CVar, [Var], [TypeSet])
+lookupConstructor :: Prog -> SrcLoc -> Var -> Infer (CVar, [Var], [TypePat])
 lookupConstructor prog loc c
   | Just tc <- Map.lookup c (progConses prog)
   , Just td <- Map.lookup tc (progDatatypes prog)
@@ -98,7 +100,7 @@ lookupConstructor prog loc c
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 
--- Process a list of definitions into the global environment.
+-- |Process a list of definitions into the global environment.
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
@@ -113,7 +115,7 @@ definition prog d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc
   t <- expr prog Map.empty noLoc e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
-          (_, TyCons c tl) | istuple c, length vl == length tl -> return tl
+          (_, TyCons c tl) | isTuple c, length vl == length tl -> return tl
           _ -> typeError noLoc ("expected "++show (length vl)++"-tuple, got "++pshow t)
   return $ prog { progGlobalTypes = foldl (\g (v,t) -> Map.insert (unLoc v) t g) (progGlobalTypes prog) (zip vl tl) }
 
@@ -231,12 +233,12 @@ lookupVariances prog c | Just vars <- Map.lookup c (progVariances prog) = vars
 lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization works cleanly
 
 -- Resolve an overload.  A result of Nothing means all overloads are still partially applied.
-resolve :: Prog -> Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overload TypeSet))
+resolve :: Prog -> Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overload TypePat))
 resolve prog f args loc = do
   rawOverloads <- lookupOverloads prog loc f -- look up possibilities
   let prune o = runMaybeT $ subsetList (typeInfo prog) args (overTypes o) >. o
   overloads <- catMaybes =.< mapM prune rawOverloads -- prune those that don't match
-  let isSpecOf :: Overload TypeSet -> Overload TypeSet -> Bool
+  let isSpecOf :: Overload TypePat -> Overload TypePat -> Bool
       isSpecOf a b = specializationList (overTypes a) (overTypes b)
       isMinimal o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) overloads
       filtered = filter isMinimal overloads -- prune away overloads which are more general than some other overload
@@ -253,7 +255,7 @@ resolve prog f args loc = do
       (fully,[]) -> typeError loc (call++" is ambiguous, possibilities are"++options fully)
       (fully,partially) -> typeError loc (call++" is ambiguous, could either be fully applied as"++options fully++"\nor partially applied as"++options partially)
 
--- Overloaded function application
+-- |Overloaded function application
 apply' :: Prog -> Var -> [Type] -> SrcLoc -> Infer Type
 apply' prog f args loc = do
   overload <- resolve prog f args loc
@@ -268,13 +270,14 @@ apply' prog f args loc = do
       return t
     Right o -> cache prog f args o loc
 
--- Type infer a function call and cache the results
+-- |Type infer a function call and cache the results
 -- The overload is assumed to match, since this is handled by apply.
 --
--- TODO: cache currently infers every nonvoid function call at least twice, regardless of recursion.  Fix this.
--- TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
+-- * TODO: cache currently infers every nonvoid function call at least twice, regardless of recursion.  Fix this.
+--
+-- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases _without_ rolling back complete computations that occurred in the process.
-cache :: Prog -> Var -> [Type] -> Overload TypeSet -> SrcLoc -> Infer Type
+cache :: Prog -> Var -> [Type] -> Overload TypePat -> SrcLoc -> Infer Type
 cache prog f args (Over oloc atypes r vl e) loc = do
   let (tt,types) = unzip atypes
   Just (tenv, leftovers) <- runMaybeT $ subsetList (typeInfo prog) args types
@@ -295,7 +298,7 @@ cache prog f args (Over oloc atypes r vl e) loc = do
             | otherwise -> fix r e
   maybe (return TyVoid) (fix TyVoid) e -- recursive function calls are initially assumed to be void
 
--- Verify that main exists and has type IO ().
+-- |Verify that main exists and has type IO ().
 main :: Prog -> Infer ()
 main prog = do
   main <- lookup prog Map.empty noLoc (V "main")
@@ -304,11 +307,11 @@ main prog = do
     Just () -> success
     Nothing -> typeError noLoc ("main has type "++qshow main++", but should have type IO ()")
 
--- This is the analog for Interp.runIO for types.  It exists by analogy even though it is very simple.
+-- |This is the analog for 'Interp.runIO' for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
 runIO io | Just t <- isTyIO io = return t
 runIO t = typeError noLoc ("expected IO type, got "++qshow t)
 
--- Verify that a type is in IO, and leave it unchanged if so
+-- |Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type
 checkIO t = tyIO =.< runIO t

@@ -1,8 +1,7 @@
 -- | Source file location annotations for reporting
 
 module SrcLoc
-  ( SrcLoc(srcCol)
-  , srcFile
+  ( SrcLoc, srcFile, srcCol
   , beforeLoc
   , rangeLoc
   , startLoc

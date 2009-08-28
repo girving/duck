@@ -1,6 +1,6 @@
 import base
 
-call6 [] = let x = undefined in 0
+call6 x = x == ()
 call5 i = id call6 [i]
 call3 f i = f \ if i > 0 then -i else i
 call2 f i = call3 f (i+1)

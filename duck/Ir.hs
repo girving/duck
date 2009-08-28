@@ -1,11 +1,12 @@
 {-# LANGUAGE PatternGuards #-}
 -- | Duck Intermediate Representation
+-- 
+-- Conversion of "Ast" into intermediate functional representation.
 
 module Ir 
   ( Decl(..)
   , Exp(..)
   , prog
-  , binopString
   ) where
 
 import Data.List
@@ -18,6 +19,7 @@ import qualified Data.Foldable as Fold
 import Control.Monad hiding (guard)
 import Data.Monoid
 import GHC.Exts
+
 import Util
 import Pretty
 import SrcLoc
@@ -28,36 +30,38 @@ import Prims
 import qualified Ast
 import ParseOps
 
+-- |Top-level declaration
 data Decl
-  = LetD !(Loc Var) Exp
-  | LetM [Loc Var] Exp
-  | Over !(Loc Var) !TypeSet Exp
-  | Data !(Loc CVar) [Var] [(Loc CVar, [TypeSet])]
+  = LetD !(Loc Var) Exp                 -- ^ Single symbol definition, either a variable or a function without a corresponding type specification (with 'Lambda'): @VAR = EXP@
+  | LetM [Loc Var] Exp                  -- ^ Tuple assignment/definition, from a pattern definition with 0 or more than 1 variable: @(VARs) = EXP@
+  | Over !(Loc Var) !TypePat Exp        -- ^ Overload paired type declaration and definition: @VAR :: TYPE = EXP@
+  | Data !(Loc CVar) [Var] [(Loc CVar, [TypePat])] -- ^ Datatype declaration: @data CVAR VARs = { CVAR TYPEs ; ... }@
   deriving Show
 
+-- |Expression
 data Exp
-  = ExpLoc SrcLoc !Exp
+  = ExpLoc SrcLoc !Exp                  -- ^ Meta source location information, present at every non-generated level
   | Int !Int
   | Chr !Char
   | Var !Var
-  | Lambda !Var Exp
-  | Apply Exp Exp
-  | Let !Var Exp Exp
-  | Cons !CVar [Exp]
-  | Case Var [(CVar, [Var], Exp)] (Maybe Exp)
-  | Prim !Prim [Exp]
-  | Spec Exp !TypeSet
+  | Lambda !Var Exp                     -- ^ Simple lambda expression: @VAR -> EXP@
+  | Apply Exp Exp                       -- ^ Application: @EXP EXP@
+  | Let !Var Exp Exp                    -- ^ Simple variable assignment: @let VAR = EXP in EXP@
+  | Cons !CVar [Exp]                    -- ^ Constructor application: @CVAR EXPs@
+  | Case Var [(CVar, [Var], Exp)] (Maybe Exp) -- ^ @case VAR of { CVAR VARs -> EXP ; ... [ ; _ -> EXP ] }@
+  | Prim !Prim [Exp]                    -- ^ Primitive function call: @PRIM EXPs@
+  | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
     -- Monadic IO
-  | Bind !Var Exp Exp
-  | Return Exp
-  | PrimIO !PrimIO [Exp]
+  | Bind !Var Exp Exp                   -- ^ IO binding: @EXP >>= \VAR -> EXP@
+  | Return Exp                          -- ^ IO return
+  | PrimIO !PrimIO [Exp]                -- ^ Primitive IO call: @PRIM EXPs@
   deriving Show
 
 -- Ast to IR conversion
 
 data Pattern = Pat 
   { patVars :: [Var]
-  , patSpec :: [TypeSet]
+  , patSpec :: [TypePat]
   , patCons :: Maybe (CVar, [Pattern])
   } deriving (Show)
 
@@ -122,7 +126,7 @@ consPat c pl = Pat [] [] (Just (c,pl))
 addPatVar :: Var -> Pattern -> Pattern
 addPatVar v p = p { patVars = v : patVars p }
 
-addPatSpec :: TypeSet -> Pattern -> Pattern
+addPatSpec :: TypePat -> Pattern -> Pattern
 addPatSpec t p = p { patSpec = t : patSpec p }
 
 patLets :: Var -> Pattern -> Exp -> Exp
@@ -233,9 +237,13 @@ prog p = decls p where
   case1 s loc v = snd . cases s loc [v] . map (first (:[]))
 
   -- |cases turns a multilevel pattern match into iterated single level pattern matches by
+  --
   --   (1) partitioning the cases by outer element,
+  --
   --   (2) performing the outer match, and
+  --
   --   (3) iteratively matching the components returned in the outer match
+  --
   -- Part (3) is handled by building up a stack of unprocessed expressions and an associated
   -- set of pattern stacks, and then iteratively reducing the set of possibilities.
   -- This generally follows Wadler's algorithm in The Implementation of Functional Programming Languages
@@ -246,7 +254,7 @@ prog p = decls p where
       (p,ps) = patterns loc ap
       e = expr (Set.union ss ps) loc ae
 
-  -- match takes n unmatched expressions and a list of n-tuples (lists) of patterns, and
+  -- |match takes n unmatched expressions and a list of n-tuples (lists) of patterns, and
   -- iteratively reduces the list of possibilities by matching each expression in turn.  This is
   -- used to process the stack of unmatched patterns that build up as we expand constructors.
   match :: InScopeSet -> [Exp] -> [Branch] -> Maybe Exp -> Exp
@@ -261,7 +269,6 @@ prog p = decls p where
     matchGroups :: InScopeSet -> [[Branch]] -> Maybe Exp -> Exp
     matchGroups s [group] fall = matchGroup s group fall
     matchGroups s ~(group:others) fall = letf $ matchGroup s' group $ Just callf where
-      -- this should become a (local) function to avoid code duplication
       (s',fv) = freshen s (V "fall")
       letf = Let fv $ Lambda ignored $ matchGroups s' others fall
       callf = Apply (Var fv) (Cons (V "()") [])
@@ -281,7 +288,7 @@ prog p = decls p where
         alts' = groupPairs $ sortBy (on compare fst) $
               map (\(Just (c,cp),(p,e)) -> ((c,length cp), (cp++p,e))) alts
 
-    -- cons processes each case of the toplevel match
+    -- |cons processes each case of the toplevel match
     cons :: InScopeSet -> (CVar,Int) -> [Branch] -> Maybe Exp -> (CVar,[Var],Exp)
     cons s (c,arity) alts fall = (c,vl, match s' (map Var vl ++ vals) alts fall) where
       (s',vl) = matchNames s arity alts
@@ -308,7 +315,7 @@ instance Pretty Exp where
     pretty "case" <+> pretty v <+> pretty "of" $$
     vjoin '|' (map arm pl ++ def d)) where
     arm (c, vl, e) 
-      | istuple c = hcat (intersperse (pretty ", ") pvl) <+> end
+      | isTuple c = hcat (intersperse (pretty ", ") pvl) <+> end
       | otherwise = pretty c <+> sep pvl <+> end
       where pvl = map pretty vl
             end = pretty "->" <+> pretty e
@@ -322,7 +329,7 @@ instance Pretty Exp where
     (Var v, [e1,e2]) | Just prec <- precedence v -> (prec,
       let V s = v in
       (guard prec e1) <+> pretty s <+> (guard (prec+1) e2))
-    (Var c, el) | Just n <- tuplelen c, n == length el -> (1,
+    (Var c, el) | Just n <- tupleLen c, n == length el -> (1,
       hcat $ intersperse (pretty ", ") $ map (guard 2) el)
     (e, el) -> (50, guard 50 e <+> prettylist el)
     where apply (Apply e a) al = apply e (a:al) 
@@ -332,7 +339,7 @@ instance Pretty Exp where
     extract (Cons (V "[]") []) = Just []
     extract (Cons (V ":") [h,t]) = (h :) =.< extract t
     extract _ = Nothing
-  pretty' (Cons c args) | istuple c = (1,
+  pretty' (Cons c args) | isTuple c = (1,
     hcat $ intersperse (pretty ", ") $ map (guard 2) args)
   pretty' (Cons c args) = (50, pretty c <+> sep (map (guard 51) args))
   pretty' (Prim (Binop op) [e1,e2]) | prec <- binopPrecedence op = (prec,

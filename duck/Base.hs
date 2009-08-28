@@ -1,8 +1,8 @@
 {-# LANGUAGE PatternGuards #-}
 -- | Duck primitive operations
-
+--
 -- This module provides the implementation for the primitive operations
--- declared in the Prims module.
+-- declared in "Prims".
 
 module Base 
   ( prim
@@ -10,8 +10,13 @@ module Base
   , primIO
   , primIOType
   , base
-  , PrimOp(..)
   ) where
+
+import Control.Monad
+import Control.Monad.Trans (liftIO)
+import qualified Control.Exception as Exn
+import qualified Data.Char as Char
+import qualified Data.Map as Map
 
 import Util
 import Var
@@ -24,11 +29,6 @@ import Ir
 import qualified Lir
 import ExecMonad
 import InferMonad
-import Control.Monad
-import Control.Monad.Trans (liftIO)
-import qualified Control.Exception as Exn
-import qualified Data.Char as Char
-import qualified Data.Map as Map
 
 data PrimOp = PrimOp
   { primPrim :: Prim
@@ -62,6 +62,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , PrimOp IntChrChr "chr" [tyInt] tyChr $ \[ValInt c] -> ValChr (Char.chr c)
   ]
 
+-- |Actually execute a primitive, called with the specified arguments at run time
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
 prim loc prim args
   | Just primop <- Map.lookup prim primOps = do
@@ -69,23 +70,28 @@ prim loc prim args
       \(Exn.PatternMatchFail _) -> return $ execError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
   | otherwise = execError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
 
+-- |Determine the type of a primitive when called with the given arguments
 primType :: SrcLoc -> Prim -> [Type] -> Infer Type
 primType loc prim args
   | Just primop <- Map.lookup prim primOps
   , args == primArgs primop = return $ primRet primop
   | otherwise = typeError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
 
+-- |Equivalent to 'prim' for IO primitives
 primIO :: PrimIO -> [Value] -> Exec Value
 primIO Exit [ValInt i] = liftIO (exit i)
 primIO IOPutChr [ValChr c] = liftIO (putChar c) >. valUnit
 primIO p args = execError noLoc ("invalid arguments "++pshowlist args++" to "++show p)
 
+-- |Equivalent to 'primType' for IO primitives
 primIOType :: SrcLoc -> PrimIO -> [Type] -> Infer Type
 primIOType _ Exit [i] | isTyInt i = return TyVoid
 primIOType _ IOPutChr [c] | isTyChr c = return tyUnit
 primIOType _ TestAll [] = return tyUnit
 primIOType loc p args = typeError loc ("invalid arguments"++pshowlist args++" to "++show p)
 
+-- |The internal, implicit declarations giving names to primitive operations.
+-- Note that this is different than base.duck.
 base :: Lir.Prog
 base = Lir.union types (Lir.prog (decTuples ++ prims ++ io)) where
   primop p = Ir.Over

@@ -23,14 +23,14 @@ import qualified Data.Map as Map
 data Value
   = ValInt !Int
   | ValChr !Char
-  | ValCons !Var [Value]
-  | ValClosure !Var [TValue] Lir.Overloads
-  | ValDelay Env Lir.Exp
+  | ValCons !CVar [Value] -- ^ Constructed data
+  | ValClosure !Var [TValue] Lir.Overloads -- ^ Partially applied function and next level of overload tree
+  | ValDelay Env Lir.Exp -- ^ Delay (lazy) evaluation
   | ValType
     -- Monadic IO
-  | ValLiftIO !Value
-  | ValPrimIO !PrimIO [Value]
-  | ValBindIO !Var !TValue Env Lir.Exp
+  | ValLiftIO !Value -- ^ lifted (returned) value within IO monad
+  | ValPrimIO !PrimIO [Value] -- ^ Closure of unexecuted IO call
+  | ValBindIO !Var !TValue Env Lir.Exp -- ^ Unexecuted IO binding
 
 type TValue = (Value, Type)
 
@@ -45,7 +45,7 @@ instance Pretty Value where
   pretty' (ValInt i) = pretty' i
   pretty' (ValChr c) = (100, pretty (show c))
   pretty' (ValCons c []) = pretty' c
-  pretty' (ValCons c fields) | istuple c = (1,
+  pretty' (ValCons c fields) | isTuple c = (1,
     hcat $ intersperse (pretty ", ") $ map (guard 2) fields)
   pretty' (ValCons (V ":") [h,t]) = (100,
     brackets (hcat (intersperse (pretty ", ") $ map (guard 2) (h : extract t))))

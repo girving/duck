@@ -1,19 +1,20 @@
 -- | Duck Operator Tree Parsing
+--
+-- Since the precedence of operators is adjustable, we parse expressions
+-- involving operators in two passes.  This file contains the second pass.
+-- Partially borrowed from <http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs>
 
 module ParseOps 
   ( Ops(..)
   , sortOps
   ) where
 
--- Since the precedence of operators is adjustable, we parse expressions
--- involving operators in two passes.  This file contains the second pass.
--- Partially borrowed from http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs
-
-import Var
-import Pretty
 import Data.Maybe
 import qualified Data.Map as Map
 import qualified Data.Foldable as Fold
+
+import Var
+import Pretty
 import SrcLoc
 import Stage
 

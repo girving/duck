@@ -5,6 +5,7 @@ module Token
   , showAt
   ) where
 
+import Pretty
 import Var
 
 data Token
@@ -47,8 +48,8 @@ data Token
   | TokEOF
   deriving Eq
 
-instance Show Token where
-  show t = case t of
+instance Pretty Token where
+  pretty t = pretty $ case t of
     TokVar (V v) -> v
     TokCVar (V v) -> v
     TokSym (V v) -> v
@@ -88,7 +89,7 @@ instance Show Token where
     TokEOF -> "<eof>"
 
 showAt :: Token -> String
-showAt (TokLC (Just t)) = "before '"++show t++"'"
-showAt (TokRC (Just t)) = "before '"++show t++"'"
-showAt (TokSemi (Just t)) = "before '"++show t++"'"
-showAt t = "at '"++show t++"'"
+showAt (TokLC (Just t)) = "before "++qshow t
+showAt (TokRC (Just t)) = "before "++qshow t
+showAt (TokSemi (Just t)) = "before "++qshow t
+showAt t = "at "++qshow t

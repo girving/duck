@@ -1,5 +1,7 @@
 {-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | Duck Abstract Syntax Tree
+--
+-- The parser ("Parse") turns the string contents of a single file into a 'Prog'
 
 module Ast
   ( Prog
@@ -11,44 +13,51 @@ module Ast
   , opsPattern
   ) where
 
+import Data.List
+import Data.Maybe
+
 import Var
 import Type
 import SrcLoc
 import Stage
 import ParseOps
 import Pretty
-import Data.List
-import Data.Maybe
 
+-- |An entire file is just a list of top-level declarations, where the locations refer to the whole declaration, body and all
 type Prog = [Loc Decl]
 
+-- |Top-level declaration
 data Decl
-  = SpecD !(Loc Var) !TypeSet
-  | DefD !(Loc Var) [Pattern] Exp
-  | LetD !Pattern Exp
-  | Data !(Loc CVar) [Var] [(Loc CVar,[TypeSet])]
-  | Infix !PrecFix [Var]
-  | Import !Var
+  = SpecD !(Loc Var) !TypePat           -- ^ Type declaration (for overloads): @VAR :: TYPE@
+  | DefD !(Loc Var) [Pattern] Exp       -- ^ Function definition with arguments: @VAR PATs = EXP@
+  | LetD !Pattern Exp                   -- ^ Global definition without arguments: @PAT = EXP@
+  | Data !(Loc CVar) [Var] [(Loc CVar,[TypePat])] -- ^ Datatype declaration: @data CVAR VARs = { CVAR TYPEs ; ... }@
+  | Infix !PrecFix [Var]                -- ^ Fixity declaration: @infix[lr] PREC VARs@
+  | Import !Var                         -- ^ Import directive: @import VAR@
   deriving Show
 
+-- |Expression
+-- Patterns and types are also parsed into these before being converted to 'Pattern' or 'TypePat' in "Parse"
 data Exp
-  = Def !Var [Pattern] Exp Exp
-  | Let !Pattern Exp Exp
-  | Lambda [Pattern] Exp
-  | Apply Exp [Exp]
+  = Def !Var [Pattern] Exp Exp          -- ^ Local function definition with arguments: @let VAR PATs = EXP in EXP@
+  | Let !Pattern Exp Exp                -- ^ Local variable definition: @let PAT = EXP in EXP@
+  | Lambda [Pattern] Exp                -- ^ @PAT1 -> PAT2 ... -> EXP@
+  | Apply Exp [Exp]                     -- ^ Application: @EXP EXPs@
   | Var !Var
   | Int !Int
   | Chr !Char
-  | Any
-  | List [Exp]
+  | Any                                 -- ^ Magic underscore variable: @_@
+  | List [Exp]                          -- ^ List: @[EXP1,...]@
   | Ops !(Ops Exp)
-  | Equals !Var Exp -- ^ only for PatAs
-  | Spec Exp !TypeSet
-  | Case Exp [(Pattern,Exp)]
-  | If Exp Exp Exp
-  | ExpLoc SrcLoc !Exp
+  | Equals !Var Exp                     -- ^ @(VAR = EXP)@, only for PatAs
+  | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
+  | Case Exp [(Pattern,Exp)]            -- ^ @case EXP of { PAT -> EXP ; ... }@
+  | If Exp Exp Exp                      -- ^ @if EXP then EXP else EXP@
+  | ExpLoc SrcLoc !Exp                  -- ^ Meta source location information, inserted at almost every level
   deriving Show
 
+-- |Pattern
+-- For the most part, each constructor here is converted from its non-Pat equivalent in 'Exp'.
 data Pattern
   = PatAny
   | PatVar !Var
@@ -57,23 +66,24 @@ data Pattern
   | PatOps !(Ops Pattern)
   | PatLambda [Pattern] !Pattern
   | PatAs !Var !Pattern
-  | PatSpec !Pattern !TypeSet
+  | PatSpec !Pattern !TypePat
   | PatLoc SrcLoc !Pattern
   deriving Show
 
+-- |List of 'Import' directives
 imports :: Prog -> [String]
 imports = mapMaybe imp where
   imp (Loc _ (Import (V v))) = Just v
   imp _ = Nothing
 
--- Pretty printing
-
+-- |Convert an 'Ops' expression into its 'Apply' equivalents, without applying any precedences (see "ParseOps")
 opsExp :: SrcLoc -> Ops Exp -> Exp
 opsExp _ (OpAtom a) = a
 opsExp loc (OpUn (V "-") a) = Apply (Var (V "negate")) [opsExp loc a]
 opsExp loc (OpUn op _) = stageError StageParse loc (pshow op++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
 opsExp loc (OpBin o l r) = Apply (Var o) [opsExp loc l, opsExp loc r]
 
+-- |Convert 'PatOps' pattern into its 'PatCons' equivalents, without applying any precedences (see "ParseOps")
 opsPattern :: SrcLoc -> Ops Pattern -> Pattern
 opsPattern _ (OpAtom a) = a
 opsPattern loc (OpUn _ _) = stageError StageParse loc "unary operator in pattern"
@@ -94,6 +104,8 @@ instance HasVar Pattern where
   unVar (PatLoc _ p) = unVar p
   unVar (PatOps p) = unVar p
   unVar _ = Nothing
+
+-- Pretty printing
 
 instance Pretty Decl where
   pretty (SpecD f t) =
@@ -130,7 +142,7 @@ instance Pretty Exp where
   pretty' (Apply (Var v) [e1, e2]) | Just prec <- precedence v =
     let V s = v in
     (prec, (guard prec e1) <+> pretty s <+> (guard (prec+1) e2) )
-  pretty' (Apply (Var c) el) | Just n <- tuplelen c, n == length el = (2,
+  pretty' (Apply (Var c) el) | Just n <- tupleLen c, n == length el = (2,
     hcat $ intersperse (pretty ", ") $ map (guard 3) el)
   pretty' (Apply e el) = (50, guard 51 e <+> prettylist el)
   pretty' (Var v) = pretty' v

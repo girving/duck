@@ -3,13 +3,14 @@
 
 module Stage
   ( Stage(..)
-  , StageError
-  , stageError
+  , stageError, stageErrorIO
   , catchFatal
   ) where
 
 import Data.Typeable
 import Control.Exception
+import Control.Monad.Trans
+
 import Util
 import Pretty
 import SrcLoc
@@ -44,12 +45,17 @@ data StageError = StageError
   } deriving (Typeable)
 
 instance Show StageError where
-  showsPrec _ (StageError p l s) = shows p . (:) ':' . shows l . (++) ": " . (++) s
+  showsPrec _ (StageError _ l s)
+    | hasLoc l = shows l . (++) ": " . (++) s
+    | otherwise = (++) s
 
 instance Exception StageError
 
 stageError :: Stage -> SrcLoc -> String -> a
 stageError p l s = throw $ StageError p l s
+
+stageErrorIO :: MonadIO m => Stage -> SrcLoc -> String -> m a
+stageErrorIO p l s = liftIO $ throwIO $ StageError p l s
 
 errorFatal :: StageError -> IO a
 errorFatal = die . show

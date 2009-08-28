@@ -1,28 +1,30 @@
 -- | Duck Layout (whitespace dependent syntax)
+--
+-- The layout pass occurs between lexing and parsing, and inserts extra braces
+-- and semicolons to make grouping explicit.  Duck layout follows the Haskell
+-- layout defined in
+-- <http://www.haskell.org/onlinereport/lexemes.html#lexemes-layout> and
+-- <http://www.haskell.org/onlinereport/syntax-iso.html#layout>.  Layout takes
+-- effect after \'of\' or at the beginning of the file if the next token isn't '{'.
+--
+-- I think layout rules want to be a bit different for \'let\' than for \'of\' since
+-- \'let\' has a different structure.  For now we solve this by restricting \'let\'
+-- to declare only one variable at a time, so layout doesn't apply.
+--
+-- For now, we also skip the \"parse error means insert '}' rule\".
+
 
 module Layout 
   ( layout
   ) where
 
--- The layout pass occurs between lexing and parsing, and inserts extra braces
--- and semicolons to make grouping explicit.  Duck layout follows the Haskell
--- layout defined in [1] and [2].  Layout takes effect after 'of' or at the
--- beginning of the file if the next token isn't '{'.
---
--- I think layout rules want to be a bit different for 'let' than for 'of' since
--- 'let' has a different structure.  For now we solve this by restricting 'let'
--- to declare only one variable at a time, so layout doesn't apply.
---
--- For now, we also skip the "parse error means insert '}' rule".
---
--- [1]: http://www.haskell.org/onlinereport/lexemes.html#lexemes-layout
--- [2]: http://www.haskell.org/onlinereport/syntax-iso.html#layout
+import Control.Monad.State
 
+import Util
+import Pretty
 import Token
 import SrcLoc
 import ParseMonad
-import Control.Monad.State
-import Util
 
 layout :: P (Loc Token) -> P (Loc Token)
 layout lex = do
@@ -40,8 +42,8 @@ layout lex = do
 
   where
   layout' :: ParseState -> SrcLoc -> Token -> P (Loc Token)
-  layout' (ParseState{ ps_comment = c:_ }) _ TokEOF = fail ("unterminated comment at " ++ show c)
-  layout' (ParseState{ ps_comment = _:_ }) _ tok = fail ("internal error: token '" ++ show tok ++ "' in comment")
+  layout' s@(ParseState{ ps_comment = c:_ }) _ TokEOF = psError s ("unterminated comment starting " ++ show c)
+  layout' s@(ParseState{ ps_comment = _:_ }) _ tok = psError s ("internal error: token " ++ qshow tok ++ " in comment")
   layout' state loc token = (if ps_start state then start else normal) token (ps_layout state) where
 
     push :: Context -> P ()
@@ -74,7 +76,7 @@ layout lex = do
         , ps_prev = ps_prev state }
       return $ Loc loc (t $ Just token)
 
-    -- start is called after the beginning of the file or after 'of', and
+    -- |start is called after the beginning of the file or after \'of\', and
     -- inserts an implicit '{' if an explicit one is not given.
     start :: Token -> [Context] -> P (Loc Token)
     start (TokLC _) _ = push (Explicit loc) >> accept -- found an explicit '{', so push an explicit context
@@ -105,4 +107,4 @@ layout lex = do
     top [] = -1
 
     layoutError :: String -> P a
-    layoutError s = fail ("layout error: "++s)
+    layoutError s = psError state ("layout error: "++s)

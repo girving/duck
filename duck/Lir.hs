@@ -1,5 +1,9 @@
 {-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | Duck Lifted Intermediate Representation
+--
+-- Processes "Ir" into its final representation for processing.
+-- 'Exp' is unchanged except that 'Lambdas' have all been lifted to top-level functions.
+-- Top-level declarations have been organized and mapped.
 
 module Lir
   ( Prog(..)
@@ -8,7 +12,6 @@ module Lir
   , Exp(..)
   , Trans(..)
   , overTypes
-  , Ir.binopString
   , empty
   , prog
   , union
@@ -27,45 +30,50 @@ import qualified Data.Map as Map
 import Control.Monad.State hiding (mapM, guard)
 import Data.Traversable (mapM)
 
-import Var
 import Util
+import Var
 import SrcLoc
 import Ptrie (Ptrie)
 import qualified Ptrie
 import Pretty
 import Stage
-import Type hiding (union)
+import Type
 import qualified Ir
 import Prims
 
 -- Lifted IR data structures
 
 data Prog = Prog
-  { progDatatypes :: Map CVar Datatype
-  , progVariances :: Map CVar [Variance] -- type constructor variances
-  , progFunctions :: Map Var [Overload TypeSet]
-  , progGlobals :: Set Var -- used to generate fresh variables
-  , progConses :: Map Var CVar -- map constructors to datatypes (type inference will make this go away)
-  , progOverloads :: Map Var Overloads -- set after inference
-  , progGlobalTypes :: TypeEnv -- set after inference
-  , progDefinitions :: [Definition] }
+  { progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
+  , progVariances :: Map CVar [Variance] -- ^ type constructor variances of 'dataTyVars' by type constructor
+  , progFunctions :: Map Var [Overload TypePat] -- ^ original overload definitions by function name
+  , progGlobals :: Set Var -- ^ all top-level symbols, used to generate fresh variables
+  , progConses :: Map Var CVar -- ^ map data constructors to datatypes (type inference will make this go away)
+  , progOverloads :: Map Var Overloads -- ^ all overloads inferred to be needed, set after inference
+  , progGlobalTypes :: TypeEnv -- ^ set after inference
+  , progDefinitions :: [Definition] -- ^ list of top-level definitions
+  }
 
+-- |Datatype definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
 data Datatype = Data
   { dataLoc :: SrcLoc
-  , dataTyVars :: [Var]
-  , dataConses :: [(Loc CVar, [TypeSet])]
+  , dataTyVars :: [Var] -- ^ Type variable arguments
+  , dataConses :: [(Loc CVar, [TypePat])] -- ^ Constructors
   }
 instance HasLoc Datatype where loc = dataLoc
 
+-- |Overload definition, parameterized by either 'Type' or 'TypePat', depending on whether it is  a specific resolution, or the original definition
 data Overload t = Over
   { overLoc :: SrcLoc
-  , overArgs :: [TransType t]
-  , overRet :: !t
-  , overVars :: [Var]
-  , overBody :: Maybe Exp
+  , overArgs :: [TransType t] -- ^ Type of arguments with transform annotations
+  , overRet :: !t -- ^ Type of return value
+  , overVars :: [Var] -- ^ Names of arguments
+  , overBody :: Maybe Exp -- ^ Definition of function, or 'Nothing' if not a fully applied function
   }
 instance HasLoc (Overload t) where loc = overLoc
 
+-- |The main overload table of specific overload resolutions used by the program.
+-- Note that there may be many more entries than actual overload definitions, since every specific set of argument types creates a new overload.
 type Overloads = Ptrie Type (Maybe Trans) (Overload Type)
 
 -- |Possible kinds of type macro transformers.
@@ -74,14 +82,16 @@ data Trans
   deriving (Eq, Ord, Show)
 
 type TransType t = (Maybe Trans, t)
-type TypeSetArg = TransType TypeSet
+type TypeSetArg = TransType TypePat
 
+-- |Top-level variable definition: @(VARs) = EXP@
 data Definition = Def
-  { defVars :: [Loc Var]
-  , defBody :: Exp
+  { defVars :: [Loc Var] -- (tuple of) variables to assign
+  , defBody :: Exp -- definition
   }
 instance HasLoc Definition where loc = loc . defVars
 
+-- |Expression.  Identical to 'Ir.Exp' except without 'Lambda'.
 data Exp
   = ExpLoc SrcLoc !Exp
   | Int !Int
@@ -91,14 +101,15 @@ data Exp
   | Let !Var Exp Exp
   | Cons !CVar [Exp]
   | Case Var [(CVar, [Var], Exp)] (Maybe Exp)
-  | Spec Exp !TypeSet
   | Prim !Prim [Exp]
+  | Spec Exp !TypePat
     -- Monadic IO
   | Bind !Var Exp Exp
   | Return Exp
   | PrimIO !PrimIO [Exp]
   deriving Show
 
+-- |Type of arguments an overload expects to be passed (as opposed to expects to recieve)
 overTypes :: Overload t -> [t]
 overTypes = map snd . overArgs
 
@@ -123,7 +134,7 @@ prog decls = flip execState empty $ do
 
   datatype :: (CVar, Datatype) -> State Prog ()
   datatype (tc, Data _ _ cases) = mapM_ f cases where
-    f :: (Loc CVar, [TypeSet]) -> State Prog ()
+    f :: (Loc CVar, [TypePat]) -> State Prog ()
     f (c,tyl) = do
       modify $ \p -> p { progConses = Map.insert (unLoc c) tc (progConses p) }
       case tyl of
@@ -146,7 +157,7 @@ prog decls = flip execState empty $ do
       update inv (i,v) = if Set.member v ivars then Set.insert (c,i) inv else inv
       ivars = Set.fromList (dataConses datatype >>= snd >>= invVars)
       -- The set of (currently known to be) invariant vars in a typeset
-      invVars :: TypeSet -> [Var]
+      invVars :: TypePat -> [Var]
       invVars (TsVar _) = []
       invVars (TsCons c tl) = concat [invVars t | (i,t) <- zip [0..] tl, Set.member (c,i) inv]
       invVars (TsFun (TypeFun al cl)) = concatMap arrow al ++ concatMap closure cl where
@@ -217,7 +228,7 @@ definition :: [Loc Var] -> Exp -> State Prog ()
 definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
 
 -- |Add a global overload
-overload :: Loc Var -> [TypeSetArg] -> TypeSet -> [Var] -> Exp -> State Prog ()
+overload :: Loc Var -> [TypeSetArg] -> TypePat -> [Var] -> Exp -> State Prog ()
 overload (Loc l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
 overload (Loc l v) tl _ vl _ = lirError l $ "overload arity mismatch for "++pshow v++": argument types "++pshowlist tl++", variables "++pshowlist vl
 
@@ -235,7 +246,7 @@ unwrapLambda l e
   | hasLoc l = ([], Ir.ExpLoc l e)
   | otherwise = ([], e)
 
-generalType :: [a] -> ([TypeSet], TypeSet)
+generalType :: [a] -> ([TypePat], TypePat)
 generalType vl = (tl,r) where
   r : tl = map TsVar (take (length vl + 1) standardVars)
 
@@ -249,12 +260,12 @@ argType (Nothing, t) = t
 argType (Just c, t) = transType c t
 
 -- |Extracts the annotation from a possibly annotated argument type.
-typeArg :: TypeSet -> TypeSetArg
+typeArg :: TypePat -> TypeSetArg
 typeArg (TsCons (V "Delayed") [t]) = (Just Delayed, t)
 typeArg t = (Nothing, t)
 
 -- |Unwrap a type/lambda combination as far as we can
-unwrapTypeLambda :: TypeSet -> Ir.Exp -> ([TypeSetArg], TypeSet, [Var], Ir.Exp)
+unwrapTypeLambda :: TypePat -> Ir.Exp -> ([TypeSetArg], TypePat, [Var], Ir.Exp)
 unwrapTypeLambda a (Ir.Lambda v e) | Just (t,tl) <- isTsArrow a =
   let (tl', r, vl, e') = unwrapTypeLambda tl e in
     (typeArg t:tl', r, v:vl, e')
@@ -372,7 +383,7 @@ instance Pretty Prog where
     ++ [pretty "-- definitions"]
     ++ map definition (progDefinitions prog)
     where
-    function :: Var -> [TypeSetArg] -> TypeSet -> [Var] -> Maybe Exp -> Doc
+    function :: Var -> [TypeSetArg] -> TypePat -> [Var] -> Maybe Exp -> Doc
     function v tl r _ Nothing =
       pretty v <+> pretty "::" <+> hsep (intersperse (pretty "->") (map (guard 2) (tl++[(Nothing,r)])))
     function v tl r vl (Just e) =

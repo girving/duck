@@ -58,7 +58,7 @@ import Foreign.C.String
 -- |Write a string to a stream all at once.
 --
 -- The string is written out all at once (as if with fputs in C), so it
--- won't end up interleaved with other strings like putStrLn does.
+-- won't end up interleaved with other strings like 'putStrLn' does.
 fputs :: Handle -> String -> IO ()
 fputs h s = withCStringLen s (uncurry $ hPutBuf h)
 

@@ -10,21 +10,22 @@ module Interp
 
 import Prelude hiding (lookup)
 import Data.List hiding (lookup)
-import qualified Data.List as List
 import Data.Maybe
+import qualified Data.Map as Map
+import Control.Monad hiding (guard)
+import Control.Monad.Trans
+
+import Util
 import Var
 import Type
+import TypeSet
 import Prims
 import Value
 import SrcLoc
 import Pretty
 import Lir hiding (prog)
 import qualified Ptrie
-import qualified Data.Map as Map
-import Util
 import ExecMonad
-import Control.Monad hiding (guard)
-import Control.Monad.Trans
 import qualified Infer
 import qualified Base
 
@@ -47,7 +48,7 @@ lookup prog global env loc v
   | Just _ <- Map.lookup v (progVariances prog) = return (ValType, tyType (TyCons v []))
   | otherwise = execError loc ("unbound variable " ++ qshow v)
 
--- Process a list of definitions into the global environment.
+-- |Process a list of definitions into the global environment.
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
@@ -59,11 +60,11 @@ definition prog env d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . u
   d <- expr prog env Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
-          (_, (ValCons c dl, TyCons c' tl)) | istuple c, c == c', length vl == length dl, length vl == length tl -> return $ zip dl tl
+          (_, (ValCons c dl, TyCons c' tl)) | isTuple c, c == c', length vl == length dl, length vl == length tl -> return $ zip dl tl
           _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++qshow d)
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
 
--- Perform a computation and then cast the result to a (more general) type.
+-- |Perform a computation and then cast the result to a (more general) type.
 -- For now, this cast is a nop on the data, but in future it may not be.
 cast :: Prog -> Type -> Exec TValue -> Exec TValue
 cast _ t x = do
@@ -183,7 +184,7 @@ typeInfo prog = TypeInfo
   , typeVariances = typeVariances info }
   where info = Infer.typeInfo prog
 
--- IO and main
+-- |IO and main
 main :: Prog -> Globals -> IO ()
 main prog global = runExec $ do
   main <- lookup prog global Map.empty noLoc (V "main")

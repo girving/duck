@@ -7,13 +7,15 @@ module Lex
   ( lexer
   ) where
 
+import qualified Data.Char as Char
+import Control.Monad.State.Class
+import Numeric
+
 import Util
 import Var
 import Token
 import SrcLoc
 import ParseMonad
-import Numeric
-import qualified Data.Char as Char
 }
 
 $white = [\ \n\r] -- No tabs!

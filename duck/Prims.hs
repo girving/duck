@@ -7,6 +7,7 @@ module Prims
   , PrimIO(..)
   , binopString
   , binopPrecedence
+  -- * Primitive types
   , tyUnit
   , tsUnit
   , isTyUnit
@@ -56,8 +57,6 @@ data PrimIO
   | TestAll
   deriving (Eq, Ord, Show)
 
--- Primitive types
-
 tyUnit :: Type
 tyUnit = TyCons (V "()") []
 tsUnit = singleton tyUnit
@@ -69,14 +68,14 @@ isTyUnit _ = False
 tyArrow :: Type -> Type -> Type
 tyArrow s t = TyFun (TypeFun [(s,t)] [])
 
-tsArrow :: TypeSet -> TypeSet -> TypeSet
+tsArrow :: TypePat -> TypePat -> TypePat
 tsArrow s t = TsFun (TypeFun [(s,t)] [])
 
 isTyArrow :: Type -> Maybe (Type,Type)
 isTyArrow (TyFun (TypeFun [a] [])) = Just a
 isTyArrow _ = Nothing
 
-isTsArrow :: TypeSet -> Maybe (TypeSet,TypeSet)
+isTsArrow :: TypePat -> Maybe (TypePat,TypePat)
 isTsArrow (TsFun (TypeFun [a] [])) = Just a
 isTsArrow _ = Nothing
 
@@ -102,7 +101,7 @@ isTyChr _ = False
 tyIO :: Type -> Type
 tyIO t = TyCons (V "IO") [t]
 
-tsIO :: TypeSet -> TypeSet
+tsIO :: TypePat -> TypePat
 tsIO t = TsCons (V "IO") [t]
 
 isTyIO :: Type -> Maybe Type
