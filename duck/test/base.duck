@@ -222,6 +222,11 @@ fst (a,b,c) = a
 cmp :: a,b,c -> a',b',c' -> Ordering
 cmp (a,b,c) (a',b',c') = cmp a a' || cmp b b' || cmp c c'
 
+---- type types
+
+(==) :: Type a -> Type a -> Bool
+_ == _ = True
+
 ---- orderings
 
 data Ordering of LT ; EQ ; GT

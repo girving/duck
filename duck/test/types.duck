@@ -44,9 +44,12 @@ test_len_3 = assert \ len (Int,Int) == 2
 
 test_rep1 = assert \ rep Int == 7
 test_rep2 = assert \ rep (List Int) == [7,7,7]
---test_rep3 = assert \ rep (Int, Type Int) == (7, Int)
 
 -- Can we take types of expressions?  Do they get evaluated?
 
 _ = Type 3 :: Type Int
 _ = Type (head []) :: Type Void
+
+-- Test tuple types
+
+test_rep3 = assert \ rep (Int, Type Int) == (7, Int)

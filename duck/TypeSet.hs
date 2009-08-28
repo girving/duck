@@ -69,21 +69,40 @@ type Constraints = Map Var (ConstraintOp, Type)
 
 typeMismatchList x op y = typeMismatch (prettylist x) op (prettylist y)
 
--- |Exact type equality
-equal :: TypeMonad m => Type -> Type -> m ()
-equal (TyCons c tl) (TyCons c' tl')
-  | c == c'
-  , Just tt <- zipCheck tl tl'
-  = mapM_ (uncurry equal) tt
-equal (TyFun f) (TyFun f') = equalFun f f'
-equal TyVoid TyVoid = success
-equal x y = typeMismatch x "==" y
+-- |Unify two type constructors, coercing them to be the same and modifying
+-- their arguments if possible.
+unifyCons :: (TypeMonad m, IsType t, Pretty t) => Var -> [Type] -> Var -> [t] -> m (Var,[Type],[t])
+unifyCons c tl c' tl'
+  | c == c' = return (c,tl,tl')
+  | otherwise = do
+    r <- tryError $ coerceCons c tl c'
+    case r of
+      Right tl -> return (c',tl,tl')
+      Left _ -> do
+        r <- tryError $ coerceCons c' tl' c
+        case r of
+          Right tl' -> return (c,tl,tl')
+          Left _ -> typeError noLoc $ "type mismatch:" <+> quoted (typeCons c tl) <+> "and" <+> quoted (typeCons c' tl') <+> "have incompatible constructors"
 
--- |Exact type equality for function types.
-equalFun :: TypeMonad m => [TypeFun Type] -> [TypeFun Type] -> m ()
-equalFun f f' = do
-  subsetFun'' f f'
-  subsetFun'' f' f
+-- |Attempt to coerce one type constructor into another, modifying the
+-- arguments accordingly.  This allows equivalences such as
+--
+--     Type (x,y) = (Type x, Type y)
+-- 
+-- Note that coerceCons is asymmetric; the symmetry is recovered by applying
+-- in both directions from unifyCons.  WARNING: This may change once we add
+-- List support.
+--
+-- For now, the set of type constructor coersions is hard coded.
+coerceCons :: (TypeMonad m, IsType t, Pretty t) => Var -> [t] -> Var -> m [t]
+coerceCons c tl c' | c == c' = return tl
+coerceCons (V "Type") [t] c' | isTuple c', Just (c,tl) <- unTypeCons t = do
+  tl <- coerceCons c tl c'
+  return $ map (\t -> typeCons (V "Type") [t]) tl
+coerceCons c tl c'@(V "Type") | isTuple c, Just ctl <- mapM unTypeCons tl = do
+  tl <- mapM (\ (c,tl) -> coerceCons c tl c' >.= \[t] -> t) ctl
+  return [typeCons c tl]
+coerceCons c tl c' = typeError noLoc $ "can't coerce" <+> quoted (typeCons c tl) <+> "to have type constructor" <+> quoted c'
 
 zipWithVariances :: (TypeMonad m, Pretty a, Pretty b) => (Variance -> a -> b -> m c) -> CVar -> [a] -> [b] -> m [c]
 zipWithVariances f c tl tl' = do
@@ -94,11 +113,28 @@ zipWithVariances f c tl tl' = do
     zcv [] _ _ = typeError noLoc $ quoted c <+> "applied to too many arguments"
     zcv _ tl tl' = typeError noLoc $ quoted c <+> "missing arguments:" <+> prettylist (map pretty tl ++ map pretty tl')
 
+-- |Exact type equality
+equal :: TypeMonad m => Type -> Type -> m ()
+equal (TyCons c tl) (TyCons c' tl') = do
+  (c,tl,tl') <- unifyCons c tl c' tl'
+  _ <- zipWithVariances (const equal) c tl tl'
+  success
+equal (TyFun f) (TyFun f') = equalFun f f'
+equal TyVoid TyVoid = success
+equal x y = typeMismatch x "==" y
+
+-- |Exact type equality for function types.
+equalFun :: TypeMonad m => [TypeFun Type] -> [TypeFun Type] -> m ()
+equalFun f f' = do
+  subsetFun'' f f'
+  subsetFun'' f' f
+
 -- |@z <- union x y@ means that a value of type x or y can be safely viewed as
 -- having type z.  Viewed as sets, this means S(z) >= union S(x) S(y), where
 -- equality holds if the union of values can be exactly represented as a type.
 union :: TypeMonad m => Type -> Type -> m Type
-union (TyCons c tl) (TyCons c' tl') | c == c' =
+union (TyCons c tl) (TyCons c' tl') = do
+  (c,tl,tl') <- unifyCons c tl c' tl'
   TyCons c =.< zipWithVariances arg c tl tl' where
   arg Covariant t t' = union t t'
   arg Invariant t t' = equal t t' >. t
@@ -143,7 +179,8 @@ reduceFuns (f:fl) = do
 -- (intersection is definitely invalid), or be indeterminant (we don't know).
 -- The indeterminate case returns Nothing.
 intersect :: TypeMonad m => Type -> Type -> m (Maybe Type)
-intersect (TyCons c tl) (TyCons c' tl') | c == c' =
+intersect (TyCons c tl) (TyCons c' tl') = do
+  (c,tl,tl') <- unifyCons c tl c' tl'
   fmap (TyCons c) =.< sequence =.< zipWithVariances arg c tl tl' where
   arg Covariant t t' = intersect t t'
   arg Invariant t t' = equal t t' >. Just t
@@ -246,7 +283,8 @@ constrain v op t = successS << c op =<< Map.lookup v =.< get where
 
 subset' :: forall m. TypeMonad m => Type -> TypePat -> Env m
 subset' t (TsVar v) = constrain v Superset t
-subset' (TyCons c tl) (TsCons c' tl') | c == c' =
+subset' (TyCons c tl) (TsCons c' tl') = do
+  (c,tl,tl') <- unifyCons c tl c' tl'
   sequenceS =<< zipWithVariances (\v t -> return . arg v t) c tl tl' where
   arg :: Variance -> Type -> TypePat -> Env m
   arg Covariant t t' = subset' t t'
@@ -257,7 +295,8 @@ subset' x y = typeMismatch x "<=" y
 
 equal' :: TypeMonad m => Type -> TypePat -> Env m
 equal' t (TsVar v) = constrain v Equal t
-equal' (TyCons c tl) (TsCons c' tl') | c == c' =
+equal' (TyCons c tl) (TsCons c' tl') = do
+  (c,tl,tl') <- unifyCons c tl c' tl'
   sequenceS =<< zipWithVariances (\_ t -> return . equal' t) c tl tl'
 equal' (TyFun f) (TsFun f') = equalFun' f f'
 equal' TyVoid TsVoid = successS
@@ -266,7 +305,9 @@ equal' x y = typeMismatch x "==" y
 -- |Same as 'subset'', but the first argument is a type.
 -- subset s t succeeds if S(s) <= S(t).
 subset'' :: TypeMonad m => Type -> Type -> m ()
-subset'' (TyCons c tl) (TyCons c' tl') | c == c' = subsetList'' tl tl'
+subset'' (TyCons c tl) (TyCons c' tl') = do
+  (_,tl,tl') <- unifyCons c tl c' tl'
+  subsetList'' tl tl'
 subset'' (TyFun f) (TyFun f') = subsetFun'' f f'
 subset'' TyVoid _ = success
 subset'' x y = typeMismatch x "<=" y
@@ -344,6 +385,10 @@ subsetList'' tl tl'
 -- Since this function is used only for overload decisions, the soundness of
 -- type system does not depend on its correctness.  This is why it is safe to
 -- ignore the covariant/invariant distinction.
+--
+-- In order to disambiguate overloads in the presence of type constructor
+-- coersions, we treat every other type constructor as a specialization of
+-- Type t.  TODO: This is rather a hack.
 _specialization :: TypePat -> TypePat -> Bool
 _specialization t t' = isJust (specialization' t t' Map.empty)
 
@@ -354,6 +399,7 @@ specialization' t (TsVar v') env =
     Just t2 | t == t2 -> Just env
     Just _ -> Nothing
 specialization' (TsCons c tl) (TsCons c' tl') env | c == c' = specializationList' tl tl' env
+specialization' (TsCons _ _) (TsCons (V "Type") _) env = Just env
 specialization' (TsFun f) (TsFun f') env = specializationFuns' f f' env
 specialization' _ _ _ = Nothing
 
