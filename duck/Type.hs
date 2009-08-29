@@ -5,6 +5,7 @@ module Type
   ( Type(..)
   , TypePat(..)
   , TypeFun(..)
+  , IsType(..)
   , TypeEnv
   , Variance(..)
   , substVoid
@@ -81,6 +82,40 @@ instance HasVar TypePat where
   var = TsVar
   unVar (TsVar v) = Just v
   unVar _ = Nothing
+
+class IsType t where
+  typeCons :: CVar -> [t] -> t
+  typeFun :: TypeFun t -> t
+  typeVoid :: t
+
+  unTypeCons :: t -> Maybe (CVar, [t])
+  unTypeFun :: t -> Maybe (TypeFun t)
+
+  typePat :: t -> TypePat
+
+instance IsType Type where
+  typeCons = TyCons
+  typeFun = TyFun
+  typeVoid = TyVoid
+
+  unTypeCons (TyCons c a) = Just (c,a)
+  unTypeCons _ = Nothing
+  unTypeFun (TyFun f) = Just f
+  unTypeFun _ = Nothing
+
+  typePat = singleton
+
+instance IsType TypePat where
+  typeCons = TsCons
+  typeFun = TsFun
+  typeVoid = TsVoid
+
+  unTypeCons (TsCons c a) = Just (c,a)
+  unTypeCons _ = Nothing
+  unTypeFun (TsFun f) = Just f
+  unTypeFun _ = Nothing
+
+  typePat = id
 
 -- |Type environment substitution
 subst :: TypeEnv -> TypePat -> TypePat

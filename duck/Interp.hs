@@ -41,11 +41,11 @@ lookup prog global env loc v
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
   | Just o <- Map.lookup v (progOverloads prog) = return (
       ValClosure v [] o, -- if we find overloads, make a new closure
-      tyClosure v [])
+      typeClosure v [])
   | Just (o:_) <- Map.lookup v (progFunctions prog) = let tt = fst $ head $ overArgs o in return (
       ValClosure v [] (Ptrie.empty tt), -- this should never be used
-      tyClosure v [])
-  | Just _ <- Map.lookup v (progVariances prog) = return (ValType, tyType (TyCons v []))
+      typeClosure v [])
+  | Just _ <- Map.lookup v (progVariances prog) = return (ValType, typeType (TyCons v []))
   | otherwise = execError loc ("unbound variable " ++ qshow v)
 
 -- |Process a list of definitions into the global environment.
@@ -73,8 +73,8 @@ cast _ t x = do
 
 expr :: Prog -> Globals -> Locals -> SrcLoc -> Exp -> Exec TValue
 expr prog global env loc = exp where
-  exp (Int i) = return $ (ValInt i, tyInt)
-  exp (Chr i) = return $ (ValChr i, tyChr)
+  exp (Int i) = return $ (ValInt i, typeInt)
+  exp (Chr i) = return $ (ValChr i, typeChr)
   exp (Var v) = lookup prog global env loc v
   exp (Apply e1 e2) = do
     v1 <- exp e1
@@ -127,11 +127,11 @@ expr prog global env loc = exp where
     return (ValBindIO v d env e2, t)
   exp (Return e) = do
     (d,t) <- exp e
-    return (ValLiftIO d, tyIO t)
+    return (ValLiftIO d, typeIO t)
   exp (PrimIO p el) = do
     (dl,tl) <- unzip =.< mapM exp el
     t <- liftInfer prog $ Base.primIOType loc p tl
-    return (ValPrimIO p dl, tyIO t)
+    return (ValPrimIO p dl, typeIO t)
   exp (Spec e ts) = do
     (d,t) <- exp e
     result <- runMaybeT $ subset (typeInfo prog) t ts
@@ -169,11 +169,11 @@ apply prog global (ValClosure f args ov, ft) a at loc = do
       Left _ -> return (ValClosure f args' ov, t)
       Right (Over _ _ _ _ Nothing) -> return (ValClosure f args' ov, t)
       Right (Over oloc at _ vl (Just e)) -> cast prog t $ withFrame f args' loc $ expr prog global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) oloc e
-apply prog global (ValDelay env e, ta) _ _ loc | Just (_,t) <- isTyArrow ta =
+apply prog global (ValDelay env e, ta) _ _ loc | Just (_,t) <- isTypeArrow ta =
   cast prog t $ expr prog global env loc e
-apply prog _ (_,t1) (_,t2) _ loc | Just (TyCons c tl) <- isTyType t1, Just t <- isTyType t2 =
+apply prog _ (_,t1) (_,t2) _ loc | Just (TyCons c tl) <- isTypeType t1, Just t <- isTypeType t2 =
   if length tl < length (Infer.lookupVariances prog c) then
-    return (ValType, tyType (TyCons c (tl++[t])))
+    return (ValType, typeType (TyCons c (tl++[t])))
   else
     execError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
 apply _ _ (v1,t1) (v2,t2) _ loc = execError loc ("can't apply '"++pshow v1++" :: "++pshow t1++"' to '"++pshow v2++" :: "++pshow t2++"'")
@@ -192,10 +192,10 @@ main prog global = runExec $ do
   return ()
 
 runIO :: Prog -> Globals -> TValue -> Exec TValue
-runIO _ _ (ValLiftIO d, io) | Just t <- isTyIO io = return (d,t)
-runIO prog global (ValPrimIO TestAll [], io) | Just t <- isTyIO io = testAll prog global >.= \d -> (d,t)
-runIO _ _ (ValPrimIO p args, io) | Just t <- isTyIO io = Base.primIO p args >.= \d -> (d,t)
-runIO prog global (ValBindIO v m env e, io) | Just t <- isTyIO io = do
+runIO _ _ (ValLiftIO d, io) | Just t <- isTypeIO io = return (d,t)
+runIO prog global (ValPrimIO TestAll [], io) | Just t <- isTypeIO io = testAll prog global >.= \d -> (d,t)
+runIO _ _ (ValPrimIO p args, io) | Just t <- isTypeIO io = Base.primIO p args >.= \d -> (d,t)
+runIO prog global (ValBindIO v m env e, io) | Just t <- isTypeIO io = do
   d <- runIO prog global m
   d' <- expr prog global (Map.insert v d env) noLoc e
   cast prog t $ runIO prog global d'

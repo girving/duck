@@ -71,15 +71,15 @@ lookup :: Prog -> Locals -> SrcLoc -> Var -> Infer Type
 lookup prog env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
-  | Just _ <- Map.lookup v (progFunctions prog) = return $ tyClosure v [] -- if we find overloads, make a new closure
-  | Just _ <- Map.lookup v (progVariances prog) = return $ tyType (TyCons v []) -- found a type constructor, return Type v
+  | Just _ <- Map.lookup v (progFunctions prog) = return $ typeClosure v [] -- if we find overloads, make a new closure
+  | Just _ <- Map.lookup v (progVariances prog) = return $ typeType (TyCons v []) -- found a type constructor, return Type v
   | otherwise = typeError loc ("unbound variable " ++ qshow v)
 
 lookupDatatype :: Prog -> SrcLoc -> CVar -> [Type] -> Infer [(Loc CVar, [Type])]
 lookupDatatype _ loc (V "Type") [t] = case t of
-  TyCons c tl -> return [(Loc noLoc c, map tyType tl)]
+  TyCons c tl -> return [(Loc noLoc c, map typeType tl)]
   TyVoid -> return [(Loc noLoc (V "Void"), [])]
-  TyFun _ -> typeError loc ("can't pattern match on "++qshow (tyType t)++"; matching on function types isn't implemented yet")
+  TyFun _ -> typeError loc ("can't pattern match on "++qshow (typeType t)++"; matching on function types isn't implemented yet")
 lookupDatatype prog loc tv types
   | Just (Data _ vl cons) <- Map.lookup tv (progDatatypes prog) = return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
   | otherwise = typeError loc ("unbound datatype constructor " ++ qshow tv)
@@ -121,8 +121,8 @@ definition prog d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc
 
 expr :: Prog -> Locals -> SrcLoc -> Exp -> Infer Type
 expr prog env loc = exp where
-  exp (Int _) = return tyInt
-  exp (Chr _) = return tyChr
+  exp (Int _) = return typeInt
+  exp (Chr _) = return typeChr
   exp (Var v) = lookup prog env loc v
   exp (Apply e1 e2) = do
     t1 <- exp e1
@@ -168,8 +168,8 @@ expr prog env loc = exp where
     t2 <- expr prog (Map.insert v t1 env) loc e2
     checkIO t2
   exp (Return e) =
-    exp e >.= tyIO
-  exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= tyIO
+    exp e >.= typeIO
+  exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= typeIO
   exp (Spec e ts) = do
     t <- exp e
     result <- runMaybeT $ subset (typeInfo prog) t ts
@@ -203,18 +203,18 @@ apply prog (TyFun (TypeFun al cl)) t2 loc = do
     result <- runMaybeT $ subset'' (typeInfo prog) t2 a
     case result of
       Just () -> return r
-      Nothing -> typeError loc ("cannot apply "++qshow (tyArrow a r)++" to "++qshow t2)
+      Nothing -> typeError loc ("cannot apply "++qshow (typeArrow a r)++" to "++qshow t2)
   closure :: (Var,[Type]) -> Infer Type
   closure (f,args) = do
     r <- lookupOver f args'
     case r of
       Nothing -> apply' prog f args' loc -- no match, type not yet inferred
       Just (Right t) -> return (overRet t) -- fully applied
-      Just (Left _) -> return $ tyClosure f args' -- partially applied
+      Just (Left _) -> return $ typeClosure f args' -- partially applied
     where args' = args ++ [t2]
-apply prog t1 t2 loc | Just (TyCons c tl) <- isTyType t1, Just t <- isTyType t2 =
+apply prog t1 t2 loc | Just (TyCons c tl) <- isTypeType t1, Just t <- isTypeType t2 =
   if length tl < length (lookupVariances prog c) then
-    return (tyType (TyCons c (tl++[t])))
+    return (typeType (TyCons c (tl++[t])))
   else
     typeError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
 apply _ t1 t2 loc = typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
@@ -242,7 +242,7 @@ resolve prog f args loc = do
       isSpecOf a b = specializationList (overTypes a) (overTypes b)
       isMinimal o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) overloads
       filtered = filter isMinimal overloads -- prune away overloads which are more general than some other overload
-      options overs = concatMap (\ o -> "\n  "++pshow (foldr tsArrow (overRet o) (overTypes o))) overs
+      options overs = concatMap (\ o -> "\n  "++pshow (foldr typeArrow (overRet o) (overTypes o))) overs
       call = qshow $ pretty f <+> prettylist args
   case filtered of
     [] -> typeError loc (call++" doesn't match any overload, possibilities are"++options rawOverloads)
@@ -265,7 +265,7 @@ apply' prog f args loc = do
     typeError loc (qshow (pretty f <+> prettylist args) ++ " has conflicting type transforms with other overloads")
   case overload of
     Left tt -> do
-      let t = tyClosure f args
+      let t = typeClosure f args
       insertOver f (zip tt args) (Over noLoc [] t [] Nothing)
       return t
     Right o -> cache prog f args o loc
@@ -283,7 +283,7 @@ cache prog f args (Over oloc atypes r vl e) loc = do
   Just (tenv, leftovers) <- runMaybeT $ subsetList (typeInfo prog) args types
   let call = qshow (pretty f <+> prettylist args)
   unless (null leftovers) $ 
-    typeError loc (call++" uses invalid overload "++qshow (foldr tsArrow r types)++"; can't overload on contravariant "++showContravariantVars leftovers)
+    typeError loc (call++" uses invalid overload "++qshow (foldr typeArrow r types)++"; can't overload on contravariant "++showContravariantVars leftovers)
   let al = zip tt args
       tl = map (argType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv r
@@ -302,16 +302,16 @@ cache prog f args (Over oloc atypes r vl e) loc = do
 main :: Prog -> Infer ()
 main prog = do
   main <- lookup prog Map.empty noLoc (V "main")
-  result <- runMaybeT $ subset'' (typeInfo prog) main (tyIO tyUnit)
+  result <- runMaybeT $ subset'' (typeInfo prog) main (typeIO typeUnit)
   case result of
     Just () -> success
     Nothing -> typeError noLoc ("main has type "++qshow main++", but should have type IO ()")
 
 -- |This is the analog for 'Interp.runIO' for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
-runIO io | Just t <- isTyIO io = return t
+runIO io | Just t <- isTypeIO io = return t
 runIO t = typeError noLoc ("expected IO type, got "++qshow t)
 
 -- |Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type
-checkIO t = tyIO =.< runIO t
+checkIO t = typeIO =.< runIO t

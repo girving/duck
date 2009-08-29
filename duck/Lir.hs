@@ -252,7 +252,7 @@ generalType vl = (tl,r) where
 
 -- |Apply a macro transformation to a type
 transType :: Trans -> Type -> Type
-transType Delayed t = tyArrow tyUnit t
+transType Delayed t = typeArrow typeUnit t
 
 -- |Converts an annotation argument type to the effective type of the argument within the function.
 argType :: (Maybe Trans, Type) -> Type
@@ -266,7 +266,7 @@ typeArg t = (Nothing, t)
 
 -- |Unwrap a type/lambda combination as far as we can
 unwrapTypeLambda :: TypePat -> Ir.Exp -> ([TypeSetArg], TypePat, [Var], Ir.Exp)
-unwrapTypeLambda a (Ir.Lambda v e) | Just (t,tl) <- isTsArrow a =
+unwrapTypeLambda a (Ir.Lambda v e) | Just (t,tl) <- isTypeArrow a =
   let (tl', r, vl, e') = unwrapTypeLambda tl e in
     (typeArg t:tl', r, v:vl, e')
 unwrapTypeLambda t e = ([], t, [], e)

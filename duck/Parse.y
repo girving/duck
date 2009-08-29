@@ -10,7 +10,7 @@ import Lex
 import Token
 import Layout
 import Ast
-import Type
+import Type hiding (typePat)
 import Prims
 import SrcLoc hiding (loc)
 import ParseMonad
@@ -306,7 +306,7 @@ typeExp l (Var v) = return $ TsVar v
 typeExp l (Lambda pl e) = do
   tl <- mapM (typePat l) pl
   t <- typeExp l e 
-  return $ foldr tsArrow t tl
+  return $ foldr typeArrow t tl
 typeExp _ (ExpLoc l e) = typeExp l e
 typeExp l (Int _) = parseError l ("integer types aren't implemented yet")
 typeExp l Any = parseError l ("'_' isn't implemented for types yet")
@@ -325,7 +325,7 @@ typePat l (PatVar v) = return $ TsVar v
 typePat l (PatLambda pl p) = do
   tl <- mapM (typePat l) pl
   t <- typePat l p 
-  return $ foldr tsArrow t tl
+  return $ foldr typeArrow t tl
 typePat _ (PatLoc l p) = typePat l p
 typePat l PatAny = parseError l ("'_' isn't implemented for types yet")
 typePat l (PatOps _) = parseError l ("operator expression not allowed in type")

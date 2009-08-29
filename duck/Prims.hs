@@ -8,25 +8,14 @@ module Prims
   , binopString
   , binopPrecedence
   -- * Primitive types
-  , tyUnit
-  , tsUnit
-  , isTyUnit
-  , tyArrow
-  , tsArrow
-  , isTyArrow
-  , isTsArrow
-  , tyClosure
-  , tyInt
-  , tsInt
-  , isTyInt
-  , tyChr
-  , tsChr
-  , isTyChr
-  , tyIO
-  , tsIO
-  , isTyIO
-  , tyType
-  , isTyType
+  , typeUnit, isTypeUnit
+  , typeArrow, isTypeArrow
+  , typeClosure
+  , typeTuple
+  , typeInt, isTypeInt
+  , typeChr, isTypeChr
+  , typeIO, isTypeIO
+  , typeType, isTypeType
   ) where
 
 import Pretty
@@ -57,63 +46,65 @@ data PrimIO
   | TestAll
   deriving (Eq, Ord, Show)
 
-tyUnit :: Type
-tyUnit = TyCons (V "()") []
-tsUnit = singleton tyUnit
+typeC :: IsType t => String -> t
+typeC c = typeCons (V c) []
 
-isTyUnit :: Type -> Bool
-isTyUnit (TyCons (V "()") []) = True
-isTyUnit _ = False
+typeC1 :: IsType t => String -> t -> t
+typeC1 c t = typeCons (V c) [t]
 
-tyArrow :: Type -> Type -> Type
-tyArrow s t = TyFun (TypeFun [(s,t)] [])
+isTypeC :: IsType t => String -> t -> Bool
+isTypeC c t
+  | Just (V c',[]) <- unTypeCons t, c == c' = True
+  | otherwise = False
 
-tsArrow :: TypePat -> TypePat -> TypePat
-tsArrow s t = TsFun (TypeFun [(s,t)] [])
+isTypeC1 :: IsType t => String -> t -> Maybe t
+isTypeC1 c t
+  | Just (V c',[t1]) <- unTypeCons t, c == c' = Just t1
+  | otherwise = Nothing
 
-isTyArrow :: Type -> Maybe (Type,Type)
-isTyArrow (TyFun (TypeFun [a] [])) = Just a
-isTyArrow _ = Nothing
+typeUnit :: IsType t => t
+typeUnit = typeC "()"
 
-isTsArrow :: TypePat -> Maybe (TypePat,TypePat)
-isTsArrow (TsFun (TypeFun [a] [])) = Just a
-isTsArrow _ = Nothing
+isTypeUnit :: IsType t => t -> Bool
+isTypeUnit = isTypeC "()"
 
-tyClosure :: Var -> [Type] -> Type
-tyClosure f tl = TyFun (TypeFun [] [(f,tl)])
+typeArrow :: IsType t => t -> t -> t
+typeArrow s t = typeFun (TypeFun [(s,t)] [])
 
-tyInt :: Type
-tyInt = TyCons (V "Int") []
-tsInt = singleton tyInt
+isTypeArrow :: IsType t => t -> Maybe (t,t)
+isTypeArrow t
+  | Just (TypeFun [a] []) <- unTypeFun t = Just a
+  | otherwise = Nothing
 
-isTyInt :: Type -> Bool
-isTyInt (TyCons (V "Int") []) = True
-isTyInt _ = False
+typeClosure :: IsType t => Var -> [t] -> t
+typeClosure f tl = typeFun (TypeFun [] [(f,tl)])
 
-tyChr :: Type
-tyChr = TyCons (V "Chr") []
-tsChr = singleton tyChr
+typeTuple :: IsType t => [t] -> t
+typeTuple tl = typeCons (tupleCons tl) tl
 
-isTyChr :: Type -> Bool
-isTyChr (TyCons (V "Chr") []) = True
-isTyChr _ = False
+typeInt :: IsType t => t
+typeInt = typeC "Int"
 
-tyIO :: Type -> Type
-tyIO t = TyCons (V "IO") [t]
+isTypeInt :: IsType t => t -> Bool
+isTypeInt = isTypeC "Int"
 
-tsIO :: TypePat -> TypePat
-tsIO t = TsCons (V "IO") [t]
+typeChr :: IsType t => t
+typeChr = typeC "Chr"
 
-isTyIO :: Type -> Maybe Type
-isTyIO (TyCons (V "IO") [t]) = Just t
-isTyIO _ = Nothing
+isTypeChr :: IsType t => t -> Bool
+isTypeChr = isTypeC "Chr"
 
-tyType :: Type -> Type
-tyType t = TyCons (V "Type") [t]
+typeIO :: IsType t => t -> t
+typeIO = typeC1 "IO"
 
-isTyType :: Type -> Maybe Type
-isTyType (TyCons (V "Type") [t]) = Just t
-isTyType _ = Nothing
+isTypeIO :: IsType t => t -> Maybe t
+isTypeIO = isTypeC1 "IO"
+
+typeType :: IsType t => t -> t
+typeType = typeC1 "Type"
+
+isTypeType :: IsType t => t -> Maybe t
+isTypeType = isTypeC1 "Type"
 
 -- Pretty printing
 
