@@ -90,8 +90,8 @@ debugInfer m = Infer $ ask >>= \(_,s) -> liftIO $ do
 typeError :: (Pretty s, MonadError TypeError m) => SrcLoc -> s -> m a
 typeError l m = throwError $ ErrorStack [] l (pretty m)
 
-typeMismatch :: (Pretty a, Pretty b, MonadError TypeError m) => a -> b -> m c
-typeMismatch x y = typeError noLoc $ pretty "type mismatch:" <+> quotes (pretty x) <+> pretty "vs" <+> quotes (pretty y)
+typeMismatch :: (Pretty a, Pretty b, MonadError TypeError m) => a -> String -> b -> m c
+typeMismatch x op y = typeError noLoc $ pretty "type mismatch:" <+> quotes (pretty x) <+> pretty op <+> quotes (pretty y) <+> pretty "failed"
 
 typeErrors :: (Pretty s, Pretty s', MonadError TypeError m) => SrcLoc -> s -> [(s',TypeError)] -> m a
 typeErrors l m tel = typeError l $ nested' m $ vcat $ map (uncurry nested') tel

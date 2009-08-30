@@ -69,7 +69,7 @@ class MonadError TypeError m => TypeMonad m where
 data ConstraintOp = Equal | Superset deriving (Eq)
 type Constraints = Map Var (ConstraintOp, Type)
 
-typeMismatchList x y = typeMismatch (prettylist x) (prettylist y)
+typeMismatchList x op y = typeMismatch (prettylist x) op (prettylist y)
 
 freeze :: Constraints -> TypeEnv
 freeze = Map.map snd
@@ -82,7 +82,7 @@ equal (TyCons c tl) (TyCons c' tl')
   = mapM_ (uncurry equal) tt
 equal (TyFun f) (TyFun f') = equalFun f f'
 equal TyVoid TyVoid = success
-equal x y = typeMismatch x y
+equal x y = typeMismatch x "==" y
 
 -- |Exact type equality for function types.
 equalFun :: TypeMonad m => TypeFun Type -> TypeFun Type -> m ()
@@ -110,13 +110,13 @@ union (TyCons c tl) (TyCons c' tl') | c == c' =
 union (TyFun f) (TyFun f') = TyFun =.< unionFun f f'
 union TyVoid t = return t
 union t TyVoid = return t
-union x y = typeMismatch x y
+union x y = typeMismatch x "|" y
 
 -- |The equivalent of 'union' for lists.  The two lists must have the same size.
 _unionList :: TypeMonad m => [Type] -> [Type] -> m [Type]
 _unionList tl tl'
   | Just tt <- zipCheck tl tl' = mapM (uncurry union) tt
-  | otherwise = typeMismatchList tl tl'
+  | otherwise = typeMismatchList tl "|" tl'
 
 -- |Union two type functions.  Except in special cases, this means unioning the lists.
 unionFun :: TypeMonad m => TypeFun Type -> TypeFun Type -> m (TypeFun Type)
@@ -161,7 +161,7 @@ intersect (TyFun f) (TyFun f') = return (
   else Nothing) -- intersect is indeterminant
 intersect TyVoid _ = return (Just TyVoid)
 intersect _ TyVoid = return (Just TyVoid)
-intersect x y = typeMismatch x y
+intersect x y = typeMismatch x "&" y
 
 -- |The equivalent of 'intersect' for lists.  The two lists must have the same size.
 --
@@ -170,7 +170,7 @@ intersect x y = typeMismatch x y
 _intersectList :: TypeMonad m => [Type] -> [Type] -> m (Maybe [Type])
 _intersectList tl tl'
   | Just tt <- zipCheck tl tl' = mapM (uncurry intersect) tt >.= sequence
-  | otherwise = typeMismatchList tl tl'
+  | otherwise = typeMismatchList tl "&" tl'
 
 -- |@subset s t@ tries to turn @t@ into @s@ via variable substitutions,
 -- but not the other way round.  In other words, subset succeeds if it finds
@@ -251,7 +251,7 @@ subset' (TyCons c tl) (TsCons c' tl') | c == c' =
   arg Invariant t t' = equal' t t'
 subset' (TyFun f) (TsFun f') = subsetFun' f f'
 subset' TyVoid _ = successS
-subset' x y = typeMismatch x y
+subset' x y = typeMismatch x "<=" y
 
 equal' :: TypeMonad m => Type -> TypePat -> Env m
 equal' t (TsVar v) = constrain v Equal t
@@ -259,7 +259,7 @@ equal' (TyCons c tl) (TsCons c' tl') | c == c' =
   sequenceS =<< zipWithVariances (\_ t -> return . equal' t) c tl tl'
 equal' (TyFun f) (TsFun f') = equalFun' f f'
 equal' TyVoid TsVoid = successS
-equal' x y = typeMismatch x y
+equal' x y = typeMismatch x "==" y
 
 -- |Same as 'subset'', but the first argument is a type.
 -- subset s t succeeds if S(s) <= S(t).
@@ -267,7 +267,7 @@ subset'' :: TypeMonad m => Type -> Type -> m ()
 subset'' (TyCons c tl) (TyCons c' tl') | c == c' = subsetList'' tl tl'
 subset'' (TyFun f) (TyFun f') = subsetFun'' f f'
 subset'' TyVoid _ = success
-subset'' x y = typeMismatch x y
+subset'' x y = typeMismatch x "<=" y
 
 -- |Subset for function types
 --
@@ -297,7 +297,7 @@ subsetFun' ft@(TypeFun al cl) ft'@(TypeFun al' cl') = sequenceS (map (arrow al' 
         t <- typeApply (TyFun (TypeFun [f] [])) s''
         withStateT (freezeVars (freeVars s')) $ -- We're about to feed these vars to apply, so they'll become rigid
           subset' t t'
-  arrow [] _ _ = typeMismatch (TyFun ft) (TsFun ft')
+  arrow [] _ _ = typeMismatch (TyFun ft) "<=" (TsFun ft')
 
   closure :: [(TypePat,TypePat)] -> [(Var,[TypePat])] -> (Var,[Type]) -> Env m
   closure _ fl' f
@@ -310,13 +310,13 @@ subsetFun' ft@(TypeFun al cl) ft'@(TypeFun al' cl') = sequenceS (map (arrow al' 
         t <- typeApply (TyFun (TypeFun [] [f])) s''
         withStateT (freezeVars (freeVars s')) $ -- We're about to feed these vars to apply, so they'll become rigid
           subset' t t'
-  closure [] _ _ = typeMismatch (TyFun ft) (TsFun ft')
+  closure [] _ _ = typeMismatch (TyFun ft) "<=" (TsFun ft')
 
 -- TODO: This is implemented only for primitive functions (single entry TypeFun's)
 equalFun' :: forall m. TypeMonad m => TypeFun Type -> TypeFun TypePat -> Env m
 equalFun' (TypeFun [(s,t)] []) (TypeFun [(s',t')] []) = sequenceS [equal' s s', equal' t t']
 equalFun' (TypeFun [] [(v,tl)]) (TypeFun [] [(v',tl')]) | v == v', length tl == length tl' = sequenceS (zipWith equal' tl tl')
-equalFun' x y = typeMismatch (TyFun x) (TsFun y)
+equalFun' x y = typeMismatch (TyFun x) "==" (TsFun y)
 
 -- |Subset for singleton function types.
 subsetFun'' :: forall m. TypeMonad m => TypeFun Type -> TypeFun Type -> m ()
@@ -329,14 +329,14 @@ subsetFun'' ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
   arrow ((s',t'):_) _ (s,t) = do
     subset'' s' s -- contravariant
     subset'' t t' -- covariant
-  arrow [] _ _ = typeMismatch (TyFun ft) (TyFun ft') -- arrows are never considered as general as closures
+  arrow [] _ _ = typeMismatch (TyFun ft) "<=" (TyFun ft') -- arrows are never considered as general as closures
 
   closure :: [(Type,Type)] -> [(Var,[Type])] -> (Var,[Type]) -> m ()
   closure _ fl' f | List.elem f fl' = success -- succeed if f appears in fl'
   closure ((s',t'):_) _ f = do
     t <- typeApply (TyFun (TypeFun [] [f])) s'
     subset'' t t'
-  closure [] _ _ = typeMismatch (TyFun ft) (TyFun ft')
+  closure [] _ _ = typeMismatch (TyFun ft) "<=" (TyFun ft')
 
 -- |The equivalent of 'subset' for lists.  To succeed, the second argument must
 -- be at least as long as the first (think of the first as being the types of
@@ -347,13 +347,13 @@ subsetList tl tl' = runEnv $ subsetList' tl tl' >>= subsetFix Map.empty
 subsetList' :: TypeMonad m => [Type] -> [TypePat] -> Env m
 subsetList' tl tl'
   | length tl <= length tl' = sequenceS $ zipWith subset' tl tl'
-  | otherwise = typeMismatchList tl tl'
+  | otherwise = typeMismatchList tl "<=" tl'
 
 -- |Same as 'subsetList'', but for 'Type' instead of 'TypePat'
 subsetList'' :: TypeMonad m => [Type] -> [Type] -> m ()
 subsetList'' tl tl'
   | length tl <= length tl' = zipWithM_ subset'' tl tl'
-  | otherwise = typeMismatchList tl tl'
+  | otherwise = typeMismatchList tl "<=" tl'
 
 -- |Check whether one typeset list is a specialization of another.  Note that
 -- 'specialization' is very different from 'subset' in that it ignores the
