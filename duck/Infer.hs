@@ -78,7 +78,7 @@ lookup env loc v
   lp prog
     | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
     | Just _ <- Map.lookup v (progFunctions prog) = return $ typeClosure v [] -- if we find overloads, make a new closure
-    | Just _ <- Map.lookup v (progVariances prog) = return $ typeType (TyCons v []) -- found a type constructor, return Type v
+    | Just _ <- Map.lookup v (progDatatypes prog) = return $ typeType (TyCons v []) -- found a type constructor, return Type v
     | otherwise = inferError loc ("unbound variable " ++ qshow v)
 
 lookupDatatype :: SrcLoc -> CVar -> [Type] -> Infer [(Loc CVar, [Type])]
@@ -88,7 +88,7 @@ lookupDatatype loc (V "Type") [t] = case t of
   TyFun _ -> inferError loc ("can't pattern match on "++qshow (typeType t)++"; matching on function types isn't implemented yet")
 lookupDatatype loc tv types = getProg >>= \prog ->
   case Map.lookup tv (progDatatypes prog) of
-    Just (Data _ vl cons) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
+    Just (Data _ vl cons _) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
     _ -> inferError loc ("unbound datatype constructor " ++ qshow tv)
 
 lookupOverloads :: SrcLoc -> Var -> Infer [Overload TypePat]
@@ -236,7 +236,7 @@ applyTry :: Type -> Type -> Infer Type
 applyTry f t = apply f t noLoc
 
 lookupVariances :: Prog -> Var -> [Variance]
-lookupVariances prog c | Just vars <- Map.lookup c (progVariances prog) = vars
+lookupVariances prog c | Just d <- Map.lookup c (progDatatypes prog) = dataVariances d
 lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization works cleanly
 
 overDesc :: Overload TypePat -> Doc

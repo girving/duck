@@ -1,5 +1,3 @@
-data () of ()
-
 apply :: (a -> a) -> a -> a
 apply f x = f x
 

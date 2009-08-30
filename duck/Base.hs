@@ -93,7 +93,7 @@ primIOType loc p args = typeError loc ("invalid arguments: "++show p ++ " " ++ p
 -- |The internal, implicit declarations giving names to primitive operations.
 -- Note that this is different than base.duck.
 base :: Lir.Prog
-base = Lir.union types (Lir.prog (decTuples ++ prims ++ io)) where
+base = Lir.union types (Lir.prog "" (decTuples ++ prims ++ io)) where
   primop p = Ir.Over
       (Loc noLoc $ V (primName p)) 
       (foldr typeArrow (singleton $ primRet p) (map singleton $ primArgs p))
@@ -101,18 +101,20 @@ base = Lir.union types (Lir.prog (decTuples ++ prims ++ io)) where
     where args = zipWith const standardVars $ primArgs p
   prims = map primop $ Map.elems primOps
 
-  decTuples = map decTuple [2..5]
+  decTuples = map decTuple (0:[2..5])
   decTuple i = Data c vars [(c, map TsVar vars)] where
     c = Loc noLoc $ tupleCons vars
     vars = take i standardVars
 
-  types = Lir.empty { Lir.progVariances = Map.fromList
-    [ (V "Int", [])
-    , (V "Chr", [])
-    , (V "IO", [Covariant]) 
-    , (V "Delayed", [Covariant])
-    , (V "Type", [Invariant])
-    ] }
+  types = (Lir.empty "")
+    { Lir.progDatatypes = Map.fromList
+      [ (V "Int", Lir.Data noLoc [] [] [])
+      , (V "Chr", Lir.Data noLoc [] [] [])
+      , (V "IO", Lir.Data noLoc [V "a"] [] [Covariant]) 
+      , (V "Delayed", Lir.Data noLoc [V "a"] [] [Covariant])
+      , (V "Type", Lir.Data noLoc [V "t"] [] [Invariant])
+      ]
+    }
 
 io :: [Decl]
 io = [map',join,exit,ioPutChr,testAll,returnIO] where

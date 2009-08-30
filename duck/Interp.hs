@@ -46,7 +46,7 @@ lookup global env loc v
     | Just (o:_) <- Map.lookup v (progFunctions prog) = let tt = fst $ head $ overArgs o in return (
         ValClosure v [] (Ptrie.empty tt), -- this should never be used
         typeClosure v [])
-    | Just _ <- Map.lookup v (progVariances prog) = return (ValType, typeType (TyCons v []))
+    | Just _ <- Map.lookup v (progDatatypes prog) = return (ValType, typeType (TyCons v []))
     | otherwise = execError loc ("unbound variable " ++ qshow v)
 
 -- |Process a list of definitions into the global environment.

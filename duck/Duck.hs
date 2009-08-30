@@ -5,6 +5,7 @@ module Main where
 
 import qualified Data.Set as Set
 import Data.Set (Set)
+import qualified Data.Map as Map
 import Data.List
 import Control.Monad 
 import System.Environment
@@ -13,8 +14,10 @@ import System.Directory
 import System.Console.GetOpt
 import System.IO
 import System.Exit
+import Control.Exception
 
 import Util
+import Var
 import Stage
 import Pretty
 import Parse
@@ -56,8 +59,6 @@ defaults = Flags
   , path = [""]
   }
 
-type ModuleName = String
-
 findModule :: [FilePath] -> ModuleName -> MaybeT IO FilePath
 findModule l s = do
   let ext = ".duck"
@@ -65,21 +66,22 @@ findModule l s = do
         | otherwise = addExtension s (tail ext)
   msum $ map (MaybeT . (\p -> doesFileExist p >.= returnIf p) . (</> f)) l
 
-loadModule :: Set ModuleName -> [FilePath] -> ModuleName -> IO Ast.Prog
+loadModule :: Set ModuleName -> [FilePath] -> ModuleName -> IO [(ModuleName, Ast.Prog)]
 loadModule s l m = do
   (f,c) <- case m of
     "" -> ((,) "<stdin>") =.< getContents
     m -> runMaybeT (findModule l m) >>= maybe 
       (fail ("module " ++ qshow m ++ " not found"))
       (\f -> ((,) (dropExtension f)) =.< readFile f)
-  let l' = l `union` [takeDirectory f]
-      s' = Set.insert m s
+  let (d,f') = splitFileName f
+      l' = l `union` [d]
+      s' = Set.insert f' s
       imp v
         | Set.member v s' = return []
         | otherwise = loadModule s' l' v
-      ast = runP parse f c
+      ast = runP parse f' c
   asts <- mapM imp $ Ast.imports ast
-  return $ concat asts ++ ast
+  return $ concat asts ++ [(f',ast)]
 
 main = do
   (options, args, errors) <- getOpt Permute options =.< getArgs
@@ -101,13 +103,13 @@ main = do
         r <- io
         ifv p $ pprint r
         return r
-      phase' p = phase p . return
+      phase' p = phase p . evaluate
 
-  ast <- phase StageParse (loadModule Set.empty (path flags) f)
-  ir <- phase StageIr (return $! Ir.prog ast)
-  lir <- phase' StageLir (Lir.prog ir)
-  lir <- phase' StageLink (Lir.union Base.base lir)
-  return $! Lir.check lir
+  (names,ast) <- phase StageParse (unzip =.< loadModule Set.empty (path flags) f)
+  ir <- phase' StageIr (snd $ mapAccumL Ir.prog Map.empty ast)
+  lir <- phase' StageLir (zipWith Lir.prog names ir)
+  lir <- phase' StageLink (foldl' Lir.union Base.base lir)
+  evaluate $ Lir.check lir
   lir <- phase StageInfer (runInferProg Infer.prog lir)
   unless (compileOnly flags) $ rerunInfer StageInfer (lir,[]) Infer.main
   env <- phase StageEnv (runExec lir Interp.prog)

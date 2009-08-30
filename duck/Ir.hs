@@ -92,8 +92,8 @@ pattern_vars s (Ast.PatSpec p _) = pattern_vars s p
 pattern_vars s (Ast.PatLambda pl p) = foldl' pattern_vars (pattern_vars s p) pl
 pattern_vars s (Ast.PatLoc _ p) = pattern_vars s p
 
-prog_precs :: Ast.Prog -> PrecEnv
-prog_precs = foldl' set_precs Map.empty where
+prog_precs :: PrecEnv -> Ast.Prog -> PrecEnv
+prog_precs = foldl' set_precs where
   set_precs s (Loc l (Ast.Infix p vl)) = foldl' (\s v -> Map.insertWithKey check v p s) s vl where
     check v new old
       | new == old = new
@@ -151,9 +151,9 @@ matchNames :: InScopeSet -> Int -> [Branch] -> (InScopeSet, [Var])
 matchNames s n [(p,_)] = patNames s n p
 matchNames s n _ = freshVars s n
 
-prog :: [Loc Ast.Decl] -> [Decl]
-prog p = decls p where
-  precs = prog_precs p
+prog :: PrecEnv -> Ast.Prog -> (PrecEnv, [Decl])
+prog pprec p = (precs, decls p) where
+  precs = prog_precs pprec p
   globals = prog_vars p
 
   -- Declaration conversion can turn multiple Ast.Decls into a single Ir.Decl, as with
@@ -175,6 +175,7 @@ prog p = decls p where
     _ -> irError l $ "type specification for "++qshow f++" must be followed by its definition"
   decls (Loc l (Ast.LetD ap ae) : rest) = d : decls rest where
     d = case Map.toList vm of
+      [] -> LetD (Loc l ignored) $ body $ Cons (V "()") []
       [(v,l)] -> LetD (Loc l v) $ body $ Var v
       vl -> LetM (map (\(v,l) -> Loc l v) vl) $ body $ Cons (tupleCons vl) (map (Var . fst) vl)
     body r = match (Set.union globals $ Map.keysSet vm) [e] [([p],r)] Nothing

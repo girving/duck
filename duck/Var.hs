@@ -4,6 +4,7 @@
 module Var 
   ( Var(..)
   , CVar
+  , ModuleName
   , InScopeSet
   , Precedence
   , Fixity(..)
@@ -14,6 +15,7 @@ module Var
   , freshen
   , freshVars
   , standardVars
+  , moduleVar
   , HasVar(..)
   -- * Primitive values/variables/constructors
   -- 
@@ -37,6 +39,7 @@ import Data.Map (Map)
 
 newtype Var = V { unV :: String } deriving (Eq, Ord)
 type CVar = Var
+type ModuleName = String
 
 type Precedence = Int
 data Fixity = LeftFix | NonFix | RightFix deriving (Eq, Show, Ord)
@@ -85,6 +88,9 @@ standardVars :: [Var]
 standardVars = letters ++ others where
   letters = [V [x] | x <- ['a'..'z']]
   others = [V ("t" ++ show i) | i <- [1..] :: [Int]]
+
+moduleVar :: ModuleName -> Var -> Var
+moduleVar m (V v) = V (m ++ '.' : v)
 
 precedence :: Var -> Maybe Int
 precedence (V op) = case head op of

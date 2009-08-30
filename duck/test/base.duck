@@ -37,7 +37,7 @@ delay x = x
 
 ---- unit
 
-data () of ()
+-- data () of ()
 
 (==) :: () -> () -> Bool
 (==) _ _ = True

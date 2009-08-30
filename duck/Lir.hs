@@ -45,11 +45,11 @@ import Prims
 -- Lifted IR data structures
 
 data Prog = Prog
-  { progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
-  , progVariances :: Map CVar [Variance] -- ^ type constructor variances of 'dataTyVars' by type constructor
+  { progName :: ModuleName
+  , progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
   , progFunctions :: Map Var [Overload TypePat] -- ^ original overload definitions by function name
   , progGlobals :: Set Var -- ^ all top-level symbols, used to generate fresh variables
-  , progConses :: Map Var CVar -- ^ map data constructors to datatypes (type inference will make this go away)
+  , progConses :: Map CVar CVar -- ^ map data constructors to datatypes (type inference will make this go away)
   , progOverloads :: Map Var Overloads -- ^ all overloads inferred to be needed, set after inference
   , progGlobalTypes :: TypeEnv -- ^ set after inference
   , progDefinitions :: [Definition] -- ^ list of top-level definitions
@@ -60,6 +60,7 @@ data Datatype = Data
   { dataLoc :: SrcLoc
   , dataTyVars :: [Var] -- ^ Type variable arguments
   , dataConses :: [(Loc CVar, [TypePat])] -- ^ Constructors
+  , dataVariances :: [Variance] -- ^ Variances of 'dataTyVars'
   }
 instance HasLoc Datatype where loc = dataLoc
 
@@ -122,22 +123,25 @@ overTypes = map snd . overArgs
 lirError :: Pretty s => SrcLoc -> s -> a
 lirError = stageError StageLir
 
-empty :: Prog
-empty = Prog Map.empty Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
+dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
+dupError v n o = lirError n $ pretty "duplicate definition of" <+> quotes (pretty v) <> mapPretty (pretty ", previously declared at" <+>) o
 
-prog :: [Ir.Decl] -> Prog
-prog decls = flip execState empty $ do
+empty :: ModuleName -> Prog
+empty n = Prog n Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
+
+prog :: ModuleName -> [Ir.Decl] -> Prog
+prog name decls = flip execState (empty name) $ do
   modify $ \p -> p { progGlobals = foldl decl_vars Set.empty decls }
   mapM_ decl decls
   modify $ \p -> p { progDefinitions = reverse (progDefinitions p) }
-  modify $ \p -> p { progVariances = variances (progDatatypes p) }
+  modify $ \p -> p { progDatatypes = variances (progDatatypes p) }
   p <- get
   mapM_ datatype (Map.toList (progDatatypes p))
 
   where
 
   datatype :: (CVar, Datatype) -> State Prog ()
-  datatype (tc, Data _ _ cases) = mapM_ f cases where
+  datatype (tc, d) = mapM_ f (dataConses d) where
     f :: (Loc CVar, [TypePat]) -> State Prog ()
     f (c,tyl) = do
       modify $ \p -> p { progConses = Map.insert (unLoc c) tc (progConses p) }
@@ -150,7 +154,7 @@ prog decls = flip execState empty $ do
   -- assuming everything is covariant and gradually grow the set of invariant
   -- argument slots.  Argument slots are represented as pairs (c,i) where c is
   -- a datatype constructor and i is the argument position (starting at 0).
-  variances :: Map CVar Datatype -> Map CVar [Variance]
+  variances :: Map CVar Datatype -> Map CVar Datatype
   variances datatypes = finish (fixpoint grow Set.empty) where
     fixpoint f x =
       if x == y then y else fixpoint f y
@@ -169,7 +173,7 @@ prog decls = flip execState empty $ do
         closure (_,tl) = concatMap freeVars tl
       invVars TsVoid = []
     finish inv = Map.mapWithKey f datatypes where
-      f c datatype = map variance [0..arity-1] where
+      f c datatype = datatype{ dataVariances = map variance [0..arity-1] } where
         arity = length (dataTyVars datatype)
         variance i = if Set.member (c,i) inv then Invariant else Covariant
 
@@ -181,11 +185,11 @@ check prog = runSequence $ do
   mapM_ (funs (Set.union (Map.keysSet fds) types)) $ Map.toList (progFunctions prog)
   mapM_ datatype (Map.toList $ progDatatypes prog)
   where
-  types = Map.keysSet (progVariances prog)
+  types = Map.keysSet (progDatatypes prog)
   def s (Def vl body) = do
     let add s (Loc _ (V "_")) = return s
         add s (Loc l v) = do
-          maybe nop (\l' -> lirError l $ "duplicate definition of "++qshow v++", previously declared at "++show l') $ Map.lookup v s
+          maybe nop (dupError v l) $ Map.lookup v s
           return $ Map.insert v l s 
     s <- foldM add s vl
     expr (Set.union (Map.keysSet s) types) body
@@ -197,8 +201,8 @@ check prog = runSequence $ do
         return $ addVar v s) Set.empty vl
       maybe nop (expr (Set.union s vs)) body
   expr s = mapM_ (\(v,l) -> lirError l $ qshow v ++ " undefined") . free s noLoc
-  datatype (_, Data _ vl conses) = mapM_ cons conses where
-    cons (Loc l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList vl of
+  datatype (_, d) = mapM_ cons (dataConses d) where
+    cons (Loc l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
       [] -> success
       [v] -> lirError l $ "variable "++qshow v++" is unbound in constructor "++qshow (TsCons c tl)
       fv -> lirError l $ "variables '"++pshowlist fv++"' are unbound in constructor "++qshow (TsCons c tl)
@@ -225,7 +229,8 @@ decl (Ir.LetM vl e) = do
   e <- expr Set.empty noLocExpr e
   definition vl e
 decl (Ir.Data (Loc l tc) tvl cases) =
-  modify $ \p -> p { progDatatypes = Map.insert tc (Data l tvl cases) (progDatatypes p) }
+  modify $ \p -> p { progDatatypes = Map.insertWith exists tc (Data l tvl cases undefined) (progDatatypes p) }
+  where exists _ o = dupError tc l (dataLoc o)
 
 -- |Add a toplevel statement
 definition :: [Loc Var] -> Exp -> State Prog ()
@@ -328,7 +333,7 @@ lambda locals l@(loc,v) e = do
 freshenM :: Var -> State Prog Var
 freshenM v = do
   p <- get
-  let (globals,v') = freshen (progGlobals p) v
+  let (globals,v') = freshen (progGlobals p) $ moduleVar (progName p) v
   put $ p { progGlobals = globals }
   return v'
 
@@ -362,8 +367,8 @@ free s _ (ExpLoc l e) = free s l e
 
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
-  { progDatatypes = Map.unionWithKey conflictLoc (progDatatypes p2) (progDatatypes p1)
-  , progVariances = Map.unionWithKey conflict (progVariances p2) (progVariances p1)
+  { progName = ""
+  , progDatatypes = Map.unionWithKey conflictLoc (progDatatypes p2) (progDatatypes p1)
   , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
   , progGlobals = Set.union (progGlobals p1) (progGlobals p2)
   , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1) -- XXX overloaded constructors?
@@ -371,15 +376,15 @@ union p1 p2 = Prog
   , progGlobalTypes = Map.unionWithKey conflict (progGlobalTypes p2) (progGlobalTypes p1)
   , progDefinitions = progDefinitions p1 ++ progDefinitions p2 }
   where
-  conflictLoc v o n = lirError (loc n) $ "conflicting declarations for "++pshow v ++ maybe "" ((", previously declared at " ++) . show) (maybeLoc o)
-  conflict v _ _ = lirError noLoc $ "conflicting declarations for "++pshow v
+  conflictLoc v n o = dupError v (loc n) (loc o)
+  conflict v _ _ = dupError v noLoc noLoc
 
 -- Pretty printing
 
 instance Pretty Prog where
   pretty prog = vcat $
        [pretty "-- datatypes"]
-    ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c) <- Map.toList (progDatatypes prog)]
+    ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c _) <- Map.toList (progDatatypes prog)]
     ++ [pretty "-- functions"]
     ++ [function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
     ++ [pretty "-- overloads"]
