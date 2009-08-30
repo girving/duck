@@ -6,6 +6,8 @@
 -- (1) Hoisting duck IO out to haskell IO (not quite yet)
 --
 -- (2) Stack tracing
+--
+-- Should this be renamed to "InterpMonad" or is it more general?
 
 module ExecMonad
   ( Exec
@@ -16,42 +18,42 @@ module ExecMonad
   ) where
 
 import Prelude hiding (catch)
-import Control.Monad.State hiding (guard)
+import Control.Monad.Reader
 import Control.Exception
 
 import Util
 import Pretty
 import Var
+import Stage
 import Value
 import SrcLoc
-import CallStack
 import InferMonad hiding (withFrame)
-import qualified Lir
+import Lir (Prog, ProgMonad)
 
-newtype Exec a = Exec { unExec :: StateT (CallStack TValue) IO a }
-  deriving (Monad, MonadIO, MonadInterrupt)
+type ExecStack = CallStack TValue
 
-withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
-withFrame f args loc e =
-  handleE (\ (e :: AsyncException) -> execError loc (show e))
-  (Exec (do
-    s <- get
-    put (CallFrame f args loc : s)
-    r <- unExec e
-    put s
-    return r))
-
-runExec :: Exec a -> IO a
-runExec e = evalStateT (unExec e) []
+newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
+  deriving (Monad, MonadIO, MonadReader (Prog, ExecStack), MonadInterrupt)
 
 -- Most runtime errors should never happen, since they should be caught by type
 -- inference and the like.  Therefore, we use exit status 3 so that they can be
 -- distinguished from the better kinds of errors.
-execError :: SrcLoc -> String -> Exec a
-execError loc msg = Exec $ get >>= \s ->
-  liftIO (dieWith 3 (pshow s ++ "\nRuntimeError: "++msg ++ (if hasLoc loc then " at " ++ show loc else [])))
+execError :: Pretty s => SrcLoc -> s -> Exec a
+execError l m = Exec $ ReaderT $ \(_,s) ->
+  stageErrorIO StageExec noLoc $ ErrorStack s l (pretty m)
 
-liftInfer :: Lir.Prog -> Infer a -> Exec a
-liftInfer prog infer = Exec $ do
-  s <- get
-  liftIO $ rerunInfer (mapStackArgs snd s) prog infer
+withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
+withFrame f args loc e = Exec $ ReaderT $ \(p,s) -> do
+  let r e = runReaderT (unExec e) (p, CallFrame f args loc : s)
+  handle (\(e :: AsyncException) -> r $ execError loc (show e)) $
+    r e
+
+instance ProgMonad Exec where
+  getProg = fst =.< ask
+
+runExec :: Prog -> Exec a -> IO a
+runExec p e = runReaderT (unExec e) (p,[])
+
+liftInfer :: Infer a -> Exec a
+liftInfer infer = Exec $ ReaderT $ \ps ->
+  rerunInfer StageExec (fmap (mapStackArgs snd) ps) infer

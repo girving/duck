@@ -67,7 +67,7 @@ data Pattern = Pat
 
 type Branch = ([Pattern], Exp)
 
-irError :: SrcLoc -> String -> a
+irError :: Pretty s => SrcLoc -> s -> a
 irError = stageError StageIr
 
 prog_vars :: Ast.Prog -> InScopeSet
@@ -297,12 +297,12 @@ prog p = decls p where
 
 instance Pretty Decl where
   pretty (LetD v e) =
-    pretty v <+> equals <+> nest 2 (pretty e)
+    nested (pretty v <+> equals) (pretty e)
   pretty (LetM vl e) =
-    hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
+    nested (hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals) (pretty e)
   pretty (Over v t e) =
     pretty v <+> pretty "::" <+> pretty t $$
-    pretty v <+> equals <+> nest 2 (pretty e)
+    nested (pretty v <+> equals) (pretty e)
   pretty (Data t args cons) =
     pretty (Ast.Data t args cons)
 
@@ -312,8 +312,8 @@ instance Pretty Exp where
     pretty "let" <+> pretty v <+> equals <+> guard 0 e <+> pretty "in"
       $$ guard 0 body)
   pretty' (Case v pl d) = (0,
-    pretty "case" <+> pretty v <+> pretty "of" $$
-    vjoin '|' (map arm pl ++ def d)) where
+    nested (pretty "case" <+> pretty v <+> pretty "of") $
+    vcat (map arm pl ++ def d)) where
     arm (c, vl, e) 
       | isTuple c = hcat (intersperse (pretty ", ") pvl) <+> end
       | otherwise = pretty c <+> sep pvl <+> end
@@ -324,7 +324,7 @@ instance Pretty Exp where
   pretty' (Int i) = pretty' i
   pretty' (Chr c) = (100, pretty (show c))
   pretty' (Var v) = pretty' v
-  pretty' (Lambda v e) = (1, pretty v <+> pretty "->" <+> nest 2 (guard 1 e))
+  pretty' (Lambda v e) = (1, nested (pretty v <+> pretty "->") (guard 1 e))
   pretty' (Apply e1 e2) = case (apply e1 [e2]) of
     (Var v, [e1,e2]) | Just prec <- precedence v -> (prec,
       let V s = v in

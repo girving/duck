@@ -5,7 +5,6 @@ module Main where
 
 import qualified Data.Set as Set
 import Data.Set (Set)
-import qualified Data.Map as Map
 import Data.List
 import Control.Monad 
 import System.Environment
@@ -94,10 +93,12 @@ main = do
     [file] -> return file
     _ -> fail "expected zero or one arguments"
 
+  catchFatal $ do
+
   let ifv p = when (Set.member p (phases flags))
   let phase p io = do
         ifv p $ putStr ("\n-- "++pshow p++" --\n")
-        r <- catchFatal io
+        r <- io
         ifv p $ pprint r
         return r
       phase' p = phase p . return
@@ -106,14 +107,14 @@ main = do
   ir <- phase StageIr (return $! Ir.prog ast)
   lir <- phase' StageLir (Lir.prog ir)
   lir <- phase' StageLink (Lir.union Base.base lir)
-  catchFatal $ return $! Lir.check lir
-  lir <- phase StageInfer (liftM fst $ runInfer [] Map.empty $ Infer.prog lir)
-  unless (compileOnly flags) $ rerunInfer [] lir (Infer.main lir)
-  env <- phase StageEnv (runExec $ Interp.prog lir)
+  return $! Lir.check lir
+  lir <- phase StageInfer (runInferProg Infer.prog lir)
+  unless (compileOnly flags) $ rerunInfer StageInfer (lir,[]) Infer.main
+  env <- phase StageEnv (runExec lir Interp.prog)
 
   unless (compileOnly flags) $ do
-    unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
-    Interp.main lir env
+  unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
+  Interp.main lir env
 
 -- for ghci use
 run :: String -> IO ()

@@ -22,6 +22,7 @@ module ParseMonad
 import Prelude hiding (catch)
 import Control.Monad.State
 
+import Pretty
 import SrcLoc
 import Stage
 
@@ -44,13 +45,11 @@ data ParseState = ParseState
 
 type P a = State ParseState a
 
-parseError :: SrcLoc -> String -> a
+parseError :: Pretty s => SrcLoc -> s -> a
 parseError = stageError StageParse
 
-psError :: ParseState -> String -> a
-psError s msg = parseError (ps_loc s) $ msg ++ case ps_rest s of
-    [] -> " at end of file"
-    c:_ -> " before " ++ show c
+psError :: Pretty s => ParseState -> s -> a
+psError s = parseError (ps_loc s)
 
 runP :: P a -> String -> String -> a
 runP parse file input = r where

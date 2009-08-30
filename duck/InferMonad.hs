@@ -1,19 +1,24 @@
-{-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, ScopedTypeVariables, Rank2Types, PatternGuards, TypeSynonymInstances #-}
+{-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, ScopedTypeVariables, Rank2Types, PatternGuards, TypeSynonymInstances, FlexibleContexts #-}
 -- | Duck type inference monad
 
 module InferMonad
   ( Infer
-  , typeError
+  , inferError
+  , withGlobals
   , withFrame
-  , runInfer
+  , getProg
+  , runInferProg
   , rerunInfer
-  , getInfer
-  , updateInfer
   , debugInfer
+  -- * Resolvable substitution failures/type errors
+  , TypeError
+  , typeError, typeErrors, typeReError
+  , typeMismatch
   ) where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
+import Control.Monad.Reader
 import Control.Monad.State hiding (guard)
 import Control.Monad.Error hiding (guard)
 import Control.Exception
@@ -21,62 +26,75 @@ import Control.Exception
 import Util
 import Var
 import Pretty
+import Stage
 import Type
-import Lir (Overloads, Prog, progOverloads)
-import CallStack
+import Lir
 import SrcLoc
+
+type InferStack = CallStack Type
 
 -- |Stores our current knowledge about the types of functions
 type FunctionInfo = Map Var Overloads
 
-type InferState = FunctionInfo
-
-data TypeError = TypeError (CallStack Type) SrcLoc String
+-- |Type errors that may be resolvable substitution failures
+type TypeError = ErrorStack Type
 
 instance Error TypeError where
-  strMsg = TypeError [] noLoc
+  strMsg = ErrorStack [] noLoc . pretty
 
-newtype Infer a = Infer { unInfer :: StateT (CallStack Type, InferState) (ErrorT TypeError IO) a }
-  deriving (Monad, MonadIO, MonadError TypeError, MonadInterrupt)
+newtype Infer a = Infer { unInfer :: ReaderT (Prog, InferStack) (StateT FunctionInfo (ErrorT TypeError IO)) a }
+  deriving (Monad, MonadIO, MonadReader (Prog, InferStack), MonadState FunctionInfo, MonadError TypeError, MonadInterrupt)
 
-showError :: TypeError -> String
-showError (TypeError stack loc msg) = pshow stack ++ "\nType error: "++msg++(if hasLoc loc then " at " ++ show loc else [])
-
-makeTypeError :: SrcLoc -> String -> Infer TypeError
-makeTypeError loc msg = Infer $ get >.= \ (s,_) -> TypeError s loc msg
-
-typeError :: SrcLoc -> String -> Infer a
-typeError loc msg = throwError =<< makeTypeError loc msg
+-- |Indicate a fatal error in inference (one that cannot be resolved by a different overload path)
+inferError :: Pretty s => SrcLoc -> s -> Infer a
+inferError l m = Infer $ ReaderT $ \(_,s) -> 
+  stageErrorIO StageInfer noLoc $ ErrorStack s l (pretty m)
 
 withFrame :: Var -> [Type] -> SrcLoc -> Infer a -> Infer a
-withFrame f args loc e =
-  handleE (\ (e :: AsyncException) -> die . showError =<< makeTypeError noLoc (show e))
-    (Infer $ do
-      (s,_) <- get
-      when (length s > 10) (unInfer $ typeError noLoc "stack overflow")
-      modify (first (CallFrame f args loc :))
-      r <- unInfer e
-      modify (first (const s))
-      return r)
+withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
+  let frame = CallFrame f args loc
+      r e = runReaderT (unInfer e) $ (p, frame : s)
+  when (length s > 10) $ r $ inferError loc "stack overflow"
+  handleE (\(e :: AsyncException) -> r $ inferError loc (show e)) $ -- catch real errors
+    catchError (r e) $ \e ->
+      throwError (e { errStack = frame : errStack e }) -- preprend frame to resolve errors
 
-runInfer :: CallStack Type -> FunctionInfo -> Infer a -> IO (a, FunctionInfo)
-runInfer stack info e = runErrorT (runStateT (unInfer e) (stack, info) >.= second snd) >>= either (die . showError) return
+withGlobals :: TypeEnv -> Infer [(Var,Type)] -> Infer TypeEnv
+withGlobals g f = Infer $ ReaderT $ \(p,s) -> 
+  foldr (uncurry Map.insert) g =.< 
+    runReaderT (unInfer f) (p{ progGlobalTypes = g },s)
 
--- |Takes a 'Prog' instead of 'FunctionInfo', and discards any extra function info
--- computed during the extra inference.
-rerunInfer :: CallStack Type -> Prog -> Infer a -> IO a
-rerunInfer stack prog e = liftM fst (runInfer stack (progOverloads prog) e)
+runInfer :: Stage -> (Prog, InferStack) -> Infer a -> IO (a, FunctionInfo)
+runInfer st ps@(prog,_) f =
+  either (stageErrorIO st noLoc) return =<<
+    runErrorT (runStateT (runReaderT (unInfer f) ps) (progOverloads prog))
 
-instance MonadState InferState Infer where
-  get = snd =.< Infer get
-  put = Infer . modify . second . const
-  --modify = Infer . modify . second
+runInferProg :: Infer TypeEnv -> Prog -> IO Prog
+runInferProg f prog = do
+  (g,o) <- runInfer StageInfer (prog,[]) f
+  return $ prog { progGlobalTypes = g, progOverloads = o }
 
-getInfer :: Infer InferState
-getInfer = get
-updateInfer :: (InferState -> InferState) -> Infer ()
-updateInfer = Infer . modify . second -- modify
+-- |'rerunInfer' discards any extra function info computed during the extra inference.
+rerunInfer :: Stage -> (Prog, InferStack) -> Infer a -> IO a
+rerunInfer st ps f = fst =.< runInfer st ps f
+
+instance ProgMonad Infer where
+  getProg = fst =.< ask
 
 debugInfer :: String -> Infer ()
-debugInfer m = Infer $ get >>= \(s,_) -> liftIO $ do
+debugInfer m = Infer $ ask >>= \(_,s) -> liftIO $ do
   puts (concatMap (\f -> pshow (callFunction f) ++ ":") (reverse s) ++ ' ':m)
+
+
+-- |Indicate a potentially recoverable substitution failure/type error that could be caught during overload resolution
+typeError :: (Pretty s, MonadError TypeError m) => SrcLoc -> s -> m a
+typeError l m = throwError $ ErrorStack [] l (pretty m)
+
+typeMismatch :: (Pretty a, Pretty b, MonadError TypeError m) => a -> b -> m c
+typeMismatch x y = typeError noLoc $ pretty "type mismatch:" <+> quotes (pretty x) <+> pretty "vs" <+> quotes (pretty y)
+
+typeErrors :: (Pretty s, Pretty s', MonadError TypeError m) => SrcLoc -> s -> [(s',TypeError)] -> m a
+typeErrors l m tel = typeError l $ nested' m $ vcat $ map (uncurry nested') tel
+
+typeReError :: (Pretty s, MonadError TypeError m) => SrcLoc -> s -> m a -> m a
+typeReError l m f = catchError f $ \te -> typeError l $ nested' m te

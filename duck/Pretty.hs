@@ -8,14 +8,15 @@ module Pretty
   , pshowlist
   , qshow
   , guard
-  , vjoin
+  , mapPretty
 
   , Doc
   , (<>), (<+>), ($$)
   , hcat, hsep, vcat, sep
   , nest
+  , nested, nested'
   , equals
-  , parens, brackets
+  , parens, brackets, quotes
   ) where
 
 import Text.PrettyPrint
@@ -74,6 +75,20 @@ instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
   pretty = Map.foldWithKey (\k v s ->
     s $$ pretty k <+> equals <+> pretty v) empty
 
-vjoin :: Char -> [Doc] -> Doc
-vjoin _ [] = empty
-vjoin sep (x:rest) = vcat ((space <+> x) : map (char sep <+>) rest)
+mapPretty :: Pretty a => (Doc -> Doc) -> a -> Doc
+mapPretty f a
+  | isEmpty a' = empty
+  | otherwise = f a'
+  where a' = pretty a
+
+nested :: (Pretty a, Pretty b) => a -> b -> Doc
+nested a b
+  | isEmpty b' = a'
+  | isEmpty a' = b'
+  | otherwise = hang a' 2 b'
+  where 
+    a' = pretty a
+    b' = pretty b
+
+nested' :: (Pretty a, Pretty b) => a -> b -> Doc
+nested' = nested . mapPretty (<> colon)

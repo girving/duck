@@ -7,6 +7,7 @@
 
 module Lir
   ( Prog(..)
+  , ProgMonad(..)
   , Datatype(..), Overload(..), Definition(..)
   , Overloads
   , Exp(..)
@@ -109,13 +110,16 @@ data Exp
   | PrimIO !PrimIO [Exp]
   deriving Show
 
+class Monad m => ProgMonad m where
+  getProg :: m Prog
+
 -- |Type of arguments an overload expects to be passed (as opposed to expects to recieve)
 overTypes :: Overload t -> [t]
 overTypes = map snd . overArgs
 
 -- Lambda lifting: IR to Lifted IR conversion
 
-lirError :: SrcLoc -> String -> a
+lirError :: Pretty s => SrcLoc -> s -> a
 lirError = stageError StageLir
 
 empty :: Prog
@@ -377,29 +381,26 @@ instance Pretty Prog where
        [pretty "-- datatypes"]
     ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c) <- Map.toList (progDatatypes prog)]
     ++ [pretty "-- functions"]
-    ++ [function v tl r vl e | (v,o) <- Map.toList (progFunctions prog), Over _ tl r vl e <- o]
+    ++ [function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
     ++ [pretty "-- overloads"]
     ++ [pretty (progOverloads prog)]
     ++ [pretty "-- definitions"]
     ++ map definition (progDefinitions prog)
     where
-    function :: Var -> [TypeSetArg] -> TypePat -> [Var] -> Maybe Exp -> Doc
-    function v tl r _ Nothing =
-      pretty v <+> pretty "::" <+> hsep (intersperse (pretty "->") (map (guard 2) (tl++[(Nothing,r)])))
-    function v tl r vl (Just e) =
-      function v tl r vl Nothing $$
-      prettylist (v : vl) <+> equals <+> nest 2 (pretty e)
-    definition (Def vl e) =
-      hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals <+> nest 2 (pretty e)
-
-instance Pretty Exp where
-  pretty' = pretty' . revert
+    function :: Var -> Overload TypePat -> Doc
+    function v o = nested (pretty v <+> pretty "::") (pretty o)
+    definition (Def vl e) = nested (hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals) (pretty e)
 
 instance Pretty (Map Var Overloads) where
   pretty info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
-    pr f tl (Over _ _ r _ Nothing) = pretty f <+> prettylist tl <+> pretty "::" <+> pretty r
-    pr f tl o@(Over _ _ _ vl (Just e)) = pr f tl o{ overBody = Nothing } $$
-      prettylist (f : vl) <+> equals <+> nest 2 (pretty e)
+    pr f tl o = nested (pretty f <+> pretty "::") (pretty (o{ overArgs = tl }))
+
+instance Pretty t => Pretty (Overload t) where
+  pretty (Over _ a r _ Nothing) = hsep $ intersperse (pretty "->") (map (guard 2) (a ++ [(Nothing,r)]))
+  pretty o@(Over _ _ _ v (Just e)) = sep [pretty (o{ overBody = Nothing }), equals <+> prettylist v <+> pretty "->" <+> pretty e]
+
+instance Pretty Exp where
+  pretty' = pretty' . revert
 
 revert :: Exp -> Ir.Exp
 revert (Int i) = Ir.Int i

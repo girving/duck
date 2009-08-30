@@ -70,6 +70,11 @@ instance HasLoc (Loc a) where loc = srcLoc
 instance HasLoc a => HasLoc [a] where
   loc = mconcat . map loc
 
+instance Pretty SrcLoc where
+  pretty l
+    | hasLoc l = pretty (show l)
+    | otherwise = pretty ()
+
 -- |The location immediately before another
 beforeLoc :: SrcLoc -> SrcLoc
 beforeLoc l@(SrcNone _) = l

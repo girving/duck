@@ -111,13 +111,13 @@ instance Pretty Decl where
   pretty (SpecD f t) =
     pretty f <+> pretty "::" <+> pretty t
   pretty (DefD f args e) =
-    pretty f <+> prettylist args <+> equals $$ nest 2 (guard 0 e)
+    nested (pretty f <+> prettylist args <+> equals) (guard 0 e)
   pretty (LetD p e) =
     pretty p <+> equals <+> pretty e
   pretty (Data t args []) =
     pretty "data" <+> pretty t <+> prettylist args
   pretty (Data t args (hd:tl)) =
-    pretty "data" <+> pretty t <+> prettylist args $$ nest 2 (vcat (
+    nested (pretty "data" <+> pretty t <+> prettylist args) (vcat (
       (equals <+> f hd) : map (\x -> pretty "|" <+> f x) tl))
     where f (c,args) = pretty c <+> prettylist args
   pretty (Infix pf syms) =
@@ -134,8 +134,8 @@ instance Pretty Exp where
     pretty "let" <+> pretty f <+> prettylist args <+> equals
       $$ nest 2 (guard 0 e) <+> pretty "in" $$ (guard 0 body))
   pretty' (Case e cases) = (1,
-    pretty "case" <+> pretty e <+> pretty "of" $$ nest 2 (
-      vjoin '|' (map (\ (p,e) -> pretty p <+> pretty "->" <+> pretty e) cases)))
+    nested (pretty "case" <+> pretty e <+> pretty "of") $ 
+      vcat (map (\ (p,e) -> pretty p <+> pretty "->" <+> pretty e) cases))
   pretty' (If c e1 e2) = (1,
     pretty "if" <+> pretty c <+> pretty "then" <+> pretty e1 <+> pretty "else" <+> pretty e2)
   pretty' (Lambda pl e) = (1, hsep (map (\p -> guard 2 p <+> pretty "->") pl) <+> guard 1 e)

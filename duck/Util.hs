@@ -2,29 +2,35 @@
 -- | Duck utility functions
 
 module Util
-  ( fputs
+  ( flp
+  -- * IO
+  , exit
+  , dieWith
+  , die
+  , fputs
   , puts
   , debug
   , debugVal
+  -- * List
   , duplicates
   , merge
   , groupPairs
   , spanJust
   , zipCheck
   , zipWithCheck
-  , zipWithCheckM
-  , zipWith3M
+  , sameLength
+  -- * Functionals
   , uncurry3
   , first, second
-  , sameLength
+  -- * Data
+  -- ** Enum
   , allOf
   , TextEnum(..)
-  , exit
-  , dieWith
-  , die
+  -- ** Stack
   , Stack(..)
   , (++.)
   , splitStack
+  -- * Monad
   , nop
   , (>.), (>.=), (>=.)
   , (.<), (=.<), (.=<)
@@ -32,13 +38,16 @@ module Util
   , allM
   , firstM
   , secondM
+  , zipWith3M
+  -- ** Maybe
   , MaybeT(..)
-  , MonadMaybe(..)
   , success
-  , guard'
   , returnIf
-  , MonadInterrupt(..)
   , mapMaybeT
+  -- ** Error and Exception
+  , tryError
+  , MonadInterrupt(..)
+  -- ** Strict Identity
   , Sequence, runSequence
   ) where
 
@@ -52,8 +61,12 @@ import Data.Char
 import Control.Exception
 import Control.Monad.Error
 import Control.Monad.State
+import Control.Monad.Reader
 import Control.Monad.Trans
 import Foreign.C.String
+
+flp :: (a,b) -> (b,a)
+flp (a,b) = (b,a)
 
 -- |Write a string to a stream all at once.
 --
@@ -101,15 +114,13 @@ spanJust _ [] = ([],[])
 spanJust f l@(x:r) = maybe ([],l) (\y -> first (y:) $ spanJust f r) $ f x
 
 -- |Same as zip, but bails if the lists aren't equal size
-zipCheck :: MonadMaybe m => [a] -> [b] -> m [(a,b)]
-zipCheck x y | length x == length y = return $ zip x y
-             | otherwise = nothing
+zipCheck :: [a] -> [b] -> Maybe [(a,b)]
+zipCheck [] [] = return []
+zipCheck (x:xl) (y:yl) = ((x,y) :) =.< zipCheck xl yl
+zipCheck _ _ = mzero
 
-zipWithCheck :: MonadMaybe m => (a -> b -> c) -> [a] -> [b] -> m [c]
+zipWithCheck :: (a -> b -> c) -> [a] -> [b] -> Maybe [c]
 zipWithCheck f x y = map (uncurry f) =.< zipCheck x y
-
-zipWithCheckM :: MonadMaybe m => (a -> b -> m c) -> [a] -> [b] -> m [c]
-zipWithCheckM f x y = mapM (uncurry f) =<< zipCheck x y
 
 uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
 uncurry3 f (a,b,c) = f a b c
@@ -217,17 +228,11 @@ secondM f (c,a) = f a >.= \b -> (c, b)
 newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
 
 instance Monad m => Monad (MaybeT m) where
-  m >>= f = MaybeT (runMaybeT m >>= runMaybeT . maybe nothing f)
+  m >>= f = MaybeT $ runMaybeT m >>= maybe (return Nothing) (runMaybeT . f)
   return = MaybeT . return . Just
 
 instance MonadTrans MaybeT where
   lift m = MaybeT (m >.= Just)
-
-class Monad m => MonadMaybe m where
-  nothing :: m a
-
-instance MonadPlus m => MonadMaybe m where
-  nothing = mzero
 
 instance Monad m => MonadPlus (MaybeT m) where
   mzero = MaybeT (return Nothing)
@@ -236,14 +241,9 @@ instance Monad m => MonadPlus (MaybeT m) where
 success :: Monad m => m ()
 success = return ()
 
--- |Same as the normal guard, but for MonadMaybe instead of MonadPlus
-guard' :: MonadMaybe m => Bool -> m ()
-guard' True = success
-guard' False = nothing
-
-returnIf :: MonadMaybe m => a -> Bool -> m a
+returnIf :: MonadPlus m => a -> Bool -> m a
 returnIf x True = return x
-returnIf _ False = nothing
+returnIf _ False = mzero
 
 instance MonadError e m => MonadError e (MaybeT m) where
   throwError = lift . throwError
@@ -251,6 +251,9 @@ instance MonadError e m => MonadError e (MaybeT m) where
 
 mapMaybeT :: (m (Maybe a) -> n (Maybe b)) -> MaybeT m a -> MaybeT n b
 mapMaybeT f = MaybeT . f . runMaybeT
+
+tryError :: MonadError e m => m a -> m (Either e a)
+tryError f = catchError (Right =.< f) (return . Left)
 
 -- A monad for asynchronously interruptible computations
 -- I.e., the equivalent of handle for general monads
@@ -261,9 +264,13 @@ class Monad m => MonadInterrupt m where
 instance MonadInterrupt IO where
   handleE = handle
 
+instance MonadInterrupt m => MonadInterrupt (ReaderT r m) where
+  handleE h m = ReaderT $ \r ->
+    handleE (\e -> runReaderT (h e) r) (runReaderT m r)
+
 instance MonadInterrupt m => MonadInterrupt (StateT s m) where
-  handleE h m = get >>= \s ->
-    mapStateT (handleE (\e -> runStateT (h e) s)) m
+  handleE h m = StateT $ \s ->
+    handleE (\e -> runStateT (h e) s) (runStateT m s)
 
 instance (MonadInterrupt m, Error e) => MonadInterrupt (ErrorT e m) where
   handleE h = mapErrorT (handleE (runErrorT . h))
