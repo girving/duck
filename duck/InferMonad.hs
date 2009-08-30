@@ -48,13 +48,13 @@ newtype Infer a = Infer { unInfer :: ReaderT (Prog, InferStack) (StateT Function
 -- |Indicate a fatal error in inference (one that cannot be resolved by a different overload path)
 inferError :: Pretty s => SrcLoc -> s -> Infer a
 inferError l m = Infer $ ReaderT $ \(_,s) -> 
-  stageErrorIO StageInfer noLoc $ ErrorStack s l (pretty m)
+  stageErrorIO StageInfer noLoc $ ErrorStack (reverse s) l (pretty m)
 
 withFrame :: Var -> [Type] -> SrcLoc -> Infer a -> Infer a
 withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
   let frame = CallFrame f args loc
       r e = runReaderT (unInfer e) $ (p, frame : s)
-  when (length s > 10) $ r $ inferError loc "stack overflow"
+  when (length s > 16) $ r $ inferError loc "stack overflow"
   handleE (\(e :: AsyncException) -> r $ inferError loc (show e)) $ -- catch real errors
     catchError (r e) $ \e ->
       throwError (e { errStack = frame : errStack e }) -- preprend frame to resolve errors

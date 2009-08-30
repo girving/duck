@@ -1,17 +1,20 @@
 -- Duck base
 
+-- TODO: many functions should be made tail recursive
+
 ---- operator precedence
 
 infixr 90  .
 infixr 80  ^ ^^ **
 infixl 70  * /
 infixl 60  + -
-infixr 50  :
+infixr 50  : ++
 infix  40  == != < <= >= >
 infixr 30  &&
 infixr 20  ||
 infixl 10  >> >>=
 infixr 10  =<<
+infixr 0   $
 
 --------- miscellaneous basic functions
 
@@ -19,8 +22,13 @@ id x = x
 
 f $ x = f x
 
+const x _ = x
+
 (.) :: (b -> c) -> (a -> b) -> a -> c
 (.) f g x = f (g x)
+
+flip :: (a -> b -> c) -> b -> a -> c
+flip f x y = f y x
 
 -------- macros
 
@@ -75,6 +83,10 @@ True < _ = False
 
 data Maybe a of Nothing ; Just a
 
+maybe :: b -> (a -> b) -> Maybe a -> b
+maybe n _ Nothing = n
+maybe _ f (Just x) = f x
+
 map :: (a -> b) -> Maybe a -> Maybe b
 map _ Nothing = Nothing
 map f (Just x) = Just (f x)
@@ -105,11 +117,33 @@ cmp Nothing (Just _) = LT
 cmp (Just _) Nothing = GT
 cmp (Just x) (Just y) = cmp x y
 
+length :: Maybe a -> Int
+length Nothing = 0
+length (Just _) = 1
+
+---- either
+
+data Either a b of Left a ; Right b
+
+either :: (a -> c) -> (b -> c) -> Either a b -> c
+either f _ (Left x) = f x
+either _ g (Right y) = g y
+
+cmp :: Either a b -> Either a b -> Ordering
+cmp (Left x) (Left y) = cmp x y
+cmp (Left _) (Right _) = LT
+cmp (Right _) (Left _) = GT
+cmp (Right x) (Right y) = cmp x y
+
 ---- lists
 
-data List a of
-  []
-  a : List a
+data List a of [] ; a : List a
+
+head :: List a -> a
+head (x:_) = x
+
+tail :: List a -> List a
+tail (_:x) = x
 
 map :: (a -> b) -> List a -> List b
 map _ [] = []
@@ -142,13 +176,39 @@ cmp [] _ = LT
 cmp _ [] = GT
 cmp (x:xl) (y:yl) = cmp x y || cmp xl yl
 
+reverse :: List a -> List a
+reverse l = fold (l -> x -> x : l) [] l
+
+(++) :: List a -> List a -> List a
+[] ++ y = y
+(x:xl) ++ y = x : xl ++ y
+
+length :: List a -> Int
+length [] = 0
+length (_:l) = succ (length l)
+
 ---- tuples
+
+fst :: a,b -> a
+fst (a,b) = a
+
+snd :: a,b -> b
+snd (a,b) = b
 
 (==) :: a,b -> a',b' -> Bool
 (a,b) == (a',b') = a == a' && b == b'
 
+curry :: (a,b -> c) -> a -> b -> c
+curry f a b = f (a,b)
+
+uncurry :: (a -> b -> c) -> (a,b -> c)
+uncurry f (a,b) = f a b
+
 cmp :: a,b -> a',b' -> Ordering
 cmp (a,b) (a',b') = cmp a a' || cmp b b'
+
+fst :: a,b,c -> a
+fst (a,b,c) = a
 
 (==) :: a,b,c -> a',b',c' -> Bool
 (a,b,c) == (a',b',c') = a == a' && b == b' && c == c'
@@ -210,7 +270,7 @@ cmp x y =
   else if x == y then EQ
   else GT
 
-x < y = cmp x y == EQ
+x < y = cmp x y == LT
 
 -------- arithmetic
 
@@ -220,6 +280,11 @@ negate x = 0 - x
 
 sum = fold (+) 0
 product = fold (*) 1
+
+succ x = x + 1
+pred x = x - 1
+
+range x y = if x > y then [] else x : range (succ x) y
 
 -------- monads
 

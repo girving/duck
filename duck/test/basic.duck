@@ -14,6 +14,9 @@ a = f x x
 
 g = x -> x
 
+test_a = assert \ a == 12
+test_f = assert \ flip f x 2 == 11
+
 -- tuples
 
 t1,t2,t3 = 1,2,(1,2) :: Int,Int,(Int,Int)

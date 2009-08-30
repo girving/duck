@@ -40,11 +40,12 @@ newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
 -- distinguished from the better kinds of errors.
 execError :: Pretty s => SrcLoc -> s -> Exec a
 execError l m = Exec $ ReaderT $ \(_,s) ->
-  stageErrorIO StageExec noLoc $ ErrorStack s l (pretty m)
+  stageErrorIO StageExec noLoc $ ErrorStack (reverse s) l (pretty m)
 
 withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
 withFrame f args loc e = Exec $ ReaderT $ \(p,s) -> do
   let r e = runReaderT (unExec e) (p, CallFrame f args loc : s)
+  when (length s > 32) $ r $ execError loc "stack overflow"
   handle (\(e :: AsyncException) -> r $ execError loc (show e)) $
     r e
 

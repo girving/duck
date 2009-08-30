@@ -35,8 +35,6 @@ depend x y = x + y
 
 lift_or x = ss_or x
 
-const x _ = x
-
 apply = id
 
 ifor b x = case b of
