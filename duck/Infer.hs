@@ -203,18 +203,12 @@ joinList loc = foldM1 (join loc)
 apply :: Type -> Type -> SrcLoc -> Infer Type
 apply TyVoid _ _ = return TyVoid
 apply _ TyVoid _ = return TyVoid
-apply (TyFun (TypeFun al cl)) t2 loc = do
-  al <- mapM arrow al
-  cl <- mapM closure cl
-  joinList loc (al++cl)
-  where
-  arrow :: (Type,Type) -> Infer Type
-  arrow (a,r) = do
+apply (TyFun fl) t2 loc = joinList loc =<< mapM fun fl where
+  fun (FunArrow a r) = do
     typeReError loc ("cannot apply "++qshow (typeArrow a r)++" to "++qshow t2) $
       subset'' t2 a
     return r
-  closure :: (Var,[Type]) -> Infer Type
-  closure (f,args) = do
+  fun (FunClosure f args) = do
     r <- lookupOver f args'
     case r of
       Nothing -> apply' f args' loc -- no match, type not yet inferred

@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances #-}
+{-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances, FlexibleInstances #-}
 -- | Duck Types
 
 module Type
@@ -35,15 +35,15 @@ import Var
 -- and @(c -> d)@ if @a@ and @c@ have a representable intersection.  We could have
 -- chosen to make all intersections representable by storing intersections of
 -- function types as well, but for now we still stick to storing unions.
-data TypeFun t = TypeFun
-  { funArrows :: ![(t,t)]
-  , funClosures :: ![(Var,[t])] }
+data TypeFun t
+  = FunArrow !t !t
+  | FunClosure !Var ![t]
   deriving (Eq, Ord, Show)
 
 -- |A concrete type (the types of values are always concrete)
 data Type
   = TyCons !CVar [Type]
-  | TyFun !(TypeFun Type)
+  | TyFun ![TypeFun Type]
   | TyVoid
   deriving (Eq, Ord, Show)
 
@@ -52,7 +52,7 @@ data Type
 data TypePat
   = TsVar !Var
   | TsCons !CVar [TypePat]
-  | TsFun !(TypeFun TypePat)
+  | TsFun ![TypeFun TypePat]
   | TsVoid
   deriving (Eq, Ord, Show)
 
@@ -85,11 +85,11 @@ instance HasVar TypePat where
 
 class IsType t where
   typeCons :: CVar -> [t] -> t
-  typeFun :: TypeFun t -> t
+  typeFun :: [TypeFun t] -> t
   typeVoid :: t
 
   unTypeCons :: t -> Maybe (CVar, [t])
-  unTypeFun :: t -> Maybe (TypeFun t)
+  unTypeFun :: t -> Maybe [TypeFun t]
 
   typePat :: t -> TypePat
 
@@ -123,40 +123,31 @@ subst env (TsVar v)
   | Just t <- Map.lookup v env = singleton t
   | otherwise = TsVar v
 subst env (TsCons c tl) = TsCons c (map (subst env) tl)
-subst env (TsFun f) = TsFun (substFun env f)
+subst env (TsFun f) = TsFun (map fun f) where
+  fun (FunArrow s t) = FunArrow (subst env s) (subst env t)
+  fun (FunClosure f tl) = FunClosure f (map (subst env) tl)
 subst _ TsVoid = TsVoid
 _subst = subst
-
-substFun :: TypeEnv -> TypeFun TypePat -> TypeFun TypePat
-substFun env (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
-  arrow (s,t) = (subst env s, subst env t)
-  closure (f,tl) = (f, map (subst env) tl)
 
 -- |Type environment substitution with unbound type variables defaulting to void
 substVoid :: TypeEnv -> TypePat -> Type
 substVoid env (TsVar v) = Map.findWithDefault TyVoid v env
 substVoid env (TsCons c tl) = TyCons c (map (substVoid env) tl)
-substVoid env (TsFun f) = TyFun (substVoidFun env f)
+substVoid env (TsFun f) = TyFun (map fun f) where
+  fun (FunArrow s t) = FunArrow (substVoid env s) (substVoid env t)
+  fun (FunClosure f tl) = FunClosure f (map (substVoid env) tl)
 substVoid _ TsVoid = TyVoid
-
-substVoidFun :: TypeEnv -> TypeFun TypePat -> TypeFun Type
-substVoidFun env (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
-  arrow (s,t) = (substVoid env s, substVoid env t)
-  closure (f,tl) = (f, map (substVoid env) tl)
 
 -- |Occurs check
 occurs :: TypeEnv -> Var -> TypePat -> Bool
 occurs env v (TsVar v') | Just t <- Map.lookup v' env = occurs' v t
 occurs _ v (TsVar v') = v == v'
 occurs env v (TsCons _ tl) = any (occurs env v) tl
-occurs env v (TsFun f) = occursFun env v f
+occurs env v (TsFun f) = any fun f where
+  fun (FunArrow s t) = occurs env v s || occurs env v t
+  fun (FunClosure _ tl) = any (occurs env v) tl
 occurs _ _ TsVoid = False
 _occurs = occurs
-
-occursFun :: TypeEnv -> Var -> TypeFun TypePat -> Bool
-occursFun env v (TypeFun al cl) = any arrow al || any closure cl where
-  arrow (s,t) = occurs env v s || occurs env v t
-  closure (_,tl) = any (occurs env v) tl
 
 -- |Types contains no variables
 occurs' :: Var -> Type -> Bool
@@ -176,14 +167,9 @@ instance Singleton Type TypePat where
 instance Singleton a b => Singleton [a] [b] where
   singleton = map singleton
 
-instance (Singleton a b, Singleton a' b') => Singleton (a,a') (b,b') where
-  singleton (s,t) = (singleton s, singleton t)
-
-instance Singleton Var Var where
-  singleton = id
-
 instance Singleton a b => Singleton (TypeFun a) (TypeFun b) where
-  singleton (TypeFun al cl) = TypeFun (singleton al) (singleton cl)
+  singleton (FunArrow s t) = FunArrow (singleton s) (singleton t)
+  singleton (FunClosure f tl) = FunClosure f (singleton tl)
  
 -- TODO: I'm being extremely cavalier here and pretending that the space of
 -- variables in TsCons and TsVar is disjoint.  When this fails in the future,
@@ -193,13 +179,12 @@ _ignore = skolemize
 skolemize :: TypePat -> Type
 skolemize (TsVar v) = TyCons v [] -- skolemization
 skolemize (TsCons c tl) = TyCons c (map skolemize tl)
-skolemize (TsFun f) = TyFun (skolemizeFun f)
+skolemize (TsFun f) = TyFun (map skolemizeFun f)
 skolemize TsVoid = TyVoid
 
 skolemizeFun :: TypeFun TypePat -> TypeFun Type
-skolemizeFun (TypeFun al cl) = TypeFun (map arrow al) (map closure cl) where
-  arrow (s,t) = (skolemize s, skolemize t)
-  closure (f,tl) = (f, map skolemize tl)
+skolemizeFun (FunArrow s t) = FunArrow (skolemize s) (skolemize t)
+skolemizeFun (FunClosure f tl) = FunClosure f (map skolemize tl)
 
 -- |Convert a singleton typeset to a type if possible
 unsingleton :: TypePat -> Maybe Type
@@ -209,28 +194,23 @@ unsingleton' :: TypeEnv -> TypePat -> Maybe Type
 unsingleton' env (TsVar v) | Just t <- Map.lookup v env = Just t
 unsingleton' _ (TsVar _) = Nothing
 unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
-unsingleton' env (TsFun f) = TyFun =.< unsingletonFun' env f
+unsingleton' env (TsFun f) = TyFun =.< mapM (unsingletonFun' env) f
 unsingleton' _ TsVoid = Just TyVoid
 
 unsingletonFun' :: TypeEnv -> TypeFun TypePat -> Maybe (TypeFun Type)
-unsingletonFun' env (TypeFun al cl) = do
-  al <- mapM arrow al
-  cl <- mapM closure cl
-  Just $ TypeFun al cl
-  where
-  arrow (s,t) = do
-    s <- unsingleton' env s
-    t <- unsingleton' env t
-    Just (s,t)
-  closure (f,tl) = mapM (unsingleton' env) tl >.= \tl -> (f,tl)
+unsingletonFun' env (FunArrow s t) = do
+  s <- unsingleton' env s
+  t <- unsingleton' env t
+  return (FunArrow s t)
+unsingletonFun' env (FunClosure f tl) = FunClosure f =.< mapM (unsingleton' env) tl
 
 -- |Find the set of free variables in a typeset
 freeVars :: TypePat -> [Var]
 freeVars (TsVar v) = [v]
 freeVars (TsCons _ tl) = concatMap freeVars tl
-freeVars (TsFun (TypeFun al cl)) = concatMap arrow al ++ concatMap closure cl where
-  arrow (s,t) = freeVars s ++ freeVars t
-  closure (_,tl) = concatMap freeVars tl
+freeVars (TsFun fl) = concatMap f fl where
+  f (FunArrow s t) = freeVars s ++ freeVars t
+  f (FunClosure _ tl) = concatMap freeVars tl
 freeVars TsVoid = []
 
 -- Pretty printing
@@ -247,9 +227,10 @@ instance Pretty Type where
   pretty' = pretty' . singleton
 
 instance Pretty t => Pretty (TypeFun t) where
-  pretty' (TypeFun [] [(f,[])]) = pretty' f
-  pretty' (TypeFun [(s,t)] []) = (1, guard 2 s <+> pretty "->" <+> guard 1 t)
-  pretty' (TypeFun [] [(f,tl)]) = (50, pretty f <+> prettylist tl)
-  pretty' (TypeFun al cl) = (40, hsep (List.intersperse (pretty "&") (
-    map (\ (s,t) -> parens (guard 2 s <+> pretty "->" <+> guard 1 t)) al ++
-    map (\ (f,tl) -> pretty f <+> prettylist tl) cl)))
+  pretty' (FunClosure f []) = pretty' f
+  pretty' (FunClosure f tl) = (50, pretty f <+> prettylist tl)
+  pretty' (FunArrow s t) = (1, guard 2 s <+> pretty "->" <+> guard 1 t)
+
+instance Pretty t => Pretty [TypeFun t] where
+  pretty' [f] = pretty' f
+  pretty' fl = (40, hsep (List.intersperse (pretty "&") (map (guard 41) fl)))

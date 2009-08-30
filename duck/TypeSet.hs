@@ -85,7 +85,7 @@ equal TyVoid TyVoid = success
 equal x y = typeMismatch x "==" y
 
 -- |Exact type equality for function types.
-equalFun :: TypeMonad m => TypeFun Type -> TypeFun Type -> m ()
+equalFun :: TypeMonad m => [TypeFun Type] -> [TypeFun Type] -> m ()
 equalFun f f' = do
   subsetFun'' f f'
   subsetFun'' f' f
@@ -107,7 +107,7 @@ union (TyCons c tl) (TyCons c' tl') | c == c' =
   TyCons c =.< zipWithVariances arg c tl tl' where
   arg Covariant t t' = union t t'
   arg Invariant t t' = equal t t' >. t
-union (TyFun f) (TyFun f') = TyFun =.< unionFun f f'
+union (TyFun f) (TyFun f') = TyFun =.< reduceFuns (f ++ f')
 union TyVoid t = return t
 union t TyVoid = return t
 union x y = typeMismatch x "|" y
@@ -118,31 +118,27 @@ _unionList tl tl'
   | Just tt <- zipCheck tl tl' = mapM (uncurry union) tt
   | otherwise = typeMismatchList tl "|" tl'
 
--- |Union two type functions.  Except in special cases, this means unioning the lists.
-unionFun :: TypeMonad m => TypeFun Type -> TypeFun Type -> m (TypeFun Type)
-unionFun (TypeFun al cl) (TypeFun al' cl') = do
-  al'' <- reduceArrows (al++al')
-  return $ TypeFun (List.sort al'') (merge cl cl')
-
--- |Given a union list of arrow types, attempt to reduce them into a
--- smaller equivalent list.  This can either successfully reduce, do nothing,
+-- |Given a union list of primitive function types, attempt to reduce them into
+-- a smaller equivalent list.  This can either successfully reduce, do nothing,
 -- or fail (detect that the union is impossible).
-reduceArrows :: TypeMonad m => [(Type,Type)] -> m [(Type,Type)]
-reduceArrows [] = return []
-reduceArrows ((s,t):al) = do
-  r <- reduce [] al
+reduceFuns :: TypeMonad m => [TypeFun Type] -> m [TypeFun Type]
+reduceFuns [] = return []
+reduceFuns (f:fl) = do
+  r <- reduce f [] fl
   case r of
-    Nothing -> ((s,t) :) =.< reduceArrows al
-    Just al -> reduceArrows al -- keep trying, maybe we can reduce more
+    Nothing -> (f:) =.< reduceFuns fl
+    Just fl -> reduceFuns fl -- keep trying, maybe we can reduce more
   where
-  reduce _ [] = return Nothing
-  reduce prev (a@(s',t') : next) = do
+  reduce _ _ [] = return Nothing
+  reduce f@(FunArrow s t) prev (f'@(FunArrow s' t') : next) = do
     ss <- intersect s s' -- function arguments are contravariant, so intersect
     case ss of
-      Nothing -> reduce (a:prev) next
+      Nothing -> reduce f (f':prev) next
       Just ss -> do
         tt <- union t t' -- return values are covariant, so union 
-        return $ Just $ (ss,tt) : reverse prev ++ next
+        return $ Just $ FunArrow ss tt : reverse prev ++ next
+  reduce f prev (f' : next) | f == f' = return $ Just $ f : reverse prev ++ next
+  reduce f prev (f' : next) = reduce f (f':prev) next
 
 -- |@z <- intersect x y@ means that a value of type z can be safely viewed as
 -- having type x and type y.  Viewed as sets, S(z) <= intersect S(x) S(y).
@@ -284,59 +280,34 @@ subset'' x y = typeMismatch x "<=" y
 -- TODO: Currently all we know is that m is a 'TypeMonad', and therefore we
 -- lack the ability to do speculative computation and rollback.  Therefore,
 -- 'intersect' currently means ignore all but the first entry.
-subsetFun' :: forall m. TypeMonad m => TypeFun Type -> TypeFun TypePat -> Env m
-subsetFun' ft@(TypeFun al cl) ft'@(TypeFun al' cl') = sequenceS (map (arrow al' cl') al ++ map (closure al' cl') cl) where
-  arrow :: [(TypePat,TypePat)] -> [(Var,[TypePat])] -> (Type,Type) -> Env m
-  arrow al' _ f
-    | List.elem (singleton f) al' = successS -- succeed if f appears in al'
-  arrow ((s',t'):_) _ f = do
-    tenv <- freezeS
-    case unsingleton' tenv s' of
-      Nothing -> return [(TyFun ft,TsFun ft')]
-      Just s'' -> do
-        t <- typeApply (TyFun (TypeFun [f] [])) s''
-        withStateT (freezeVars (freeVars s')) $ -- We're about to feed these vars to apply, so they'll become rigid
-          subset' t t'
-  arrow [] _ _ = typeMismatch (TyFun ft) "<=" (TsFun ft')
-
-  closure :: [(TypePat,TypePat)] -> [(Var,[TypePat])] -> (Var,[Type]) -> Env m
-  closure _ fl' f
+subsetFun' :: forall m. TypeMonad m => [TypeFun Type] -> [TypeFun TypePat] -> Env m
+subsetFun' fl fl' = sequenceS (map (fun fl') fl) where
+  fun fl' f
     | List.elem (singleton f) fl' = successS -- succeed if f appears in fl'
-  closure ((s',t'):_) _ f = do
+  fun (FunArrow s' t':_) f = do
     tenv <- freezeS
     case unsingleton' tenv s' of
-      Nothing -> return [(TyFun ft,TsFun ft')]
+      Nothing -> return [(TyFun fl,TsFun fl')]
       Just s'' -> do
-        t <- typeApply (TyFun (TypeFun [] [f])) s''
+        t <- typeApply (TyFun [f]) s''
         withStateT (freezeVars (freeVars s')) $ -- We're about to feed these vars to apply, so they'll become rigid
           subset' t t'
-  closure [] _ _ = typeMismatch (TyFun ft) "<=" (TsFun ft')
+  fun _ _ = typeMismatch (TyFun fl) "<=" (TsFun fl')
 
 -- TODO: This is implemented only for primitive functions (single entry TypeFun's)
-equalFun' :: forall m. TypeMonad m => TypeFun Type -> TypeFun TypePat -> Env m
-equalFun' (TypeFun [(s,t)] []) (TypeFun [(s',t')] []) = sequenceS [equal' s s', equal' t t']
-equalFun' (TypeFun [] [(v,tl)]) (TypeFun [] [(v',tl')]) | v == v', length tl == length tl' = sequenceS (zipWith equal' tl tl')
+equalFun' :: forall m. TypeMonad m => [TypeFun Type] -> [TypeFun TypePat] -> Env m
+equalFun' [FunArrow s t] [FunArrow s' t'] = sequenceS [equal' s s', equal' t t']
+equalFun' [FunClosure v tl] [FunClosure v' tl'] | v == v', length tl == length tl' = sequenceS (zipWith equal' tl tl')
 equalFun' x y = typeMismatch (TyFun x) "==" (TsFun y)
 
 -- |Subset for singleton function types.
-subsetFun'' :: forall m. TypeMonad m => TypeFun Type -> TypeFun Type -> m ()
-subsetFun'' ft@(TypeFun al cl) ft'@(TypeFun al' cl') = do
-  mapM_ (arrow al' cl') al
-  mapM_ (closure al' cl') cl
-  where
-  arrow :: [(Type,Type)] -> [(Var,[Type])] -> (Type,Type) -> m ()
-  arrow al' _ a | List.elem a al' = success -- succeed if a appears in al'
-  arrow ((s',t'):_) _ (s,t) = do
-    subset'' s' s -- contravariant
-    subset'' t t' -- covariant
-  arrow [] _ _ = typeMismatch (TyFun ft) "<=" (TyFun ft') -- arrows are never considered as general as closures
-
-  closure :: [(Type,Type)] -> [(Var,[Type])] -> (Var,[Type]) -> m ()
-  closure _ fl' f | List.elem f fl' = success -- succeed if f appears in fl'
-  closure ((s',t'):_) _ f = do
-    t <- typeApply (TyFun (TypeFun [] [f])) s'
+subsetFun'' :: forall m. TypeMonad m => [TypeFun Type] -> [TypeFun Type] -> m ()
+subsetFun'' fl fl' = mapM_ (fun fl') fl where
+  fun fl' f | List.elem f fl' = success -- succeed if f appears in fl'
+  fun (FunArrow s' t':_) f = do
+    t <- typeApply (TyFun [f]) s'
     subset'' t t'
-  closure [] _ _ = typeMismatch (TyFun ft) "<=" (TyFun ft')
+  fun _ _ = typeMismatch (TyFun fl) "<=" (TyFun fl')
 
 -- |The equivalent of 'subset' for lists.  To succeed, the second argument must
 -- be at least as long as the first (think of the first as being the types of
@@ -372,7 +343,7 @@ specialization' t (TsVar v') env =
     Just t2 | t == t2 -> Just env
     Just _ -> Nothing
 specialization' (TsCons c tl) (TsCons c' tl') env | c == c' = specializationList' tl tl' env
-specialization' (TsFun f) (TsFun f') env = specializationFun' f f' env
+specialization' (TsFun f) (TsFun f') env = specializationFuns' f f' env
 specialization' _ _ _ = Nothing
 
 specializationList :: [TypePat] -> [TypePat] -> Bool
@@ -381,13 +352,14 @@ specializationList tl tl' = isJust (specializationList' tl tl' Map.empty)
 specializationList' :: [TypePat] -> [TypePat] -> Map Var TypePat -> Maybe (Map Var TypePat)
 specializationList' tl tl' env = foldl (>>=) (return env) =<< zipWithCheck specialization' tl tl'
 
-specializationFun' :: TypeFun TypePat -> TypeFun TypePat -> Map Var TypePat -> Maybe (Map Var TypePat)
-specializationFun' (TypeFun al cl) (TypeFun al' cl') env = foldl (>>=) (return env) (map arrow al' ++ map closure cl') where
-  -- Succeed if we can find some left-hand function that specializes us
-  arrow :: (TypePat,TypePat) -> Map Var TypePat -> Maybe (Map Var TypePat)
-  arrow (_,t') env | List.null cl = msum $ map (\ (_,t) -> specialization' t t' env) al
-                   | otherwise = Just env -- treat closures as specializations of all arrow
-  closure c' env = if List.elem c' cl then Just env else Nothing
+-- Succeed if for each right-hand function we can find some left-hand function that specializes it
+specializationFuns' :: [TypeFun TypePat] -> [TypeFun TypePat] -> Map Var TypePat -> Maybe (Map Var TypePat)
+specializationFuns' fl fl' env = foldl (>>=) (return env) (map right fl') where
+  right f' env = msum (map (\f -> spec f f' env) fl)
+  spec f f' | f == f' = Just
+  spec (FunClosure _ _) (FunArrow _ _) = Just -- treat closures as specializations of all arrows
+  spec (FunArrow _ t) (FunArrow _ t') = specialization' t t'
+  spec _ (FunClosure _ _) = const Nothing
 
 -- |If leftovers remain after unification, this function explains which
 -- variables caused the problem.
@@ -395,7 +367,9 @@ contravariantVars :: Leftovers -> [Var]
 contravariantVars = concatMap (cv . snd) where
   cv (TsVar _) = []
   cv (TsCons _ tl) = concatMap cv tl
-  cv (TsFun (TypeFun al _)) = concatMap (freeVars . fst) al
+  cv (TsFun fl) = concatMap fv fl where
+    fv (FunArrow s _) = freeVars s
+    fv (FunClosure _ _) = []
   cv TsVoid = []
 
 showContravariantVars :: Leftovers -> String

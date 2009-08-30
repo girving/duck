@@ -69,15 +69,15 @@ isTypeUnit :: IsType t => t -> Bool
 isTypeUnit = isTypeC "()"
 
 typeArrow :: IsType t => t -> t -> t
-typeArrow s t = typeFun (TypeFun [(s,t)] [])
+typeArrow s t = typeFun [FunArrow s t]
 
 isTypeArrow :: IsType t => t -> Maybe (t,t)
 isTypeArrow t
-  | Just (TypeFun [a] []) <- unTypeFun t = Just a
+  | Just [FunArrow s t] <- unTypeFun t = Just (s,t)
   | otherwise = Nothing
 
 typeClosure :: IsType t => Var -> [t] -> t
-typeClosure f tl = typeFun (TypeFun [] [(f,tl)])
+typeClosure f tl = typeFun [FunClosure f tl]
 
 typeTuple :: IsType t => [t] -> t
 typeTuple tl = typeCons (tupleCons tl) tl

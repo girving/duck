@@ -168,9 +168,9 @@ prog name decls = flip execState (empty name) $ do
       invVars :: TypePat -> [Var]
       invVars (TsVar _) = []
       invVars (TsCons c tl) = concat [invVars t | (i,t) <- zip [0..] tl, Set.member (c,i) inv]
-      invVars (TsFun (TypeFun al cl)) = concatMap arrow al ++ concatMap closure cl where
-        arrow (s,t) = freeVars s ++ invVars t
-        closure (_,tl) = concatMap freeVars tl
+      invVars (TsFun fl) = concatMap fun fl where
+        fun (FunArrow s t) = freeVars s ++ invVars t
+        fun (FunClosure _ tl) = concatMap freeVars tl
       invVars TsVoid = []
     finish inv = Map.mapWithKey f datatypes where
       f c datatype = datatype{ dataVariances = map variance [0..arity-1] } where
