@@ -20,16 +20,14 @@ duck: Duck.hs $(OTHERS)
 
 %.hs: %.y
 	@rm -f $@
-	umask a-w ; \
-	$(HAPPY) $(HAPPYFLAGS) $< -o $@
+	umask a-w ; $(HAPPY) $(HAPPYFLAGS) $< -o $@
 
 %.info: %.y
 	$(HAPPY) $(HAPPYFLAGS) $< -i$@
 
 %.hs: %.x
 	@rm -f $@
-	umask a-w ; \
-	$(ALEX) $(ALEXFLAGS) $< -o $@
+	umask a-w ; $(ALEX) $(ALEXFLAGS) $< -o $@
 
 ALL_TESTS = $(TESTS) $(TESTS_C) $(TESTS_FAIL)
 .PHONY: test $(ALL_TESTS)
