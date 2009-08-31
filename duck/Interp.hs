@@ -23,7 +23,6 @@ import Value
 import SrcLoc
 import Pretty
 import Lir hiding (prog)
-import qualified Ptrie
 import ExecMonad
 import qualified Infer
 import qualified Base
@@ -40,12 +39,12 @@ lookup global env loc v
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
   | otherwise = getProg >>= lp where
   lp prog
-    | Just o <- Map.lookup v (progOverloads prog) = return (
-        ValClosure v [] o, -- if we find overloads, make a new closure
-        typeClosure v [])
-    | Just (o:_) <- Map.lookup v (progFunctions prog) = let tt = fst $ head $ overArgs o in return (
-        ValClosure v [] (Ptrie.empty tt), -- this should never be used
-        typeClosure v [])
+    | Just _ <- Map.lookup v (progOverloads prog) = return 
+        (ValClosure v [] -- if we find overloads, make a new closure
+        ,typeClosure v [])
+    | Just _ <- Map.lookup v (progFunctions prog) = return
+        (ValClosure v [] -- this should never be used
+        ,typeClosure v [])
     | Just _ <- Map.lookup v (progDatatypes prog) = return (ValType, typeType (TyCons v []))
     | otherwise = execError loc ("unbound variable " ++ qshow v)
 
@@ -72,6 +71,15 @@ cast t x = do
   (d,_) <- x
   return (d,t)
 
+--runInfer :: SrcLoc -> Infer Type -> Exec Type
+runInfer l f = do
+  t <- liftInfer f
+  when (t == TyVoid) $ execError l "<<void>>"
+  return t
+
+inferExpr :: Locals -> SrcLoc -> Exp -> Exec Type
+inferExpr env loc = runInfer loc . Infer.expr (Map.map snd env) loc
+
 expr :: Globals -> Locals -> SrcLoc -> Exp -> Exec TValue
 expr global env loc = exp where
   exp (Int i) = return $ (ValInt i, typeInt)
@@ -79,14 +87,14 @@ expr global env loc = exp where
   exp (Var v) = lookup global env loc v
   exp (Apply e1 e2) = do
     v1 <- exp e1
-    trans global env loc v1 e2
+    applyExpr global env loc v1 e2
   exp (Let v e body) = do
     d <- exp e
     expr global (Map.insert v d env) loc body
   exp (Case _ [] Nothing) = execError loc ("pattern match failed: no cases")
   exp (Case _ [] (Just body)) = exp body
   exp ce@(Case v pl def) = do
-    t <- liftInfer $ Infer.expr (Map.map snd env) loc ce
+    t <- inferExpr env loc ce
     d <- lookup global env loc v
     (c,dl,conses) <- case d of
       (v, TyCons tv types) -> do
@@ -110,16 +118,16 @@ expr global env loc = exp where
         Just e' -> cast t $ expr global env loc e' 
   exp (Cons c el) = do
     (args,types) <- unzip =.< mapM exp el
-    (,) (ValCons c args) =.< liftInfer (Infer.cons loc c types)
+    (,) (ValCons c args) =.< runInfer loc (Infer.cons loc c types)
   exp (Prim op el) = do
     (dl,tl) <- unzip =.< mapM exp el
     d <- Base.prim loc op dl
-    t <- liftInfer $ Base.primType loc op tl
+    t <- runInfer loc $ Base.primType loc op tl
     return (d,t)
   exp (Bind v e1 e2) = do
     d <- exp e1
     dt <- liftInfer $ Infer.runIO (snd d)
-    t <- liftInfer $ Infer.expr (Map.insert v dt (Map.map snd env)) loc e2
+    t <- inferExpr (Map.insert v (undefined,dt) env) loc e2
     return (ValBindIO v d env e2, t)
   exp (Return e) = do
     (d,t) <- exp e
@@ -129,45 +137,54 @@ expr global env loc = exp where
     t <- liftInfer $ Base.primIOType loc p tl
     return (ValPrimIO p dl, typeIO t)
   exp (Spec e ts) =
-    secondM (liftInfer . Infer.spec loc ts e) =<< exp e
+    secondM (runInfer loc . Infer.spec loc ts e) =<< exp e
   exp (ExpLoc l e) = expr global env l e
 
-transExpr :: Locals -> Trans -> Exp -> Exec Value
-transExpr env Delayed e = return $ ValDelay env e
+-- |Evaluate an argument acording to the given transform
+transExpr :: Globals -> Locals -> SrcLoc -> Exp -> Maybe Trans -> Exec Value
+transExpr global env loc e Nothing = fst =.< expr global env loc e
+transExpr _ env _ e (Just Delayed) = return $ ValDelay env e
 
-trans :: Globals -> Locals -> SrcLoc -> TValue -> Exp -> Exec TValue
-trans global env loc f@(ValClosure _ _ ov, _) e
-  | Left (Just tt) <- Ptrie.unPtrie ov = do
-  t <- liftInfer $ Infer.expr (Map.map snd env) loc e
-  a <- transExpr env tt e
-  let at = (a, transType tt t)
-  apply global f at t loc
-trans global env loc f e = do
-  a <- expr global env loc e
-  apply global f a (snd a) loc
+applyExpr :: Globals -> Locals -> SrcLoc -> TValue -> Exp -> Exec TValue
+applyExpr global env loc f e =
+  apply global loc f (transExpr global env loc e)
+    =<< inferExpr env loc e
 
--- Because of the delay mechanism, we pass in two types related to the argument
--- "a".  The second type "at" is the type of the value which was passed in, and
--- is the type used for type inference/overload resolution.  The type inside
--- "a" is the type that will be seen inside the function.
-apply :: Globals -> TValue -> TValue -> Type -> SrcLoc -> Exec TValue
-apply global (ValClosure f args ov, ft) a at loc = do
-  let args' = args ++ [a]
-  t <- liftInfer $ Infer.apply ft at loc
-  case Ptrie.lookup [at] ov of
-    Nothing -> execError loc ("unresolved overload: " ++ pshow f ++ " " ++ pshowlist (map snd args'))
-    Just ov -> case Ptrie.unPtrie ov of
-      Left _ -> return (ValClosure f args' ov, t)
-      Right (Over _ _ _ _ Nothing) -> return (ValClosure f args' ov, t)
-      Right (Over oloc at _ vl (Just e)) -> cast t $ withFrame f args' loc $ expr global (Map.fromList $ zip vl $ zipWith ((.snd) .(,) .fst) args' at) oloc e
-apply global (ValDelay env e, ta) _ _ loc | Just (_,t) <- isTypeArrow ta =
+-- Because of the delay mechanism, we pass in two things related to the argument
+-- "a".  The first argument provides the argument itself, whose evaluation must
+-- be delayed until we know the correct transform to apply.  The second type
+-- "at" is the type of the value which was passed in, and is the type used for
+-- type inference/overload resolution.
+apply :: Globals -> SrcLoc -> TValue -> (Maybe Trans -> Exec Value) -> Type -> Exec TValue
+apply global loc (ValClosure f args, ft) ae at = do
+  -- infer return type
+  rt <- runInfer loc $ Infer.apply loc ft at
+  -- lookup appropriate overload (parallels Infer.apply/resolve)
+  let atl = map snd args ++ [at]
+  o <- maybe 
+    (execError loc ("unresolved overload: " ++ pshow f ++ " " ++ pshowlist atl))
+    return =<< liftInfer (Infer.lookupOver f atl)
+  -- determine type transform for this argument, and evaluate
+  let tt = map fst $ overArgs o
+  -- we throw away the type because we can reconstruct it later with argType
+  a <- ae (tt !! length args)
+  let al = args ++ [(a,at)]
+  case o of
+    Over _ _ _ _ Nothing -> 
+      -- partially applied
+      return (ValClosure f al, rt)
+    Over oloc tl _ vl (Just e) -> do
+      -- full function call (parallels Infer.cache)
+      let al' = zipWith (\(a,_) (_,t) -> (a,t)) al tl
+      cast rt $ withFrame f al' loc $ expr global (Map.fromList (zip vl al')) oloc e
+apply global loc (ValDelay env e, ta) _ _ | Just (_,t) <- isTypeArrow ta =
   cast t $ expr global env loc e
-apply _ (_,t1) (_,t2) _ loc | Just (TyCons c tl) <- isTypeType t1, Just t <- isTypeType t2 = do
+apply _ loc (_,t1) _ t2 | Just (TyCons c tl) <- isTypeType t1, Just t <- isTypeType t2 = do
   prog <- getProg
   if length tl < length (Infer.lookupVariances prog c) 
     then return (ValType, typeType (TyCons c (tl++[t])))
     else execError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
-apply _ (v1,t1) (v2,t2) _ loc = execError loc ("can't apply '"++pshow v1++" :: "++pshow t1++"' to '"++pshow v2++" :: "++pshow t2++"'")
+apply _ loc (v1,t1) e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply '"++pshow v1++" :: "++pshow t1++"' to '"++pshow v2++" :: "++pshow t2++"'")
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()

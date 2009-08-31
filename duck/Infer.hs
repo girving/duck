@@ -25,6 +25,7 @@ module Infer
   , lookupCons
   , lookupConstructor
   , lookupVariances
+  , lookupOver
   ) where
 
 import Prelude hiding (lookup)
@@ -53,19 +54,22 @@ type Locals = TypeEnv
 
 -- Utility functions
 
-insertOver :: Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
-insertOver f a o = do
+-- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
+insertOver :: Bool -> Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
+insertOver _ f a o = do
   --debugInfer ("recorded "++pshow f++" "++pshowlist a++" = "++pshow (overRet o))
   modify $ Ptrie.mapInsert f a o
 
-lookupOver :: Var -> [Type] -> Infer (Maybe (Either (Maybe Trans) (Overload Type)))
+-- |Lookup an overload from the table, or make one if it's partial
+lookupOver :: Var -> [Type] -> Infer (Maybe (Overload Type))
 lookupOver f tl = get >.=
-  (fmap Ptrie.unPtrie . Ptrie.lookup tl <=< Map.lookup f)
+  (maybe Nothing (makeover . second (fmap Ptrie.unLeaf) . Ptrie.lookup tl) . Map.lookup f)
+  where
+    makeover (_, Nothing) = Nothing
+    makeover (tt, Just Nothing) = Just $ Over noLoc (zip tt tl) (typeClosure f tl) [] Nothing
+    makeover (_, Just (Just o)) = Just o
 
-lookupOverTrans :: Var -> [Type] -> Infer [Maybe Trans]
-lookupOverTrans f tl = get >.=
-  maybe [] (Ptrie.assocs tl) . Map.lookup f
-
+-- |Given a set of overloads, return the transform annotations for the first @n@ arguments, if they are the same.
 transOvers :: [Overload t] -> Int -> Maybe [Maybe Trans]
 transOvers [] _ = Nothing
 transOvers os n = if all (tt ==) tts then Just tt else Nothing 
@@ -91,8 +95,8 @@ lookupDatatype loc tv types = getProg >>= \prog ->
     Just (Data _ vl cons _) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
     _ -> inferError loc ("unbound datatype constructor " ++ qshow tv)
 
-lookupOverloads :: SrcLoc -> Var -> Infer [Overload TypePat]
-lookupOverloads loc f = getProg >>= \prog ->
+lookupFunction :: SrcLoc -> Var -> Infer [Overload TypePat]
+lookupFunction loc f = getProg >>= \prog ->
   case Map.lookup f (progFunctions prog) of
     Just o -> return o
     _ -> inferError loc ("unbound function " ++ qshow f)
@@ -134,7 +138,7 @@ expr env loc = exp where
   exp (Apply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
-    apply t1 t2 loc
+    apply loc t1 t2
   exp (Let v e body) = do
     t <- exp e
     expr (Map.insert v t env) loc body
@@ -203,34 +207,29 @@ join loc t1 t2 =
 joinList :: SrcLoc -> [Type] -> Infer Type
 joinList loc = foldM1 (join loc)
 
-apply :: Type -> Type -> SrcLoc -> Infer Type
-apply TyVoid _ _ = return TyVoid
+apply :: SrcLoc -> Type -> Type -> Infer Type
 apply _ TyVoid _ = return TyVoid
-apply (TyFun fl) t2 loc = joinList loc =<< mapM fun fl where
+apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
   fun (FunArrow a r) = do
     typeReError loc ("cannot apply "++qshow (typeArrow a r)++" to "++qshow t2) $
       subset'' t2 a
     return r
   fun (FunClosure f args) = do
-    r <- lookupOver f args'
-    case r of
-      Nothing -> apply' f args' loc -- no match, type not yet inferred
-      Just (Right t) -> return (overRet t) -- fully applied
-      Just (Left _) -> return $ typeClosure f args' -- partially applied
-    where args' = args ++ [t2]
-apply t1 t2 loc | Just (TyCons c tl) <- isTypeType t1, Just t <- isTypeType t2 = do
+    let atl = args ++ [t2]
+    o <- maybe 
+      (resolve f atl loc) -- no match, type not yet inferred
+      return =<< lookupOver f atl
+    return (overRet o)
+apply loc t1 t2 | Just (TyCons c tl) <- isTypeType t1, Just t <- isTypeType t2 = do
   vl <- typeVariances c
   if length tl < length vl
     then return (typeType (TyCons c (tl++[t])))
     else typeError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
-apply t1 t2 loc = typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
+apply loc t1 t2 = typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
 
 instance TypeMonad Infer where
-  typeApply = applyTry
+  typeApply = apply noLoc
   typeVariances v = getProg >.= \p -> lookupVariances p v
-
-applyTry :: Type -> Type -> Infer Type
-applyTry f t = apply f t noLoc
 
 lookupVariances :: Prog -> Var -> [Variance]
 lookupVariances prog c | Just d <- Map.lookup c (progDatatypes prog) = dataVariances d
@@ -239,11 +238,12 @@ lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization w
 overDesc :: Overload TypePat -> Doc
 overDesc o = pretty (o { overBody = Nothing }) <+> parens (pretty "at" <+> pretty (show (overLoc o)))
 
--- Resolve an overload.  A result of Nothing means all overloads are still partially applied.
-resolve :: Var -> [Type] -> SrcLoc -> Infer (Either [Maybe Trans] (Overload TypePat))
+-- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
+resolve :: Var -> [Type] -> SrcLoc -> Infer (Overload Type)
 resolve f args loc = do
-  rawOverloads <- lookupOverloads loc f -- look up possibilities
-  let prune o = tryError $ subsetList args (overTypes o) >. o
+  rawOverloads <- lookupFunction loc f -- look up possibilities
+  let nargs = length args
+      prune o = tryError $ subsetList args (overTypes o) >. o
       isSpecOf :: Overload TypePat -> Overload TypePat -> Bool
       isSpecOf a b = specializationList (overTypes a) (overTypes b)
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
@@ -254,29 +254,29 @@ resolve f args loc = do
   overloads <- case partitionEithers pruned of
     (errs,[]) -> typeErrors loc (call <+> pretty "does not match any overloads, tried") $ zip (map overDesc rawOverloads) errs
     (_,os) -> return $ findmin os
-  case partition ((length args ==) . length . overVars) overloads of
-    ([],os) -> maybe -- all overloads are still partially applied
-      (inferError loc (call <+> pretty "has conflicting type transforms with other overloads"))
-      (return . Left)
-      $ transOvers os (succ $ length args) -- one day the succ might be able to go away
-    ([o],[]) -> return (Right o) -- exactly one fully applied option
-    (fully,[]) -> inferError loc (call <+> pretty "is ambiguous, possibilities are:" $$ options fully)
-    (fully,partially) -> inferError loc (call <+> pretty "is ambiguous, could either be fully applied as:" $$ options fully $$ pretty "or partially applied as:" $$ options partially)
 
--- |Overloaded function application
-apply' :: Var -> [Type] -> SrcLoc -> Infer Type
-apply' f args loc = do
-  overload <- resolve f args loc
-  let tt = either id (map fst . overArgs) overload
-  ctt <- lookupOverTrans f args
-  unless (and $ zipWith (==) tt ctt) $
-    inferError loc (qshow (pretty f <+> prettylist args) ++ " has conflicting type transforms with other overloads")
-  case overload of
-    Left tt -> do
-      let t = typeClosure f args
-      insertOver f (zip tt args) (Over noLoc [] t [] Nothing)
-      return t
-    Right o -> cache f args o loc
+  -- determine applicable argument type transform annotations
+  tt <- maybe
+    (inferError loc $ call <+> pretty "has ambiguous type transforms, possibilities are:" $$ options overloads)
+    return $ transOvers overloads nargs
+  let at = zip tt args
+
+  over <- case partition ((nargs ==) . length . overVars) overloads of
+    ([o],[]) -> 
+      -- exactly one fully applied option: evaluate
+      cache f args o loc
+    ([],_) ->
+      -- all overloads are still partially applied, so create a closure overload
+      return (Over noLoc at (typeClosure f args) [] Nothing)
+    _ | any ((TyVoid ==) . argType) at ->
+      -- ambiguous with void arguments
+      return (Over noLoc at TyVoid [] Nothing)
+    _ ->
+      -- ambiguous
+      inferError loc (call <+> pretty "is ambiguous, possibilities are:" $$ options overloads)
+
+  insertOver True f at over
+  return over
 
 -- |Type infer a function call and cache the results
 --
@@ -284,26 +284,27 @@ apply' f args loc = do
 --
 -- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
-cache :: Var -> [Type] -> Overload TypePat -> SrcLoc -> Infer Type
-cache f args (Over oloc atypes r vl e) loc = do
+cache :: Var -> [Type] -> Overload TypePat -> SrcLoc -> Infer (Overload Type)
+cache f args (Over oloc atypes rt vl ~(Just e)) loc = do
   let (tt,types) = unzip atypes
       call = qshow (pretty f <+> prettylist args)
   result <- subsetList args types
   case result of
-    Left leftovers -> inferError loc (call++" uses invalid overload "++qshow (foldr typeArrow r types)++"; can't overload on "++showVars leftovers)
+    Left leftovers -> inferError loc (call++" uses invalid overload "++qshow (foldr typeArrow rt types)++"; can't overload on "++showVars leftovers)
     Right tenv -> do
       let al = zip tt args
           tl = map (argType . fmap (substVoid tenv)) atypes
-          rs = substVoid tenv r
-          fix prev e = do
-            insertOver f al (Over oloc (zip tt tl) prev vl (Just e))
+          rs = substVoid tenv rt
+          or r = Over oloc (zip tt tl) r vl (Just e)
+          fix prev = do
+            insertOver False f al (or prev)
             r' <- withFrame f args loc (expr (Map.fromList (zip vl tl)) oloc e)
             r <- typeReError loc ("in call "++call++", failed to unify result "++qshow r'++" with return signature "++qshow rs) $
               union r' rs
             if r == prev
-              then return prev
-              else fix r e
-      maybe (return TyVoid) (fix TyVoid) e -- recursive function calls are initially assumed to be void
+              then return (or r)
+              else fix r
+      fix TyVoid -- recursive function calls are initially assumed to be void
 
 -- |Verify that main exists and has type IO ().
 main :: Infer ()

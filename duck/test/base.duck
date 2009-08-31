@@ -284,6 +284,7 @@ product = fold (*) 1
 succ x = x + 1
 pred x = x - 1
 
+range :: Int -> Int -> List Int
 range x y = if x > y then [] else x : range (succ x) y
 
 -------- monads

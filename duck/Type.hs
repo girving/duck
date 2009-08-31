@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances, FlexibleInstances #-}
+{-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances, FlexibleInstances, TypeSynonymInstances #-}
 -- | Duck Types
 
 module Type
@@ -12,6 +12,9 @@ module Type
   , singleton
   , unsingleton, unsingleton'
   , freeVars
+  -- * Transformation annotations
+  , Trans(..), TransType
+  , argType
   ) where
 
 import Data.Maybe
@@ -77,6 +80,13 @@ type TypeEnv = Map Var Type
 -- For more explanation of covariance and invariance, see
 --     <http://en.wikipedia.org/wiki/Covariance_and_contravariance_(computer_science)>
 data Variance = Covariant | Invariant
+
+-- |Possible kinds of type macro transformers.
+data Trans
+  = Delayed -- :: Delay
+  deriving (Eq, Ord, Show)
+
+type TransType t = (Maybe Trans, t)
 
 instance HasVar TypePat where
   var = TsVar
@@ -213,6 +223,15 @@ freeVars (TsFun fl) = concatMap f fl where
   f (FunClosure _ tl) = concatMap freeVars tl
 freeVars TsVoid = []
 
+-- |Apply a macro transformation to a type
+transType :: IsType t => Trans -> t -> t
+transType Delayed t = typeFun [FunArrow (typeCons (V "()") []) t]
+
+-- |Converts an annotation argument type to the effective type of the argument within the function.
+argType :: IsType t => TransType t -> t
+argType (Nothing, t) = t
+argType (Just c, t) = transType c t
+
 -- Pretty printing
 
 instance Pretty TypePat where
@@ -234,3 +253,7 @@ instance Pretty t => Pretty (TypeFun t) where
 instance Pretty t => Pretty [TypeFun t] where
   pretty' [f] = pretty' f
   pretty' fl = (40, hsep (List.intersperse (pretty "&") (map (guard 41) fl)))
+
+instance (Pretty t, IsType t) => Pretty (TransType t) where
+  pretty' (Nothing, t) = pretty' t
+  pretty' (Just c, t) = (1, pretty (show c) <+> guard 2 t)

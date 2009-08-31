@@ -11,14 +11,11 @@ module Lir
   , Datatype(..), Overload(..), Definition(..)
   , Overloads
   , Exp(..)
-  , Trans(..)
   , overTypes
   , empty
   , prog
   , union
   , check
-  , transType
-  , argType
   ) where
 
 import Prelude hiding (mapM)
@@ -78,12 +75,6 @@ instance HasLoc (Overload t) where loc = overLoc
 -- Note that there may be many more entries than actual overload definitions, since every specific set of argument types creates a new overload.
 type Overloads = Ptrie Type (Maybe Trans) (Overload Type)
 
--- |Possible kinds of type macro transformers.
-data Trans
-  = Delayed -- :: Delay
-  deriving (Eq, Ord, Show)
-
-type TransType t = (Maybe Trans, t)
 type TypeSetArg = TransType TypePat
 
 -- |Top-level variable definition: @(VARs) = EXP@
@@ -259,15 +250,6 @@ generalType :: [a] -> ([TypePat], TypePat)
 generalType vl = (tl,r) where
   r : tl = map TsVar (take (length vl + 1) standardVars)
 
--- |Apply a macro transformation to a type
-transType :: Trans -> Type -> Type
-transType Delayed t = typeArrow typeUnit t
-
--- |Converts an annotation argument type to the effective type of the argument within the function.
-argType :: (Maybe Trans, Type) -> Type
-argType (Nothing, t) = t
-argType (Just c, t) = transType c t
-
 -- |Extracts the annotation from a possibly annotated argument type.
 typeArg :: TypePat -> TypeSetArg
 typeArg (TsCons (V "Delayed") [t]) = (Just Delayed, t)
@@ -400,7 +382,7 @@ instance Pretty (Map Var Overloads) where
   pretty info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
     pr f tl o = nested (pretty f <+> pretty "::") (pretty (o{ overArgs = tl }))
 
-instance Pretty t => Pretty (Overload t) where
+instance (IsType t, Pretty t) => Pretty (Overload t) where
   pretty (Over _ a r _ Nothing) = hsep $ intersperse (pretty "->") (map (guard 2) (a ++ [(Nothing,r)]))
   pretty o@(Over _ _ _ v (Just e)) = sep [pretty (o{ overBody = Nothing }), equals <+> prettylist v <+> pretty "->" <+> pretty e]
 
@@ -421,7 +403,3 @@ revert (Return e) = Ir.Return (revert e)
 revert (PrimIO p el) = Ir.PrimIO p (map revert el)
 revert (Spec e t) = Ir.Spec (revert e) t
 revert (ExpLoc l e) = Ir.ExpLoc l (revert e)
-
-instance Pretty t => Pretty (Maybe Trans, t) where
-  pretty' (Nothing, t) = pretty' t
-  pretty' (Just c, t) = (1, pretty (show c) <+> guard 2 t)

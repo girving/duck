@@ -83,7 +83,7 @@ instance ProgMonad Infer where
 
 debugInfer :: String -> Infer ()
 debugInfer m = Infer $ ask >>= \(_,s) -> liftIO $ do
-  puts (concatMap (\f -> pshow (callFunction f) ++ ":") (reverse s) ++ ' ':m)
+  putStrLn (concatMap (\f -> pshow (callFunction f) ++ ":") (reverse s) ++ ' ':m)
 
 
 -- |Indicate a potentially recoverable substitution failure/type error that could be caught during overload resolution

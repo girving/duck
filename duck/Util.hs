@@ -22,6 +22,7 @@ module Util
   -- * Functionals
   , uncurry3
   , first, second
+  , left, right
   -- * Data
   -- ** Enum
   , allOf
@@ -33,7 +34,7 @@ module Util
   -- * Monad
   , nop
   , (>.), (>.=), (>=.)
-  , (.<), (=.<), (.=<), (<<)
+  , (<<), (.<), (=.<), (.=<)
   , foldM1
   , allM
   , firstM
@@ -134,6 +135,13 @@ first f (a,b) = (f a,b)
 second :: (b -> c) -> (a,b) -> (a,c)
 second f (a,b) = (a,f b)
 
+left :: (a -> c) -> Either a b -> Either c b
+left f (Left a) = Left (f a)
+left _ (Right b) = Right b
+right :: (b -> c) -> Either a b -> Either a c
+right _ (Left a) = Left a
+right f (Right b) = Right (f b)
+
 sameLength :: [a] -> [b] -> Bool
 sameLength [] [] = True
 sameLength (_:a) (_:b) = sameLength a b
@@ -190,23 +198,22 @@ splitStack (a :. s) = (a:l,b) where
 -- Some convenient extra monad operators
 
 infixl 1 >., >.=, >=.
-infixr 1 .<, =.<, .=<, <<
+infixr 1 <<, .<, =.<, .=<
 (>.) :: Monad m => m a -> b -> m b
 (.<) :: Monad m => b -> m a -> m b
+(<<) :: Monad m => m b -> m a -> m b
 (>.=) :: Monad m => m a -> (a -> b) -> m b
 (=.<) :: Monad m => (a -> b) -> m a -> m b
 (>=.) :: Monad m => (a -> m b) -> (b -> c) -> a -> m c
 (.=<) :: Monad m => (b -> c) -> (a -> m b) -> a -> m c
 
 (>.) e r = e >> return r
-(.<) r e = return r << e
+(.<) r e = e >> return r
+(<<) r e = e >> r
 (>.=) e r = e >>= return . r
-(=.<) r e = return . r =<< e -- fmap, <$>, liftM
+(=.<) r e = e >>= return . r -- fmap, <$>, liftM
 (>=.) e r = e >=> return . r
-(.=<) r e = return . r <=< e
-
-(<<) :: Monad m => m b -> m a -> m b
-(<<) = flip (>>)
+(.=<) r e = e >=> return . r
 
 nop :: Monad m => m ()
 nop = return ()

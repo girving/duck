@@ -24,7 +24,7 @@ data Value
   = ValInt !Int
   | ValChr !Char
   | ValCons !CVar [Value] -- ^ Constructed data
-  | ValClosure !Var [TValue] Lir.Overloads -- ^ Partially applied function and next level of overload tree
+  | ValClosure !Var [TValue] -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
   | ValDelay Env Lir.Exp -- ^ Delay (lazy) evaluation
   | ValType
     -- Monadic IO
@@ -57,7 +57,7 @@ instance Pretty Value where
   pretty' ValType = pretty' "_"
   -- pretty' (ValFun _ vl e) = -- conveniently ignore env
   --  (0, pretty "\\" <> prettylist vl <> pretty " -> " <> pretty e)
-  pretty' (ValClosure v args _) = (2, pretty v <+> sep (map (guard 3) args))
+  pretty' (ValClosure v args) = (2, pretty v <+> sep (map (guard 3) args))
   pretty' (ValDelay _ e) = (2, pretty "delay" <+> guard 3 e)
   pretty' (ValLiftIO v) = (2, pretty "return" <+> guard 3 v)
   pretty' (ValPrimIO p []) = pretty' p
