@@ -72,7 +72,7 @@ lookupOver f tl = get >.=
 -- |Given a set of overloads, return the transform annotations for the first @n@ arguments, if they are the same.
 transOvers :: [Overload t] -> Int -> Maybe [Maybe Trans]
 transOvers [] _ = Nothing
-transOvers os n = if all (tt ==) tts then Just tt else Nothing 
+transOvers os n = if all (tt ==) tts then Just tt else Nothing
   where tt:tts = map (map fst . (take n) . overArgs) os
 
 lookup :: Locals -> SrcLoc -> Var -> Infer Type
@@ -106,7 +106,7 @@ lookupConstructor loc c = getProg >>= lp where
   lp prog
     | Just tc <- Map.lookup c (progConses prog)
     , Just td <- Map.lookup tc (progDatatypes prog)
-    , Just tl <- lookupCons (dataConses td) c 
+    , Just tl <- lookupCons (dataConses td) c
     = return (tc,dataTyVars td,tl)
     | otherwise = inferError loc ("unbound constructor " ++ qshow c)
 
@@ -151,12 +151,12 @@ expr env loc = exp where
       TyCons tv types -> do
         conses <- lookupDatatype loc tv types
         let caseType (c,vl,e') = case lookupCons conses c of
-              Just tl | length tl == length vl -> 
+              Just tl | length tl == length vl ->
                 expr (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
               Just tl | a <- length tl ->
                 inferError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
                   ++" but got ["++intercalate ", " (map pshow vl)++"]")
-              Nothing -> 
+              Nothing ->
                 inferError loc ("datatype "++qshow tv++" has no constructor "++qshow c)
             defaultType Nothing = return []
             defaultType (Just e') = expr env loc e' >.= (:[])
@@ -210,13 +210,13 @@ joinList loc = foldM1 (join loc)
 apply :: SrcLoc -> Type -> Type -> Infer Type
 apply _ TyVoid _ = return TyVoid
 apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
-  fun (FunArrow a r) = do
-    typeReError loc ("cannot apply "++qshow (typeArrow a r)++" to "++qshow t2) $
+  fun f@(FunArrow a r) = do
+    typeReError loc ("cannot apply "++qshow f++" to "++qshow t2) $
       subset'' t2 a
     return r
   fun (FunClosure f args) = do
     let atl = args ++ [t2]
-    o <- maybe 
+    o <- maybe
       (resolve f atl loc) -- no match, type not yet inferred
       return =<< lookupOver f atl
     return (overRet o)
@@ -262,7 +262,7 @@ resolve f args loc = do
   let at = zip tt args
 
   over <- case partition ((nargs ==) . length . overVars) overloads of
-    ([o],[]) -> 
+    ([o],[]) ->
       -- exactly one fully applied option: evaluate
       cache f args o loc
     ([],_) ->
