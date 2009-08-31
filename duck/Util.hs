@@ -33,7 +33,7 @@ module Util
   -- * Monad
   , nop
   , (>.), (>.=), (>=.)
-  , (.<), (=.<), (.=<)
+  , (.<), (=.<), (.=<), (<<)
   , foldM1
   , allM
   , firstM
@@ -190,7 +190,7 @@ splitStack (a :. s) = (a:l,b) where
 -- Some convenient extra monad operators
 
 infixl 1 >., >.=, >=.
-infixr 1 .<, =.<, .=<
+infixr 1 .<, =.<, .=<, <<
 (>.) :: Monad m => m a -> b -> m b
 (.<) :: Monad m => b -> m a -> m b
 (>.=) :: Monad m => m a -> (a -> b) -> m b
@@ -199,11 +199,14 @@ infixr 1 .<, =.<, .=<
 (.=<) :: Monad m => (b -> c) -> (a -> m b) -> a -> m c
 
 (>.) e r = e >> return r
-(.<) r e = e >> return r
+(.<) r e = return r << e
 (>.=) e r = e >>= return . r
 (=.<) r e = return . r =<< e -- fmap, <$>, liftM
 (>=.) e r = e >=> return . r
 (.=<) r e = return . r <=< e
+
+(<<) :: Monad m => m b -> m a -> m b
+(<<) = flip (>>)
 
 nop :: Monad m => m ()
 nop = return ()

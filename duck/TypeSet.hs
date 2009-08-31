@@ -32,8 +32,6 @@ module TypeSet
   , subsetList''
   , specializationList
   , union
-  , contravariantVars
-  , showContravariantVars
   ) where
 
 import Data.Maybe
@@ -70,9 +68,6 @@ data ConstraintOp = Equal | Superset deriving (Eq)
 type Constraints = Map Var (ConstraintOp, Type)
 
 typeMismatchList x op y = typeMismatch (prettylist x) op (prettylist y)
-
-freeze :: Constraints -> TypeEnv
-freeze = Map.map snd
 
 -- |Exact type equality
 equal :: TypeMonad m => Type -> Type -> m ()
@@ -184,12 +179,22 @@ _intersectList tl tl'
 -- function type sets.  For example, in subset (Negate, Int) (a -> Int, a),
 -- the value of \"a\" must be determined from the second part of the tuple before
 -- the function part can be checked.  To handle this, subset' produces a list
--- of indeterminate subcomputations as it runs, and subset iterates on this
+-- of indeterminate subcomputations as it runs, and subsetFix iterates on this
 -- until a fixed point is reached.
-subset :: TypeMonad m => Type -> TypePat -> m (TypeEnv, Leftovers)
+--
+-- The return value of subset is either Right env, indicating success, or
+-- Left vars, which means that the result is indeterminate due to the
+-- contravariant variables vars.
+subset :: TypeMonad m => Type -> TypePat -> m (Either [Var] TypeEnv)
 subset t t' = runEnv $ subset' t t' >>= subsetFix Map.empty
 
-type Leftover = (Type, TypePat)
+-- A pair of function types that need to rerun through subsetFun'.
+-- If the first entry is Nothing, the pair must be rerun unconditionally.
+-- If the pair is Just env, it must be rerun if any of the constraints
+-- referenced referenced by env have changed.
+data Leftover
+  = Incomplete [TypeFun Type]  [TypeFun TypePat]
+  | Complete TypeEnv [TypeFun Type] [TypeFun TypePat]
 type Leftovers = [Leftover]
 
 type EnvM m a = StateT Constraints m a
@@ -199,44 +204,45 @@ instance TypeMonad m => TypeMonad (StateT s m) where
   typeApply t = lift . typeApply t
   typeVariances = lift . typeVariances
 
-runEnv :: Monad m => Env m -> m (TypeEnv, Leftovers)
-runEnv m = runStateT m Map.empty >.= flp . second freeze
+runEnv :: Monad m => EnvM m (Either [Var] TypeEnv) -> m (Either [Var] TypeEnv)
+runEnv m = evalStateT m Map.empty
 
 successS :: Monad m => Env m
 successS = return []
 
-lookupS :: Monad m => Var -> EnvM m (Maybe (ConstraintOp, Type))
-lookupS v = get >.= Map.lookup v
-
-insertS :: Monad m => Var -> (ConstraintOp, Type) -> Env m
-insertS v c = modify (Map.insert v c) >> successS
-
-freezeS :: Monad m => EnvM m TypeEnv
-freezeS = get >.= freeze
-
 sequenceS :: Monad m => [Env m] -> Env m
 sequenceS l = concat =.< sequence l
 
-subsetFix :: TypeMonad m => Constraints -> Leftovers -> Env m
-subsetFix _ [] = successS -- finished leftovers, so done
+-- Iterate subset checking until all leftovers are resolved or we reach a
+-- fixpoint.  If all leftovers are resolved, we return Right env (success).
+-- If we reach a fixpoint first, we return Left vars, where vars are the
+-- contravariant vars which prevented leftovers from being resolved.
+subsetFix :: TypeMonad m => Constraints -> Leftovers -> EnvM m (Either [Var] TypeEnv)
 subsetFix prev leftovers = do
   env <- get
-  if prev == env
-    then return leftovers -- reached fixpoint without exhausing leftovers
-    else subsetFix env =<< foldM step [] leftovers where
-  step leftovers (t,t') = (++ leftovers) =.< subset' t t'
-
--- For each var in the list, change any Superset constraints to Equal.
-freezeVars :: [Var] -> Constraints -> Constraints
-freezeVars vl c = foldr (Map.adjust (first (const Equal))) c vl
+  if prev == env || List.null leftovers
+    then return $ case concatMap contravariantVars leftovers of -- reached fixpoint without exhausing leftovers
+      [] -> Right (Map.map snd env) -- no incomplete leftovers
+      vars -> Left vars
+    else subsetFix env =<< sequenceS (map step leftovers) where
+  step (Incomplete f f') = subsetFun' f f'
+  step (Complete env f f') = get >>= \cnstrs ->
+    if any (changed cnstrs) (Map.toList env) then subsetFun' f f' else successS
+  changed cnstrs (v,t) = let Just (_,t') = Map.lookup v cnstrs in t /= t'
+  contravariantVars :: Leftover -> [Var]
+  contravariantVars (Incomplete _ fl') = filter (\v -> Map.notMember v prev) (concatMap fun fl') where
+    fun (FunArrow s _) = freeVars s
+    fun (FunClosure _ _) = []
+  contravariantVars _ = []
 
 constrain :: TypeMonad m => Var -> ConstraintOp -> Type -> Env m
-constrain v op t = c op =<< lookupS v where
-  c op Nothing = insertS v (op,t)
-  c Superset (Just (Superset,t')) = lift (union t t') >>= \t'' -> insertS v (Superset,t'')
-  c Equal    (Just (Superset,t')) = lift (subset'' t' t) >> insertS v (Equal,t)
-  c Superset (Just (Equal,t')) = lift (subset'' t t') >> successS
-  c Equal    (Just (Equal,t')) = lift (equal t t') >> successS
+constrain v op t = successS << c op =<< Map.lookup v =.< get where
+  c op Nothing = set op t
+  c Superset (Just (Superset,t')) = set Superset =<< lift (union t t')
+  c Equal    (Just (Superset,t')) = lift (subset'' t' t) >> set Equal t
+  c Superset (Just (Equal,t')) = lift (subset'' t t')
+  c Equal    (Just (Equal,t')) = lift (equal t t')
+  set op t = modify (Map.insert v (op,t))
 
 subset' :: forall m. TypeMonad m => Type -> TypePat -> Env m
 subset' t (TsVar v) = constrain v Superset t
@@ -280,18 +286,23 @@ subset'' x y = typeMismatch x "<=" y
 -- TODO: Currently all we know is that m is a 'TypeMonad', and therefore we
 -- lack the ability to do speculative computation and rollback.  Therefore,
 -- 'intersect' currently means ignore all but the first entry.
-subsetFun' :: forall m. TypeMonad m => [TypeFun Type] -> [TypeFun TypePat] -> Env m
+subsetFun' :: TypeMonad m => [TypeFun Type] -> [TypeFun TypePat] -> Env m
 subsetFun' fl fl' = sequenceS (map (fun fl') fl) where
   fun fl' f
     | List.elem (singleton f) fl' = successS -- succeed if f appears in fl'
   fun (FunArrow s' t':_) f = do
-    tenv <- freezeS
-    case unsingleton' tenv s' of
-      Nothing -> return [(TyFun fl,TsFun fl')]
-      Just s'' -> do
-        t <- typeApply (TyFun [f]) s''
-        withStateT (freezeVars (freeVars s')) $ -- We're about to feed these vars to apply, so they'll become rigid
-          subset' t t'
+    cnstrs <- get
+    let vars = freeVars s'
+        cl = mapM (\v -> Map.lookup v cnstrs) vars
+    case cl of
+      Nothing -> return [Incomplete fl fl'] -- at least one variable is unbound, so try again later
+      Just cl -> do
+        let env = Map.fromList (zip vars (map snd cl))
+            Just s'' = unsingleton' env s'
+        t <- typeApply (TyFun [f]) s'' 
+        sequenceS
+          [ return [Complete env fl fl'] -- if anything in env changes, we'll need to redo this pair
+          , subset' t t' ]
   fun _ _ = typeMismatch (TyFun fl) "<=" (TsFun fl')
 
 -- TODO: This is implemented only for primitive functions (single entry TypeFun's)
@@ -312,7 +323,7 @@ subsetFun'' fl fl' = mapM_ (fun fl') fl where
 -- |The equivalent of 'subset' for lists.  To succeed, the second argument must
 -- be at least as long as the first (think of the first as being the types of
 -- values passed to a function taking the second as arguments).
-subsetList :: TypeMonad m => [Type] -> [TypePat] -> m (TypeEnv, Leftovers)
+subsetList :: TypeMonad m => [Type] -> [TypePat] -> m (Either [Var] TypeEnv)
 subsetList tl tl' = runEnv $ subsetList' tl tl' >>= subsetFix Map.empty
 
 subsetList' :: TypeMonad m => [Type] -> [TypePat] -> Env m
@@ -360,20 +371,3 @@ specializationFuns' fl fl' env = foldl (>>=) (return env) (map right fl') where
   spec (FunClosure _ _) (FunArrow _ _) = Just -- treat closures as specializations of all arrows
   spec (FunArrow _ t) (FunArrow _ t') = specialization' t t'
   spec _ (FunClosure _ _) = const Nothing
-
--- |If leftovers remain after unification, this function explains which
--- variables caused the problem.
-contravariantVars :: Leftovers -> [Var]
-contravariantVars = concatMap (cv . snd) where
-  cv (TsVar _) = []
-  cv (TsCons _ tl) = concatMap cv tl
-  cv (TsFun fl) = concatMap fv fl where
-    fv (FunArrow s _) = freeVars s
-    fv (FunClosure _ _) = []
-  cv TsVoid = []
-
-showContravariantVars :: Leftovers -> String
-showContravariantVars leftovers = case contravariantVars leftovers of
-  [v] -> "variable "++pshow v
-  vl -> "variables "++List.intercalate ", " (map pshow vl)
- 

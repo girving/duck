@@ -178,18 +178,21 @@ expr env loc = exp where
 cons :: SrcLoc -> CVar -> [Type] -> Infer Type
 cons loc c args = do
   (tv,vl,tl) <- lookupConstructor loc c
-  (tenv,leftovers) <- typeReError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args) $
+  r <- typeReError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args) $
     subsetList args tl
-  when (not $ null leftovers) $ inferError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args++"; can't overload on contravariant " ++ showContravariantVars leftovers) -- typeError?
-  let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-  return $ TyCons tv targs where
+  case r of
+    Left leftovers -> inferError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args++"; can't overload on " ++ showVars leftovers)
+    Right tenv -> do
+      let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
+      return $ TyCons tv targs where
 
 spec :: SrcLoc -> TypePat -> Exp -> Type -> Infer Type
 spec loc ts e t = do
-  (tenv,leftovers) <- typeReError loc (qshow e++" has type "++qshow t++", which is incompatible with type specification "++qshow ts) $
+  r <- typeReError loc (qshow e++" has type "++qshow t++", which is incompatible with type specification "++qshow ts) $
     subset t ts
-  when (not $ null leftovers) $ inferError loc ("type specification "++qshow ts++" is invalid; cannot overload on contravariant "++showContravariantVars leftovers) -- typeError?
-  return $ substVoid tenv ts
+  case r of
+    Left leftovers -> inferError loc ("type specification "++qshow ts++" is invalid; cannot overload on "++showVars leftovers)
+    Right tenv -> return $ substVoid tenv ts
 
 join :: SrcLoc -> Type -> Type -> Infer Type
 join loc t1 t2 =
@@ -285,21 +288,22 @@ cache :: Var -> [Type] -> Overload TypePat -> SrcLoc -> Infer Type
 cache f args (Over oloc atypes r vl e) loc = do
   let (tt,types) = unzip atypes
       call = qshow (pretty f <+> prettylist args)
-  (tenv, leftovers) <- subsetList args types
-  unless (null leftovers) $ 
-    inferError loc (call++" uses invalid overload "++qshow (foldr typeArrow r types)++"; can't overload on contravariant "++showContravariantVars leftovers)
-  let al = zip tt args
-      tl = map (argType . fmap (substVoid tenv)) atypes
-      rs = substVoid tenv r
-      fix prev e = do
-        insertOver f al (Over oloc (zip tt tl) prev vl (Just e))
-        r' <- withFrame f args loc (expr (Map.fromList (zip vl tl)) oloc e)
-        r <- typeReError loc ("in call "++call++", failed to unify result "++qshow r'++" with return signature "++qshow rs) $
-          union r' rs
-        if r == prev
-          then return prev
-          else fix r e
-  maybe (return TyVoid) (fix TyVoid) e -- recursive function calls are initially assumed to be void
+  result <- subsetList args types
+  case result of
+    Left leftovers -> inferError loc (call++" uses invalid overload "++qshow (foldr typeArrow r types)++"; can't overload on "++showVars leftovers)
+    Right tenv -> do
+      let al = zip tt args
+          tl = map (argType . fmap (substVoid tenv)) atypes
+          rs = substVoid tenv r
+          fix prev e = do
+            insertOver f al (Over oloc (zip tt tl) prev vl (Just e))
+            r' <- withFrame f args loc (expr (Map.fromList (zip vl tl)) oloc e)
+            r <- typeReError loc ("in call "++call++", failed to unify result "++qshow r'++" with return signature "++qshow rs) $
+              union r' rs
+            if r == prev
+              then return prev
+              else fix r e
+      maybe (return TyVoid) (fix TyVoid) e -- recursive function calls are initially assumed to be void
 
 -- |Verify that main exists and has type IO ().
 main :: Infer ()
@@ -316,3 +320,10 @@ runIO t = typeError noLoc ("expected IO type, got "++qshow t)
 -- |Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type
 checkIO t = typeIO =.< runIO t
+
+-- |Convenience function for printing a list of variables nicely
+showVars :: [Var] -> String
+showVars vl = case vl of
+  [] -> "no contravariant variables (internal error)?"
+  [v] -> "contravariant variable "++pshow v
+  vl -> "contravariant variables "++List.intercalate ", " (map pshow vl)

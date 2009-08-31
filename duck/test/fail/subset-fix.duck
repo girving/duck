@@ -1,0 +1,24 @@
+import base
+main = exit 0
+
+-- When running subset checks on type patterns involving function types, we
+-- might need to iterate subset checking until convergence.  This is because
+-- the values of type variable constraints may change as we proceed through
+-- the different parts of the type.
+--
+-- For example, the type of fold is
+--
+--   fold :: (a -> b -> a) -> a -> List b -> a
+-- 
+-- If we apply fold to (flip (:)) [] [1,2,3], the first pass through will
+-- produce constraints (a >= List Void) and (b >= Int).  Using (a = List Void)
+-- for the first argument produces an additional constraint (a >= List Int).
+-- Since the value assigned to "a" has changed, we need to recheck the function
+-- type.  In this case it works; it general it can fail.
+--
+-- This is subtle, so here's a dedicated unit test.
+
+fill :: Maybe Void -> a -> Maybe a
+fill Nothing x = Just x
+
+_ = fold fill Nothing [1,2,3]
