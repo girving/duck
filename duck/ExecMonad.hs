@@ -25,12 +25,13 @@ import Util
 import Pretty
 import Var
 import Stage
+import Type
 import Value
 import SrcLoc
 import InferMonad hiding (withFrame)
 import Lir (Prog, ProgMonad)
 
-type ExecStack = CallStack TValue
+type ExecStack = CallStack (Value,Type)
 
 newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
   deriving (Monad, MonadIO, MonadReader (Prog, ExecStack), MonadInterrupt)
@@ -42,9 +43,9 @@ execError :: Pretty s => SrcLoc -> s -> Exec a
 execError l m = Exec $ ReaderT $ \(_,s) ->
   stageErrorIO StageExec noLoc $ ErrorStack (reverse s) l (pretty m)
 
-withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
-withFrame f args loc e = Exec $ ReaderT $ \(p,s) -> do
-  let r e = runReaderT (unExec e) (p, CallFrame f args loc : s)
+withFrame :: Var -> [Type] -> [Value] -> SrcLoc -> Exec a -> Exec a
+withFrame f types args loc e = Exec $ ReaderT $ \(p,s) -> do
+  let r e = runReaderT (unExec e) (p, CallFrame f (zip args types) loc : s)
   when (length s > 32) $ r $ execError loc "stack overflow"
   handle (\(e :: AsyncException) -> r $ execError loc (show e)) $
     r e

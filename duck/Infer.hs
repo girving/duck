@@ -21,6 +21,7 @@ module Infer
   , runIO
   , main
   -- * Environment access
+  , lookup
   , lookupDatatype
   , lookupCons
   , lookupConstructor
@@ -85,15 +86,16 @@ lookup env loc v
     | Just _ <- Map.lookup v (progDatatypes prog) = return $ typeType (TyCons v []) -- found a type constructor, return Type v
     | otherwise = inferError loc ("unbound variable " ++ qshow v)
 
-lookupDatatype :: SrcLoc -> CVar -> [Type] -> Infer [(Loc CVar, [Type])]
-lookupDatatype loc (V "Type") [t] = case t of
+lookupDatatype :: SrcLoc -> Type -> Infer [(Loc CVar, [Type])]
+lookupDatatype loc (TyCons (V "Type") [t]) = case t of
   TyCons c tl -> return [(Loc noLoc c, map typeType tl)]
   TyVoid -> return [(Loc noLoc (V "Void"), [])]
   TyFun _ -> inferError loc ("can't pattern match on "++qshow (typeType t)++"; matching on function types isn't implemented yet")
-lookupDatatype loc tv types = getProg >>= \prog ->
+lookupDatatype loc (TyCons tv types) = getProg >>= \prog ->
   case Map.lookup tv (progDatatypes prog) of
     Just (Data _ vl cons _) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
     _ -> inferError loc ("unbound datatype constructor " ++ qshow tv)
+lookupDatatype loc t = typeError loc ("expected datatype, got "++qshow t)
 
 lookupFunction :: SrcLoc -> Var -> Infer [Overload TypePat]
 lookupFunction loc f = getProg >>= \prog ->
@@ -148,22 +150,21 @@ expr env loc = exp where
     t <- lookup env loc v
     case t of
       TyVoid -> return TyVoid
-      TyCons tv types -> do
-        conses <- lookupDatatype loc tv types
+      t -> do
+        conses <- lookupDatatype loc t
         let caseType (c,vl,e') = case lookupCons conses c of
               Just tl | length tl == length vl ->
-                expr (foldl (\e (v,t) -> Map.insert v t e) env (zip vl tl)) loc e'
+                expr (insertList env vl tl) loc e'
               Just tl | a <- length tl ->
                 inferError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
                   ++" but got ["++intercalate ", " (map pshow vl)++"]")
               Nothing ->
-                inferError loc ("datatype "++qshow tv++" has no constructor "++qshow c)
+                inferError loc ("datatype "++qshow t++" has no constructor "++qshow c)
             defaultType Nothing = return []
             defaultType (Just e') = expr env loc e' >.= (:[])
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
         joinList loc (caseResults ++ defaultResults)
-      _ -> typeError loc ("expected datatype, got "++qshow t)
   exp (Cons c el) =
     cons loc c =<< mapM exp el
   exp (Prim op el) =

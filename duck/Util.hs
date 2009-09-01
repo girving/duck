@@ -1,4 +1,4 @@
-{-# LANGUAGE RankNTypes, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances #-}
+{-# LANGUAGE RankNTypes, TypeFamilies, FlexibleInstances, MultiParamTypeClasses, UndecidableInstances, BangPatterns #-}
 -- | Duck utility functions
 
 module Util
@@ -19,6 +19,8 @@ module Util
   , zipCheck
   , zipWithCheck
   , sameLength
+  -- * Map
+  , insertList
   -- * Functionals
   , uncurry3
   , first, second
@@ -59,6 +61,8 @@ import Data.Function
 import Data.List
 import Data.Maybe
 import Data.Char
+import Data.Map (Map)
+import qualified Data.Map as Map
 import Control.Exception
 import Control.Monad.Error
 import Control.Monad.State
@@ -146,6 +150,11 @@ sameLength :: [a] -> [b] -> Bool
 sameLength [] [] = True
 sameLength (_:a) (_:b) = sameLength a b
 sameLength _ _ = False
+
+insertList :: Ord k => Map k v -> [k] -> [v] -> Map k v
+insertList !m [] [] = m
+insertList !m (k:ks) (v:vs) = insertList (Map.insert k v m) ks vs
+insertList !_ _ _ = error "different lengths in Util.insertList"
 
 allOf :: (Enum a, Bounded a) => [a]
 allOf = enumFromTo minBound maxBound
