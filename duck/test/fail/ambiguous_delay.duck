@@ -1,0 +1,12 @@
+import base
+
+main = exit 0
+
+f :: Delayed Int -> Int -> Int
+f _ y = y
+
+f :: Int -> Chr -> Chr
+f _ y = y
+
+_ = f 0
+_ = f '0'

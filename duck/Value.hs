@@ -47,8 +47,8 @@ instance Pretty Value where
   pretty' (ValCons c []) = pretty' c
   pretty' (ValCons c fields) | isTuple c = (1,
     hcat $ intersperse (pretty ", ") $ map (guard 2) fields)
-  pretty' (ValCons (V ":") [h,t]) = (100,
-    brackets (hcat (intersperse (pretty ", ") $ map (guard 2) (h : extract t))))
+  pretty' (ValCons (V ":") [h,t]) = pretty' $
+    brackets (punctuate ',' $ map (guard 2) (h : extract t))
     where
     extract (ValCons (V "[]") []) = []
     extract (ValCons (V ":") [h,t]) = h : extract t

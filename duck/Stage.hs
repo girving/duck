@@ -1,15 +1,19 @@
-{-# LANGUAGE DeriveDataTypeable, TypeSynonymInstances #-}
+{-# LANGUAGE DeriveDataTypeable, TypeSynonymInstances, GeneralizedNewtypeDeriving #-}
 -- | Compilation top-level staging tools
 
 module Stage
   ( Stage(..)
-  , stageError, stageErrorIO
-  , catchFatal
+  -- * Error messages
+  , msg, locMsg, stageMsg
+  -- ** Raising errors
+  , fatal, fatalIO
+  -- ** Catching errors
+  , runStage 
   -- * Stack traces
   , CallStack
   , CallFrame(..)
   , mapStackArgs
-  , ErrorStack(..)
+  , StackMsg(..)
   ) where
 
 import Data.Typeable
@@ -33,7 +37,7 @@ data Stage
 
 instance TextEnum Stage where
   enumTexts = zip allOf
-    ["parse"
+    ["ast"
     ,"ir"
     ,"lir"
     ,"link"
@@ -44,37 +48,55 @@ instance TextEnum Stage where
 
 instance Show Stage where show = showEnum
 instance Read Stage where readsPrec _ = readsEnum
-instance Pretty Stage where pretty = pretty . show
 
-data StageError = StageError
-  { errStage :: Stage -- ^ Currently the part of the code that generated the error, but perhaps should be removed, and represent when the error occured
-  , _errLoc :: SrcLoc
-  , _errMsg :: Doc
-  } deriving (Typeable)
+instance Pretty Stage where
+  pretty = pretty . s where
+    s StageParse = "parse"
+    s StageIr = "code"
+    s StageLir = "lifting"
+    s StageLink = "link"
+    s StageInfer = "type"
+    s StageEnv = "top"
+    s StageExec = "runtime"
 
-instance Show StageError where
-  show (StageError _ l s) = show (nested' l s)
+newtype Msg = Msg Doc
+  deriving (Pretty)
 
-instance Exception StageError
+msg :: Pretty s => s -> Msg
+msg = Msg . pretty
 
-instance Functor CallFrame where
-  fmap f c = c { callArgs = map f (callArgs c) }
+locMsg :: Pretty s => SrcLoc -> s -> Msg
+locMsg l = Msg . nestedPunct ':' l
+
+stageMsg :: Pretty s => Stage -> SrcLoc -> s -> Msg
+stageMsg st l m = locMsg l (st <+> "error" <:+> m)
+
+-- |To Err is human; to report anatine.
+data Err = 
+  Err Msg
+  deriving (Typeable)
+
+instance Show Err where
+  show (Err m) = pshow m
+
+instance Exception Err
 
 stageExitval :: Stage -> Int
 stageExitval StageExec = 3
 stageExitval _ = 1
 
-stageError :: Pretty s => Stage -> SrcLoc -> s -> a
-stageError p l s = throw $ StageError p l $ pretty s
+fatal :: Msg -> a
+fatal = throw . Err
 
-stageErrorIO :: (MonadIO m, Pretty s) => Stage -> SrcLoc -> s -> m a
-stageErrorIO p l s = liftIO $ throwIO $ StageError p l $ pretty s
+fatalIO :: MonadIO m => Msg -> m a
+fatalIO = liftIO . throwIO . Err
 
-errorFatal :: StageError -> IO a
-errorFatal e = dieWith (stageExitval (errStage e)) $ show e
+dieStageErr :: Stage -> Err -> IO a
+dieStageErr s e = dieWith (stageExitval s) $ show e
 
-catchFatal :: IO a -> IO a
-catchFatal = handle errorFatal
+runStage :: Stage -> IO a -> IO a
+runStage = handle . dieStageErr
+
 
 -- |Represents a single function call with the given type of arguments.
 data CallFrame a = CallFrame
@@ -85,18 +107,20 @@ data CallFrame a = CallFrame
 
 type CallStack a = [CallFrame a]
 
+instance Functor CallFrame where
+  fmap f c = c { callArgs = map f (callArgs c) }
+
 instance Pretty a => Pretty (CallStack a) where
   pretty s = vcat $ map p s where
-    p (CallFrame f args loc) = mapPretty (<> pretty ':') loc <+> pretty "in" <+> pretty f <+> prettylist args <+> pretty "..."
+    p (CallFrame f args loc) = loc <:+> "in" <+> f <+> prettylist args <+> "..."
 
 mapStackArgs :: (a -> b) -> CallStack a -> CallStack b
 mapStackArgs f = map $ fmap f
 
-data ErrorStack a = ErrorStack
-  { errStack :: CallStack a
-  , errLoc :: SrcLoc
-  , errMsg :: Doc
+data StackMsg a = StackMsg
+  { msgStack :: (CallStack a) -- ^ This should be in call order: outside to in
+  , stackMsg :: Msg
   }
 
-instance Pretty a => Pretty (ErrorStack a) where
-  pretty (ErrorStack s l m) = pretty s $$ nested' l m
+instance Pretty a => Pretty (StackMsg a) where
+  pretty (StackMsg s m) = s $$ m

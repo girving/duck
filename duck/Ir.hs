@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | Duck Intermediate Representation
 -- 
 -- Conversion of "Ast" into intermediate functional representation.
@@ -68,7 +68,7 @@ data Pattern = Pat
 type Branch = ([Pattern], Exp)
 
 irError :: Pretty s => SrcLoc -> s -> a
-irError = stageError StageIr
+irError l = fatal . locMsg l
 
 prog_vars :: Ast.Prog -> InScopeSet
 prog_vars = foldl' decl_vars Set.empty . map unLoc
@@ -307,6 +307,9 @@ instance Pretty Decl where
   pretty (Data t args cons) =
     pretty (Ast.Data t args cons)
 
+instance Pretty [Decl] where
+  pretty = vcat
+
 instance Pretty Exp where
   pretty' (Spec e t) = (0, guard 1 e <+> pretty "::" <+> guard 60 t)
   pretty' (Let v e body) = (0,
@@ -335,8 +338,8 @@ instance Pretty Exp where
     (e, el) -> (50, guard 50 e <+> prettylist el)
     where apply (Apply e a) al = apply e (a:al) 
           apply e al = (e,al)
-  pretty' (Cons (V ":") [h,t]) | Just t' <- extract t = (100,
-    brackets (hcat (intersperse (pretty ", ") $ map (guard 2) (h : t')))) where
+  pretty' (Cons (V ":") [h,t]) | Just t' <- extract t = pretty' $
+    brackets (punctuate ',' $ map (guard 2) (h : t')) where
     extract (Cons (V "[]") []) = Just []
     extract (Cons (V ":") [h,t]) = (h :) =.< extract t
     extract _ = Nothing

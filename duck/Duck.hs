@@ -71,7 +71,7 @@ loadModule s l m = do
   (f,c) <- case m of
     "" -> ((,) "<stdin>") =.< getContents
     m -> runMaybeT (findModule l m) >>= maybe 
-      (fail ("module " ++ qshow m ++ " not found"))
+      (fatalIO $ msg ("module " ++ qshow m ++ " not found"))
       (\f -> ((,) (dropExtension f)) =.< readFile f)
   let (d,f') = splitFileName f
       l' = l `union` [d]
@@ -95,28 +95,26 @@ main = do
     [file] -> return file
     _ -> fail "expected zero or one arguments"
 
-  catchFatal $ do
-
   let ifv p = when (Set.member p (phases flags))
-  let phase p io = do
+  let phase p pf io = do
         ifv p $ putStr ("\n-- "++pshow p++" --\n")
-        r <- io
-        ifv p $ pprint r
+        r <- runStage p io
+        ifv p $ pprint $ pf r
         return r
-      phase' p = phase p . evaluate
+      phase' p pf = phase p pf . evaluate
 
-  (names,ast) <- phase StageParse (unzip =.< loadModule Set.empty (path flags) f)
-  ir <- phase' StageIr (snd $ mapAccumL Ir.prog Map.empty ast)
-  lir <- phase' StageLir (zipWith Lir.prog names ir)
-  lir <- phase' StageLink (foldl' Lir.union Base.base lir)
-  evaluate $ Lir.check lir
-  lir <- phase StageInfer (runInferProg Infer.prog lir)
-  unless (compileOnly flags) $ rerunInfer StageInfer (lir,[]) Infer.main
-  env <- phase StageEnv (runExec lir Interp.prog)
+  (names,ast) <- phase StageParse (concat . snd) (unzip =.< loadModule Set.empty (path flags) f)
+  ir <- phase' StageIr concat (snd $ mapAccumL Ir.prog Map.empty ast)
+  lir <- phase' StageLir vcat (zipWith Lir.prog names ir)
+  lir <- phase' StageLink id (foldl' Lir.union Base.base lir)
+  runStage StageLink $ evaluate $ Lir.check lir
+  lir <- phase StageInfer id (runInferProg Infer.prog lir)
+  unless (compileOnly flags) $ runStage StageInfer $ rerunInfer (lir,[]) Infer.main
+  env <- phase StageEnv id (runExec lir Interp.prog)
 
   unless (compileOnly flags) $ do
   unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
-  Interp.main lir env
+  runStage StageExec $ Interp.main lir env
 
 -- for ghci use
 run :: String -> IO ()

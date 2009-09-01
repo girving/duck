@@ -16,7 +16,7 @@ import qualified Data.Foldable as Fold
 import Var
 import Pretty
 import SrcLoc
-import Stage
+import ParseMonad
 
 data Ops a =
     OpAtom !a
@@ -56,7 +56,7 @@ sortOps precs loc input = out where
   otoks (OpUn o r) t = Right o : otoks r t
   otoks (OpBin o l r) t = otoks l (Right o : otoks r t)
   prec o = fromMaybe defaultPrec $ Map.lookup o precs
-  err o = stageError StageParse loc ("ambiguous operator expression involving " ++ pshow o) 
+  err o = parseError loc $ "ambiguous operator expression involving" <+> quoted o
 
 instance Pretty a => Pretty (Ops a) where
   pretty' (OpAtom a) = pretty' a

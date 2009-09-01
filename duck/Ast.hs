@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, TypeSynonymInstances #-}
 -- | Duck Abstract Syntax Tree
 --
 -- The parser ("Parse") turns the string contents of a single file into a 'Prog'
@@ -80,13 +80,13 @@ imports = mapMaybe imp where
 opsExp :: SrcLoc -> Ops Exp -> Exp
 opsExp _ (OpAtom a) = a
 opsExp loc (OpUn (V "-") a) = Apply (Var (V "negate")) [opsExp loc a]
-opsExp loc (OpUn op _) = stageError StageParse loc (pshow op++" cannot be used as a prefix operator (the only valid prefix operator is \"-\")")
+opsExp loc (OpUn op _) = fatal $ stageMsg StageParse loc $ quoted op <+> "cannot be used as a prefix operator (the only valid prefix operator is" <+> quoted "-" <> ")"
 opsExp loc (OpBin o l r) = Apply (Var o) [opsExp loc l, opsExp loc r]
 
 -- |Convert 'PatOps' pattern into its 'PatCons' equivalents, without applying any precedences (see "ParseOps")
 opsPattern :: SrcLoc -> Ops Pattern -> Pattern
 opsPattern _ (OpAtom a) = a
-opsPattern loc (OpUn _ _) = stageError StageParse loc "unary operator in pattern"
+opsPattern loc (OpUn _ _) = fatal $ stageMsg StageParse loc $ "unary operator in pattern"
 opsPattern loc (OpBin o l r) = PatCons o [opsPattern loc l, opsPattern loc r]
 
 instance HasVar Exp where
@@ -125,14 +125,17 @@ instance Pretty Decl where
   pretty (Import v) =
     pretty "import" <+> pretty v
 
+instance Pretty Prog where
+  pretty = vcat
+
 instance Pretty Exp where
   pretty' (Spec e t) = (0, guard 1 e <+> pretty "::" <+> guard 60 t)
   pretty' (Let p e body) = (1,
     pretty "let" <+> pretty p <+> equals <+> guard 0 e <+> pretty "in"
       $$ (guard 0 body))
   pretty' (Def f args e body) = (1,
-    pretty "let" <+> pretty f <+> prettylist args <+> equals
-      $$ nest 2 (guard 0 e) <+> pretty "in" $$ (guard 0 body))
+    nestedPunct '=' ("let" <+> f <+> prettylist args) $
+      guard 0 e <+> "in" $$ guard 0 body)
   pretty' (Case e cases) = (1,
     nested (pretty "case" <+> pretty e <+> pretty "of") $ 
       vcat (map (\ (p,e) -> pretty p <+> pretty "->" <+> pretty e) cases))
@@ -143,14 +146,14 @@ instance Pretty Exp where
     let V s = v in
     (prec, (guard prec e1) <+> pretty s <+> (guard (prec+1) e2) )
   pretty' (Apply (Var c) el) | Just n <- tupleLen c, n == length el = (2,
-    hcat $ intersperse (pretty ", ") $ map (guard 3) el)
+    punctuate ',' $ map (guard 3) el)
   pretty' (Apply e el) = (50, guard 51 e <+> prettylist el)
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
   pretty' (Chr c) = (100, pretty (show c))
   pretty' Any = pretty' '_'
-  pretty' (List el) = (100,
-    brackets $ hcat (intersperse (pretty ", ") $ map (guard 2) el))
+  pretty' (List el) = pretty' $
+    brackets $ (punctuate ',' $ map (guard 2) el)
   pretty' (Ops o) = pretty' o
   pretty' (Equals v e) = (1, pretty v <+> equals <+> guard 0 e)
   pretty' (ExpLoc _ e) = pretty' e

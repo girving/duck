@@ -91,8 +91,8 @@ zipWithVariances f c tl tl' = do
   zcv var tl tl' where
     zcv _ [] [] = return []
     zcv (v:vl) (t:tl) (t':tl') = f v t t' >>= \z -> zcv vl tl tl' >.= (z:)
-    zcv [] _ _ = typeError noLoc (qshow c ++ " applied to too many arguments")
-    zcv _ tl tl' = typeError noLoc (qshow c ++ " missing arguments " ++ qshow (map pretty tl ++ map pretty tl'))
+    zcv [] _ _ = typeError noLoc $ quoted c <+> "applied to too many arguments"
+    zcv _ tl tl' = typeError noLoc $ quoted c <+> "missing arguments:" <+> prettylist (map pretty tl ++ map pretty tl')
 
 -- |@z <- union x y@ means that a value of type x or y can be safely viewed as
 -- having type z.  Viewed as sets, this means S(z) >= union S(x) S(y), where

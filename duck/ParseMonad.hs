@@ -46,7 +46,7 @@ data ParseState = ParseState
 type P a = State ParseState a
 
 parseError :: Pretty s => SrcLoc -> s -> a
-parseError = stageError StageParse
+parseError l = fatal . stageMsg StageParse l
 
 psError :: Pretty s => ParseState -> s -> a
 psError s = parseError (ps_loc s)

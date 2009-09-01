@@ -112,10 +112,10 @@ overTypes = map snd . overArgs
 -- Lambda lifting: IR to Lifted IR conversion
 
 lirError :: Pretty s => SrcLoc -> s -> a
-lirError = stageError StageLir
+lirError l = fatal . locMsg l
 
 dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
-dupError v n o = lirError n $ pretty "duplicate definition of" <+> quotes (pretty v) <> mapPretty (pretty ", previously declared at" <+>) o
+dupError v n o = lirError n $ "duplicate definition of" <+> quoted v <> (", previously declared at" <?+> o)
 
 empty :: ModuleName -> Prog
 empty n = Prog n Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []

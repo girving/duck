@@ -50,10 +50,10 @@ instance Show Var where
   show (V s) = show s
 
 instance Pretty Var where
-  pretty' (V v) = (100,
+  pretty' (V v) =
     (case v of
-      c:_ | isAlpha c || c == '_' || c == '(' || c == '[' -> id
-      _ -> parens) (pretty v))
+      c:_ | isAlpha c || c == '_' || c == '(' || c == '[' -> pretty'
+      _ -> pretty' . parens) v
 
 type InScopeSet = Set Var
 

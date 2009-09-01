@@ -37,10 +37,10 @@ type InferStack = CallStack Type
 type FunctionInfo = Map Var Overloads
 
 -- |Type errors that may be resolvable substitution failures
-type TypeError = ErrorStack Type
+type TypeError = StackMsg Type
 
 instance Error TypeError where
-  strMsg = ErrorStack [] noLoc . pretty
+  strMsg = StackMsg [] . msg
 
 newtype Infer a = Infer { unInfer :: ReaderT (Prog, InferStack) (StateT FunctionInfo (ErrorT TypeError IO)) a }
   deriving (Monad, MonadIO, MonadReader (Prog, InferStack), MonadState FunctionInfo, MonadError TypeError, MonadInterrupt)
@@ -48,7 +48,7 @@ newtype Infer a = Infer { unInfer :: ReaderT (Prog, InferStack) (StateT Function
 -- |Indicate a fatal error in inference (one that cannot be resolved by a different overload path)
 inferError :: Pretty s => SrcLoc -> s -> Infer a
 inferError l m = Infer $ ReaderT $ \(_,s) -> 
-  stageErrorIO StageInfer noLoc $ ErrorStack (reverse s) l (pretty m)
+  fatalIO $ msg $ StackMsg (reverse s) $ locMsg l m
 
 withFrame :: Var -> [Type] -> SrcLoc -> Infer a -> Infer a
 withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
@@ -57,26 +57,26 @@ withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
   when (length s > 16) $ r $ inferError loc "stack overflow"
   handleE (\(e :: AsyncException) -> r $ inferError loc (show e)) $ -- catch real errors
     catchError (r e) $ \e ->
-      throwError (e { errStack = frame : errStack e }) -- preprend frame to resolve errors
+      throwError (e { msgStack = frame : msgStack e }) -- preprend frame to resolve errors
 
 withGlobals :: TypeEnv -> Infer [(Var,Type)] -> Infer TypeEnv
 withGlobals g f = Infer $ ReaderT $ \(p,s) -> 
   foldr (uncurry Map.insert) g =.< 
     runReaderT (unInfer f) (p{ progGlobalTypes = g },s)
 
-runInfer :: Stage -> (Prog, InferStack) -> Infer a -> IO (a, FunctionInfo)
-runInfer st ps@(prog,_) f =
-  either (stageErrorIO st noLoc) return =<<
+runInfer :: (Prog, InferStack) -> Infer a -> IO (a, FunctionInfo)
+runInfer ps@(prog,_) f =
+  either (fatalIO . msg) return =<<
     runErrorT (runStateT (runReaderT (unInfer f) ps) (progOverloads prog))
 
 runInferProg :: Infer TypeEnv -> Prog -> IO Prog
 runInferProg f prog = do
-  (g,o) <- runInfer StageInfer (prog,[]) f
+  (g,o) <- runInfer (prog,[]) f
   return $ prog { progGlobalTypes = g, progOverloads = o }
 
 -- |'rerunInfer' discards any extra function info computed during the extra inference.
-rerunInfer :: Stage -> (Prog, InferStack) -> Infer a -> IO a
-rerunInfer st ps f = fst =.< runInfer st ps f
+rerunInfer :: (Prog, InferStack) -> Infer a -> IO a
+rerunInfer ps f = fst =.< runInfer ps f
 
 instance ProgMonad Infer where
   getProg = fst =.< ask
@@ -88,13 +88,13 @@ debugInfer m = Infer $ ask >>= \(_,s) -> liftIO $ do
 
 -- |Indicate a potentially recoverable substitution failure/type error that could be caught during overload resolution
 typeError :: (Pretty s, MonadError TypeError m) => SrcLoc -> s -> m a
-typeError l m = throwError $ ErrorStack [] l (pretty m)
+typeError l m = throwError $ StackMsg [] $ locMsg l m
 
 typeMismatch :: (Pretty a, Pretty b, MonadError TypeError m) => a -> String -> b -> m c
-typeMismatch x op y = typeError noLoc $ pretty "type mismatch:" <+> quotes (pretty x) <+> pretty op <+> quotes (pretty y) <+> pretty "failed"
+typeMismatch x op y = typeError noLoc $ "type mismatch:" <+> quoted x <+> op <+> quoted y <+> "failed"
 
 typeErrors :: (Pretty s, Pretty s', MonadError TypeError m) => SrcLoc -> s -> [(s',TypeError)] -> m a
-typeErrors l m tel = typeError l $ nested' m $ vcat $ map (uncurry nested') tel
+typeErrors l m tel = typeError l $ nestedPunct ':' m $ vcat $ map (uncurry (nestedPunct ':')) tel
 
 typeReError :: (Pretty s, MonadError TypeError m) => SrcLoc -> s -> m a -> m a
-typeReError l m f = catchError f $ \te -> typeError l $ nested' m te
+typeReError l m f = catchError f $ \te -> typeError l $ nestedPunct ':' m te

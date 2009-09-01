@@ -67,8 +67,8 @@ prim :: SrcLoc -> Prim -> [Value] -> Exec Value
 prim loc prim args
   | Just primop <- Map.lookup prim primOps = do
     join $ liftIO $ (Exn.catch . Exn.evaluate) (return $ (primBody primop) args) $
-      \(Exn.PatternMatchFail _) -> return $ execError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
-  | otherwise = execError loc ("invalid primitive application: " ++ show prim ++ " " ++ pshow args)
+      \(Exn.PatternMatchFail _) -> return $ execError loc $ "invalid primitive application:" <+> show prim <+> prettylist args
+  | otherwise = execError loc $ "invalid primitive application:" <+> show prim <+> prettylist args
 
 -- |Determine the type of a primitive when called with the given arguments
 primType :: SrcLoc -> Prim -> [Type] -> Infer Type

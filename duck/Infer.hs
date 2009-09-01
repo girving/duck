@@ -248,8 +248,8 @@ resolve f args loc = do
       isSpecOf a b = specializationList (overTypes a) (overTypes b)
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
       findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
-      options overs = nest 2 $ vcat $ map overDesc overs
-      call = quotes $ pretty f <+> prettylist args
+      options overs = vcat $ map overDesc overs
+      call = quoted $ f <+> prettylist args
   pruned <- mapM prune rawOverloads
   overloads <- case partitionEithers pruned of
     (errs,[]) -> typeErrors loc (call <+> pretty "does not match any overloads, tried") $ zip (map overDesc rawOverloads) errs
@@ -257,7 +257,7 @@ resolve f args loc = do
 
   -- determine applicable argument type transform annotations
   tt <- maybe
-    (inferError loc $ call <+> pretty "has ambiguous type transforms, possibilities are:" $$ options overloads)
+    (inferError loc $ nested (call <+> "has ambiguous type transforms, possibilities are:") (options overloads))
     return $ transOvers overloads nargs
   let at = zip tt args
 
@@ -273,7 +273,7 @@ resolve f args loc = do
       return (Over noLoc at TyVoid [] Nothing)
     _ ->
       -- ambiguous
-      inferError loc (call <+> pretty "is ambiguous, possibilities are:" $$ options overloads)
+      inferError loc $ nested (call <+> "is ambiguous, possibilities are:") (options overloads)
 
   insertOver True f at over
   return over

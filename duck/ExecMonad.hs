@@ -40,7 +40,7 @@ newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
 -- distinguished from the better kinds of errors.
 execError :: Pretty s => SrcLoc -> s -> Exec a
 execError l m = Exec $ ReaderT $ \(_,s) ->
-  stageErrorIO StageExec noLoc $ ErrorStack (reverse s) l (pretty m)
+  fatalIO $ stageMsg StageExec noLoc $ StackMsg (reverse s) $ locMsg l m
 
 withFrame :: Var -> [TValue] -> SrcLoc -> Exec a -> Exec a
 withFrame f args loc e = Exec $ ReaderT $ \(p,s) -> do
@@ -57,4 +57,4 @@ runExec p e = runReaderT (unExec e) (p,[])
 
 liftInfer :: Infer a -> Exec a
 liftInfer infer = Exec $ ReaderT $ \ps ->
-  rerunInfer StageExec (fmap (mapStackArgs snd) ps) infer
+  rerunInfer (fmap (mapStackArgs snd) ps) infer
