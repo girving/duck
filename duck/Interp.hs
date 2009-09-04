@@ -91,22 +91,20 @@ expr global tenv env loc = exp where
     t <- liftInfer $ Infer.lookup tenv loc v
     conses <- liftInfer $ Infer.lookupDatatype loc t
     d <- lookup global env loc v
-    (c,dl) <- case (d,conses) of
-      (ValCons c dl,_) -> return (c,dl)
-      (ValType,[(Loc _ c,tl)]) -> return (c,map (const ValType) tl)
+    case d of
+      ValCons c dl ->
+        case find (\ (c',_,_) -> c == c') pl of
+          Just (_,vl,e') -> do
+            let Just tl = Infer.lookupCons conses c
+            cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
+          Nothing -> case def of
+            Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
+            Just e' -> cast ct $ expr global tenv env loc e' 
+      ValType -> do
+        let (c,vl,e') = head pl
+            Just tl = Infer.lookupCons conses c
+        cast ct $ expr global (insertList tenv vl tl) (foldl (\s v -> Map.insert v ValType s) env vl) loc e'
       _ -> execError loc ("expected block, got "++qshow v)
-    case find (\ (c',_,_) -> c == c') pl of
-      Just (_,vl,e') ->
-        if a == length dl then do
-          let Just tl = Infer.lookupCons conses c
-          cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
-        else
-          execError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
-            ++" but got ["++intercalate "," (map pshow vl)++"]")
-        where a = length vl
-      Nothing -> case def of
-        Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
-        Just e' -> cast ct $ expr global tenv env loc e' 
   exp (Cons c el) = ValCons c =.< mapM exp el
   exp (Prim op el) = Base.prim loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
