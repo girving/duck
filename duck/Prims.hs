@@ -7,12 +7,12 @@ module Prims
   , binopString
   , binopPrecedence
   -- * Primitive types
-  , typeUnit, isTypeUnit
+  , typeUnit
   , typeArrow, isTypeArrow
   , typeClosure
   , typeTuple
-  , typeInt, isTypeInt
-  , typeChr, isTypeChr
+  , typeInt
+  , typeChr
   , typeIO, isTypeIO
   , typeType, isTypeType
   ) where
@@ -49,11 +49,6 @@ typeC c = typeCons (V c) []
 typeC1 :: IsType t => String -> t -> t
 typeC1 c t = typeCons (V c) [t]
 
-isTypeC :: String -> Type -> Bool
-isTypeC c t
-  | Just (V c',[]) <- unTypeCons t, c == c' = True
-  | otherwise = False
-
 isTypeC1 :: String -> Type -> Maybe Type
 isTypeC1 c t
   | Just (V c',[t1]) <- unTypeCons t, c == c' = Just t1
@@ -61,9 +56,6 @@ isTypeC1 c t
 
 typeUnit :: IsType t => t
 typeUnit = typeC "()"
-
-isTypeUnit :: Type -> Bool
-isTypeUnit = isTypeC "()"
 
 typeArrow :: IsType t => t -> t -> t
 typeArrow s t = typeFun [FunArrow s t]
@@ -82,14 +74,8 @@ typeTuple tl = typeCons (tupleCons tl) tl
 typeInt :: IsType t => t
 typeInt = typeC "Int"
 
-isTypeInt :: Type -> Bool
-isTypeInt = isTypeC "Int"
-
 typeChr :: IsType t => t
 typeChr = typeC "Chr"
-
-isTypeChr :: Type -> Bool
-isTypeChr = isTypeC "Chr"
 
 typeIO :: IsType t => t -> t
 typeIO = typeC1 "IO"
