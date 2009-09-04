@@ -99,7 +99,6 @@ data Exp
     -- Monadic IO
   | Bind !Var Exp Exp
   | Return Exp
-  | PrimIO !PrimIO [Exp]
   deriving Show
 
 class Monad m => ProgMonad m where
@@ -187,6 +186,7 @@ check prog = runSequence $ do
     return s
   funs s (f,fl) = mapM_ fun fl where
     fun (Over l _ _ vl body) = do
+      when (vl == []) $ lirError l $ "overload "++qshow f++" has no arguments"
       vs <- foldM (\s v -> do
         when (Set.member v s) $ lirError l $ qshow v++" appears more than once in argument list for "++qshow f
         return $ addVar v s) Set.empty vl
@@ -295,7 +295,6 @@ expr locals l (Ir.Bind v e rest) = do
   rest <- expr (addVar v locals) l rest
   return $ Bind v e rest
 expr locals l (Ir.Return e) = Return =.< expr locals l e
-expr locals l (Ir.PrimIO p el) = PrimIO p =.< mapM (expr locals l) el
 expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> Spec e t
 expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l =.< expr locals (l,v) e
 
@@ -341,7 +340,6 @@ free s l (Case v al d) =
 free s l (Prim _ el) = concatMap (free s l) el
 free s l (Bind v e c) = free s l e ++ free (addVar v s) l c
 free s l (Return e) = free s l e
-free s l (PrimIO _ el) = concatMap (free s l) el
 free s l (Spec e _) = free s l e
 free s _ (ExpLoc l e) = free s l e
 
@@ -400,6 +398,5 @@ revert (Case v pl def) = Ir.Case v [(c,vl,revert e) | (c,vl,e) <- pl] (fmap reve
 revert (Prim prim el) = Ir.Prim prim (map revert el)
 revert (Bind v e rest) = Ir.Bind v (revert e) (revert rest)
 revert (Return e) = Ir.Return (revert e)
-revert (PrimIO p el) = Ir.PrimIO p (map revert el)
 revert (Spec e t) = Ir.Spec (revert e) t
 revert (ExpLoc l e) = Ir.ExpLoc l (revert e)

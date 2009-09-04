@@ -112,7 +112,6 @@ expr global tenv env loc = exp where
     d <- exp e1
     return $ ValBindIO v t d tenv env e2
   exp (Return e) = ValLiftIO =.< exp e
-  exp (PrimIO p el) = ValPrimIO p =.< mapM exp el
   exp se@(Spec e _) = do
     t <- inferExpr tenv loc se
     cast t $ exp e
@@ -171,7 +170,7 @@ main prog global = runExec prog $ do
 runIO :: Globals -> Value -> Exec Value
 runIO _ (ValLiftIO d) = return d
 runIO global (ValPrimIO TestAll []) = testAll global
-runIO _ (ValPrimIO p args) = Base.primIO p args
+runIO _ (ValPrimIO p args) = Base.runPrimIO p args
 runIO global (ValBindIO v tm m tenv env e) = do
   d <- runIO global m
   t <- liftInfer $ Infer.runIO tm

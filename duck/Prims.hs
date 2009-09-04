@@ -4,7 +4,6 @@
 module Prims 
   ( Binop(..)
   , Prim(..)
-  , PrimIO(..)
   , binopString
   , binopPrecedence
   -- * Primitive types
@@ -38,10 +37,8 @@ data Prim
   = Binop Binop
   | ChrIntOrd
   | IntChrChr
-  deriving (Eq, Ord, Show)
-
-data PrimIO
-  = Exit
+  -- * IO primitives
+  | Exit
   | IOPutChr
   | TestAll
   deriving (Eq, Ord, Show)
@@ -109,9 +106,6 @@ isTypeType = isTypeC1 "Type"
 -- Pretty printing
 
 instance Pretty Prim where
-  pretty' p = (100, pretty (show p))
-
-instance Pretty PrimIO where
   pretty' p = (100, pretty (show p))
 
 binopPrecedence :: Binop -> Int

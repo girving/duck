@@ -175,7 +175,6 @@ expr env loc = exp where
     checkIO t2
   exp (Return e) =
     exp e >.= typeIO
-  exp (PrimIO p el) = mapM exp el >>= Base.primIOType loc p >.= typeIO
   exp (Spec e ts) =
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr env l e

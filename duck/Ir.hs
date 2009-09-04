@@ -54,7 +54,6 @@ data Exp
     -- Monadic IO
   | Bind !Var Exp Exp                   -- ^ IO binding: @EXP >>= \VAR -> EXP@
   | Return Exp                          -- ^ IO return
-  | PrimIO !PrimIO [Exp]                -- ^ Primitive IO call: @PRIM EXPs@
   deriving Show
 
 -- Ast to IR conversion
@@ -348,12 +347,11 @@ instance Pretty Exp where
   pretty' (Cons c args) = (50, pretty c <+> sep (map (guard 51) args))
   pretty' (Prim (Binop op) [e1,e2]) | prec <- binopPrecedence op = (prec,
     guard prec e1 <+> pretty (binopString op) <+> guard prec e2)
-  pretty' (Prim prim el) = (50,
-    pretty prim <+> prettylist el)
+  pretty' (Prim p []) = pretty' p
+  pretty' (Prim p el) = (50,
+    pretty p <+> prettylist el)
   pretty' (Bind v e1 e2) = (6,
     pretty v <+> pretty "<-" <+> guard 0 e1 $$ guard 0 e2)
   pretty' (Return e) = (6, pretty "return" <+> guard 7 e)
-  pretty' (PrimIO p []) = pretty' p
-  pretty' (PrimIO p args) = (50, guard 50 p <+> prettylist args)
   pretty' (ExpLoc _ e) = pretty' e
   --pretty' (ExpLoc l e) = fmap (pretty "{-@" <+> pretty (show l) <+> pretty "-}" <+>) $ pretty' e

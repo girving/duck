@@ -28,7 +28,7 @@ data Value
   | ValType
     -- Monadic IO
   | ValLiftIO !Value -- ^ lifted (returned) value within IO monad
-  | ValPrimIO !PrimIO ![Value] -- ^ Closure of unexecuted IO call
+  | ValPrimIO !Prim ![Value] -- ^ Closure of unexecuted IO call
   | ValBindIO !Var !Type !Value !TypeEnv !Env !Lir.Exp -- ^ Unexecuted IO binding
 
 type Env = Map Var Value
