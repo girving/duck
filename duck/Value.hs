@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
+{-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances #-}
 -- | Duck interpreter values
 
 -- For now, this is dynamically typed
@@ -6,7 +6,6 @@
 module Value
   ( Env
   , Value(..)
-  , TValue
   , valUnit
   ) where
 
@@ -23,18 +22,16 @@ import qualified Data.Map as Map
 data Value
   = ValInt !Int
   | ValChr !Char
-  | ValCons !CVar [Value] -- ^ Constructed data
-  | ValClosure !Var [TValue] -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
-  | ValDelay Env Lir.Exp -- ^ Delay (lazy) evaluation
+  | ValCons !CVar ![Value] -- ^ Constructed data
+  | ValClosure !Var ![Type] ![Value] -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
+  | ValDelay !TypeEnv !Env !Lir.Exp -- ^ Delay (lazy) evaluation
   | ValType
     -- Monadic IO
   | ValLiftIO !Value -- ^ lifted (returned) value within IO monad
-  | ValPrimIO !PrimIO [Value] -- ^ Closure of unexecuted IO call
-  | ValBindIO !Var !TValue Env Lir.Exp -- ^ Unexecuted IO binding
+  | ValPrimIO !PrimIO ![Value] -- ^ Closure of unexecuted IO call
+  | ValBindIO !Var !Type !Value !TypeEnv !Env !Lir.Exp -- ^ Unexecuted IO binding
 
-type TValue = (Value, Type)
-
-type Env = Map Var TValue
+type Env = Map Var Value
 
 valUnit :: Value
 valUnit = ValCons (V "()") []
@@ -57,13 +54,13 @@ instance Pretty Value where
   pretty' ValType = pretty' "_"
   -- pretty' (ValFun _ vl e) = -- conveniently ignore env
   --  (0, pretty "\\" <> prettylist vl <> pretty " -> " <> pretty e)
-  pretty' (ValClosure v args) = (2, pretty v <+> sep (map (guard 3) args))
-  pretty' (ValDelay _ e) = (2, pretty "delay" <+> guard 3 e)
+  pretty' (ValClosure v types args) = (2, pretty v <+> sep (map (guard 3) (zip args types)))
+  pretty' (ValDelay _ _ e) = (2, pretty "delay" <+> guard 3 e)
   pretty' (ValLiftIO v) = (2, pretty "return" <+> guard 3 v)
   pretty' (ValPrimIO p []) = pretty' p
   pretty' (ValPrimIO p args) = (2, pretty p <+> sep (map (guard 3) args))
-  pretty' (ValBindIO v d _ e) = (0,
-    pretty v <+> pretty "<-" <+> guard 0 d $$ guard 0 e)
+  pretty' (ValBindIO v t d _ _ e) = (0,
+    pretty v <+> pretty "<-" <+> guard 0 (d,t) $$ guard 0 e)
 
-instance Pretty TValue where
+instance Pretty (Value,Type) where
   pretty' (v,t) = (0, guard 1 v <+> pretty "::" <+> guard 60 t)
