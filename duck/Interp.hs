@@ -3,7 +3,7 @@
 
 -- For now, this is dynamically typed
 
-module Interp 
+module Interp
   ( prog
   , main
   ) where
@@ -63,13 +63,13 @@ cast :: Type -> Exec Value -> Exec Value
 cast _ x = x
 
 --runInfer :: SrcLoc -> Infer Type -> Exec Type
-runInfer l f = do
+runInfer l action f = do
   t <- liftInfer f
-  when (t == TyVoid) $ execError l "<<void>>"
+  when (t == TyVoid) $ execError l $ "refusing to "++action++", result is Void"
   return t
 
 inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec Type
-inferExpr env loc = runInfer loc . Infer.expr env loc
+inferExpr env loc e = runInfer loc ("evaluate "++qshow e) $ Infer.expr env loc e
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
@@ -99,7 +99,7 @@ expr global tenv env loc = exp where
             cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
           Nothing -> case def of
             Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
-            Just e' -> cast ct $ expr global tenv env loc e' 
+            Just e' -> cast ct $ expr global tenv env loc e'
       ValType -> do
         let (c,vl,e') = head pl
             Just tl = Infer.lookupCons conses c
@@ -125,7 +125,7 @@ transExpr _ tenv env _ e (Just Delayed) = return $ ValDelay tenv env e
 applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Type -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =
   apply global loc ft f (transExpr global tenv env loc e)
-    =<< inferExpr tenv loc e
+    =<< liftInfer (Infer.expr tenv loc e)
 
 -- Because of the delay mechanism, we pass in two things related to the argument
 -- "a".  The first argument provides the argument itself, whose evaluation must
@@ -135,10 +135,10 @@ applyExpr global tenv env loc ft f e =
 apply :: Globals -> SrcLoc -> Type -> Value -> (Maybe Trans -> Exec Value) -> Type -> Exec Value
 apply global loc ft (ValClosure f types args) ae at = do
   -- infer return type
-  rt <- runInfer loc $ Infer.apply loc ft at
+  rt <- runInfer loc ("apply "++qshow ft++" to "++qshow at) $ Infer.apply loc ft at
   -- lookup appropriate overload (parallels Infer.apply/resolve)
   let tl = types ++ [at]
-  o <- maybe 
+  o <- maybe
     (execError loc ("unresolved overload: " ++ pshow f ++ " " ++ pshowlist tl))
     return =<< liftInfer (Infer.lookupOver f tl)
   -- determine type transform for this argument, and evaluate
@@ -147,7 +147,7 @@ apply global loc ft (ValClosure f types args) ae at = do
   a <- ae (tt !! length args)
   let dl = args ++ [a]
   case o of
-    Over _ _ _ _ Nothing -> 
+    Over _ _ _ _ Nothing ->
       -- partially applied
       return $ ValClosure f tl dl
     Over oloc tl' _ vl (Just e) -> do
@@ -155,7 +155,7 @@ apply global loc ft (ValClosure f types args) ae at = do
       let tl = map snd tl'
       cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
 apply global loc ft (ValDelay tenv env e) _ at = do
-  rt <- runInfer loc $ Infer.apply loc ft at
+  rt <- runInfer loc ("force "++qshow ft) $ Infer.apply loc ft at
   cast rt $ expr global tenv env loc e
 apply _ _ _ ValType _ _ = return ValType
 apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply '"++pshow v1++" :: "++pshow t1++"' to '"++pshow v2++" :: "++pshow t2++"'")

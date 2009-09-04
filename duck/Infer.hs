@@ -220,10 +220,13 @@ apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
       (resolve f atl loc) -- no match, type not yet inferred
       return =<< lookupOver f atl
     return (overRet o)
-apply loc t1 t2 | Just (TyCons c tl) <- isTypeType t1, Just t <- isTypeType t2 = do
+apply loc t1 t2 | Just (TyCons c tl) <- isTypeType t1 = do
   vl <- typeVariances c
   if length tl < length vl
-    then return (typeType (TyCons c (tl++[t])))
+    then typeType =.< if c == V "Type" then return t2 else
+      case isTypeType t2 of
+        Just t -> return $ TyCons c (tl++[t])
+        _ -> typeError loc ("can't apply "++qshow t1++" to non-type "++qshow t2)
     else typeError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
 apply loc t1 t2 = typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
 
