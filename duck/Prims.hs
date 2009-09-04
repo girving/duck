@@ -13,8 +13,8 @@ module Prims
   , typeTuple
   , typeInt
   , typeChr
-  , typeIO, isTypeIO
-  , typeType, isTypeType
+  , typeIO
+  , typeType
   ) where
 
 import Pretty
@@ -49,11 +49,6 @@ typeC c = typeCons (V c) []
 typeC1 :: IsType t => String -> t -> t
 typeC1 c t = typeCons (V c) [t]
 
-isTypeC1 :: String -> Type -> Maybe Type
-isTypeC1 c t
-  | Just (V c',[t1]) <- unTypeCons t, c == c' = Just t1
-  | otherwise = Nothing
-
 typeUnit :: IsType t => t
 typeUnit = typeC "()"
 
@@ -80,14 +75,8 @@ typeChr = typeC "Chr"
 typeIO :: IsType t => t -> t
 typeIO = typeC1 "IO"
 
-isTypeIO :: Type -> Maybe Type
-isTypeIO = isTypeC1 "IO"
-
 typeType :: IsType t => t -> t
 typeType = typeC1 "Type"
-
-isTypeType :: Type -> Maybe Type
-isTypeType = isTypeC1 "Type"
 
 -- Pretty printing
 

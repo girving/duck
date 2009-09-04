@@ -220,15 +220,33 @@ apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
       (resolve f atl loc) -- no match, type not yet inferred
       return =<< lookupOver f atl
     return (overRet o)
-apply loc t1 t2 | Just (TyCons c tl) <- isTypeType t1 = do
-  vl <- typeVariances c
-  if length tl < length vl
-    then typeType =.< if c == V "Type" then return t2 else
-      case isTypeType t2 of
-        Just t -> return $ TyCons c (tl++[t])
-        _ -> typeError loc ("can't apply "++qshow t1++" to non-type "++qshow t2)
-    else typeError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
-apply loc t1 t2 = typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
+apply loc t1 t2 = do
+  r <- isTypeType t1
+  case r of
+    Just (TyCons c tl) -> do
+      vl <- typeVariances c
+      if length tl < length vl
+        then typeType =.< if c == V "Type" then return t2 else do
+          r <- isTypeType t2
+          case r of
+            Just t -> return $ TyCons c (tl++[t])
+            _ -> typeError loc ("can't apply "++qshow t1++" to non-type "++qshow t2)
+        else typeError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
+    _ -> typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
+
+isTypeC1 :: String -> Type -> Infer (Maybe Type)
+isTypeC1 c tt = do
+  r <- tryError $ subset tt (TsCons (V c) [TsVar x])
+  return $ case r of
+    Right (Right env) | Just t <- Map.lookup x env -> Just t
+    _ -> Nothing
+  where x = V "x"
+
+isTypeType :: Type -> Infer (Maybe Type)
+isTypeType = isTypeC1 "Type"
+
+isTypeIO :: Type -> Infer (Maybe Type)
+isTypeIO = isTypeC1 "IO"
 
 instance TypeMonad Infer where
   typeApply = apply noLoc
@@ -318,8 +336,11 @@ main = do
 
 -- |This is the analog for 'Interp.runIO' for types.  It exists by analogy even though it is very simple.
 runIO :: Type -> Infer Type
-runIO io | Just t <- isTypeIO io = return t
-runIO t = typeError noLoc ("expected IO type, got "++qshow t)
+runIO io = do
+  r <- isTypeIO io
+  case r of
+    Just t -> return t
+    Nothing -> typeError noLoc ("expected IO type, got "++qshow io)
 
 -- |Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type
