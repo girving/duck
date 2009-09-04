@@ -4,6 +4,8 @@
 
 ---- operator precedence
 
+--infixl 100 (function application)
+--+Inf
 infixr 90  .
 infixr 80  ^ ^^ **
 infixl 70  * /
@@ -13,8 +15,12 @@ infix  40  == != < <= >= >
 infixr 30  &&
 infixr 20  ||
 infixl 10  >> >>=
-infixr 10  =<<
-infixr 0   $
+infixr 10  $ =<<
+---Inf
+--infix  3 , (tuples)
+--infixl 2 ::
+--infixr 1 -> (arrows) let case if
+--infixr 0 \ =
 
 --------- miscellaneous basic functions
 

@@ -76,8 +76,8 @@ decls :: { [[Loc Decl]] }
   | decls ';' decl { $3 : $1 }
 
 decl :: { [Loc Decl] }
-  : exp0 '::' exp0 {% spec $1 >>= \v -> ty $3 >.= \t -> [loc $1 $> $SpecD v (unLoc t)] }
-  | exp '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
+  : exp2(atom_) '::' exp {% spec $1 >>= \v -> ty $3 >.= \t -> [loc $1 $> $SpecD v (unLoc t)] }
+  | exp2(atom_) '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
   | import var { [loc $1 $> $ Import (var $2)] }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
   | data dvar lvars maybeConstructors { [loc $1 $> $ Data $2 (reverse (unLoc $3)) (reverse (unLoc $4))] }
@@ -91,12 +91,11 @@ constructors :: { [(Loc CVar,[TypePat])] }
   | constructors ';'  constructor { $3 : $1 }
 
 constructor :: { (Loc CVar,[TypePat]) }
-  : exp2(atom) {% constructor $1 }
+  : exp3(atom) {% constructor $1 }
 
 --- Expressions ---
 
--- An underscore after a nonterminal (exp_) means it cannot contain a parenthesis-killing backslash expression.
--- This duplication is unfortunately, but I finally got tired of the shift-reduce conflicts.
+-- The underscored atom_ means it cannot contain a parenthesis-killing backslash expression.
 
 -- read "negative one": must be parenthesized
 exp_1 :: { Loc Exp }
@@ -104,10 +103,6 @@ exp_1 :: { Loc Exp }
   | exp { $1 }
 
 exp :: { Loc Exp }
-  : exp0 '::' exp0 {% ty $3 >.= \t -> loc $1 $> $ Spec (expLoc $1) (unLoc t) }
-  | exp0 { $1 }
-
-exp0 :: { Loc Exp }
   : arrows {% arrows $1 }
 
 arrows :: { Loc (Stack Exp Exp) }
@@ -115,26 +110,30 @@ arrows :: { Loc (Stack Exp Exp) }
   | exp1(atom_) '->' arrows { loc $1 $> (expLoc $1 :. unLoc $3) }
 
 notarrow :: { Loc Exp }
-  : let exp '=' exp in exp0 {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
+  : let exp '=' exp in exp {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
   | case exp of '{' cases '}' { loc $1 $> $ Case (expLoc $2) (reverse $5) }
-  | if exp then exp else exp0 { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
+  | if exp then exp else exp { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
   | exp1(atom) { $1 }
 
 arrow :: { Loc (Pattern,Exp) }
-  : exp1(atom_) '->' exp0 {% pattern $1 >.= \p -> loc $1 $> (patLoc p,expLoc $3) }
+  : exp1(atom_) '->' exp {% pattern $1 >.= \p -> loc $1 $> (patLoc p,expLoc $3) }
 
 cases :: { [(Pattern,Exp)] }
   : arrow { [unLoc $1] }
   | cases ';' arrow { unLoc $3 : $1 }
 
 exp1(a) :: { Loc Exp }
+  : exp1(atom_) '::' exp2(a) {% ty $3 >.= \t -> loc $1 $> $ Spec (expLoc $1) (unLoc t) }
+  | exp2(a) { $1 }
+
+exp2(a) :: { Loc Exp }
   : commas(a) { fmap tuple $1 }
 
 commas(a) :: { Loc [Exp] }
-  : exp2(a) { loc1 $1 [expLoc $1] }
-  | commas(atom_) ',' exp2(a) { loc $1 $> $ expLoc $3 : unLoc $1 }
+  : exp3(a) { loc1 $1 [expLoc $1] }
+  | commas(atom_) ',' exp3(a) { loc $1 $> $ expLoc $3 : unLoc $1 }
 
-exp2(a) :: { Loc Exp }
+exp3(a) :: { Loc Exp }
   : ops(a) { fmap ops $1 }
 
 ops(a) :: { Loc (Ops Exp) }
@@ -142,10 +141,10 @@ ops(a) :: { Loc (Ops Exp) }
   | unops(a) { $1 }
 
 unops(a) :: { Loc (Ops Exp) }
-  : exp3(a) { loc1 $1 $ OpAtom (expLoc $1) }
+  : exp4(a) { loc1 $1 $ OpAtom (expLoc $1) }
   | '-' unops(a) { loc $1 $> $ OpUn (V "-") (unLoc $2) }
 
-exp3(a) :: { Loc Exp }
+exp4(a) :: { Loc Exp }
   : exps(a) { fmap apply $1 }
 
 exps(a) :: { Loc [Exp] }
@@ -154,7 +153,7 @@ exps(a) :: { Loc [Exp] }
 
 atom :: { Loc Exp }
   : atom_ { $1 }
-  | '\\' exp0 { loc $1 $> (expLoc $2) }
+  | '\\' exp { loc $1 $> (expLoc $2) }
 
 atom_ :: { Loc Exp }
   : int { fmap (Int . tokInt) $1 }
