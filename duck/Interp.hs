@@ -155,8 +155,9 @@ apply global loc ft (ValClosure f types args) ae at = do
       -- full function call (parallels Infer.cache)
       let tl = map snd tl'
       cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
-apply global loc ta (ValDelay tenv env e) _ _ | Just (_,t) <- isTypeArrow ta =
-  cast t $ expr global tenv env loc e
+apply global loc ft (ValDelay tenv env e) _ at = do
+  rt <- runInfer loc $ Infer.apply loc ft at
+  cast rt $ expr global tenv env loc e
 apply _ _ _ ValType _ _ = return ValType
 apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply '"++pshow v1++" :: "++pshow t1++"' to '"++pshow v2++" :: "++pshow t2++"'")
 
