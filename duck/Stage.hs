@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, TypeSynonymInstances #-}
+{-# LANGUAGE DeriveDataTypeable, TypeSynonymInstances, PatternGuards #-}
 -- | Compilation top-level staging tools
 
 module Stage
@@ -15,6 +15,7 @@ module Stage
 import Data.Typeable
 import Control.Exception
 import Control.Monad.Trans
+import System.Exit
 
 import Util
 import Var
@@ -70,11 +71,18 @@ stageError p l s = throw $ StageError p l $ pretty s
 stageErrorIO :: (MonadIO m, Pretty s) => Stage -> SrcLoc -> s -> m a
 stageErrorIO p l s = liftIO $ throwIO $ StageError p l $ pretty s
 
-errorFatal :: StageError -> IO a
-errorFatal e = dieWith (stageExitval (errStage e)) $ show e
-
 catchFatal :: IO a -> IO a
-catchFatal = handle errorFatal
+catchFatal = handleJust filter errorAny . handle errorFatal where
+  errorFatal :: StageError -> IO a
+  errorFatal e = dieWith (stageExitval (errStage e)) $ show e
+
+  filter :: SomeException -> Maybe SomeException
+  filter e | Just _ <- fromException e :: Maybe ExitCode = Nothing
+           | otherwise = Just e
+
+  errorAny :: SomeException -> IO a
+  errorAny e = dieWith 7 $ "internal error: "++show e
+
 
 -- |Represents a single function call with the given type of arguments.
 data CallFrame a = CallFrame
