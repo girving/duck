@@ -5,7 +5,7 @@ module Prims
   ( Binop(..)
   , Prim(..)
   , binopString
-  , binopPrecedence
+  , primString
   -- * Primitive types
   , typeUnit
   , typeArrow, isTypeArrow
@@ -17,7 +17,6 @@ module Prims
   , typeType
   ) where
 
-import Pretty
 import Type
 import Var
 
@@ -80,20 +79,6 @@ typeType = typeC1 "Type"
 
 -- Pretty printing
 
-instance Pretty Prim where
-  pretty' p = (100, pretty (show p))
-
-binopPrecedence :: Binop -> Int
-binopPrecedence op = case op of
-  IntAddOp -> 20
-  IntSubOp -> 20
-  IntMulOp -> 30
-  IntDivOp -> 30
-  IntEqOp -> 10
-  IntLTOp -> 10
-  IntLEOp -> 10
-  IntGTOp -> 10
-  IntGEOp -> 10
 
 binopString :: Binop -> String
 binopString op = case op of
@@ -106,3 +91,7 @@ binopString op = case op of
   IntGTOp -> ">"
   IntLEOp -> "<="
   IntGEOp -> ">="
+
+primString :: Prim -> String
+primString (Binop op) = binopString op
+primString p = show p

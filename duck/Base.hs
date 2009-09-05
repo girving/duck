@@ -67,26 +67,29 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , ioOp TestAll "testAll" [] typeUnit
   ]
 
+invalidPrim :: Pretty t => Prim -> [t] -> Doc'
+invalidPrim p a = "invalid primitive arguments" <:> quoted (prettyap (primString p) a)
+
 -- |Actually execute a primitive, called with the specified arguments at run time
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
 prim loc prim args
   | Just primop <- Map.lookup prim primOps = do
     join $ liftIO $ (Exn.catch . Exn.evaluate) (return $ (primBody primop) args) $
-      \(Exn.PatternMatchFail _) -> return $ execError loc $ "invalid primitive application:" <+> show prim <+> prettylist args
-  | otherwise = execError loc $ "invalid primitive application:" <+> show prim <+> prettylist args
+      \(Exn.PatternMatchFail _) -> return $ execError loc $ invalidPrim prim args
+  | otherwise = execError loc $ invalidPrim prim args
 
 -- |Determine the type of a primitive when called with the given arguments
 primType :: SrcLoc -> Prim -> [Type] -> Infer Type
 primType loc prim args
   | Just primop <- Map.lookup prim primOps
   , args == primArgs primop = return $ primRet primop
-  | otherwise = typeError loc ("invalid arguments: " ++ show prim ++ " " ++ pshowlist args)
+  | otherwise = typeError loc $ invalidPrim prim args
 
 -- |Execute an IO primitive
 runPrimIO :: Prim -> [Value] -> Exec Value
 runPrimIO Exit [ValInt i] = liftIO (exit i)
 runPrimIO IOPutChr [ValChr c] = liftIO (putChar c) >. valUnit
-runPrimIO p args = execError noLoc ("invalid arguments: "++ show p ++ " " ++ pshowlist args)
+runPrimIO p args = execError noLoc $ invalidPrim p args
 
 -- |The internal, implicit declarations giving names to primitive operations.
 -- Note that this is different than base.duck.

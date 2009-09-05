@@ -11,13 +11,16 @@ module Value
 
 import Prelude hiding (lookup)
 import Data.List hiding (lookup)
+import Data.Map (Map)
+import qualified Data.Map as Map
+
+import Util
 import Var
 import Type
 import Prims
 import Pretty
 import qualified Lir
-import Data.Map (Map)
-import qualified Data.Map as Map
+import ParseOps
 
 data Value
   = ValInt !Int
@@ -40,27 +43,21 @@ valUnit = ValCons (V "()") []
 
 instance Pretty Value where
   pretty' (ValInt i) = pretty' i
-  pretty' (ValChr c) = (100, pretty (show c))
-  pretty' (ValCons c []) = pretty' c
-  pretty' (ValCons c fields) | isTuple c = (1,
-    hcat $ intersperse (pretty ", ") $ map (guard 2) fields)
-  pretty' (ValCons (V ":") [h,t]) = pretty' $
-    brackets (punctuate ',' $ map (guard 2) (h : extract t))
+  pretty' (ValChr c) = pretty' (show c)
+  pretty' (ValCons (V ":") [h,t]) | Just t' <- extract t = pretty' $
+    brackets $ 3 #> punctuate ',' (h : t')
     where
-    extract (ValCons (V "[]") []) = []
-    extract (ValCons (V ":") [h,t]) = h : extract t
-    extract e = error ("invalid tail "++pshow e++" in list")
-  pretty' (ValCons c fields) = (2, pretty c <+> sep (map (guard 3) fields))
-  pretty' ValType = pretty' "_"
-  -- pretty' (ValFun _ vl e) = -- conveniently ignore env
-  --  (0, pretty "\\" <> prettylist vl <> pretty " -> " <> pretty e)
-  pretty' (ValClosure v types args) = (2, pretty v <+> sep (map (guard 3) (zip args types)))
-  pretty' (ValDelay _ _ e) = (2, pretty "delay" <+> guard 3 e)
-  pretty' (ValLiftIO v) = (2, pretty "return" <+> guard 3 v)
-  pretty' (ValPrimIO p []) = pretty' p
-  pretty' (ValPrimIO p args) = (2, pretty p <+> sep (map (guard 3) args))
-  pretty' (ValBindIO v t d _ _ e) = (0,
-    pretty v <+> pretty "<-" <+> guard 0 (d,t) $$ guard 0 e)
+    extract (ValCons (V "[]") []) = Just []
+    extract (ValCons (V ":") [h,t]) = (h :) =.< extract t
+    extract _ = Nothing
+  pretty' (ValCons c fields) = prettyop c fields
+  pretty' ValType = pretty' '_'
+  pretty' (ValClosure v types args) = prettyop v (zip args types)
+  pretty' (ValDelay _ _ e) = prettyop "delay" [e]
+  pretty' (ValLiftIO v) = prettyop "return" [v]
+  pretty' (ValPrimIO p args) = prettyop (V (primString p)) args
+  pretty' (ValBindIO v t d _ _ e) = 0 #>
+    v <+> "<-" <+> (d,t) $$ pretty e
 
 instance Pretty (Value,Type) where
-  pretty' (v,t) = (0, guard 1 v <+> pretty "::" <+> guard 60 t)
+  pretty' (v,t) = 2 #> v <+> "::" <+> t

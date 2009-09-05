@@ -43,7 +43,7 @@ lookup global env loc v
     | Just _ <- Map.lookup v (progOverloads prog) = return (ValClosure v [] []) -- if we find overloads, make a new closure
     | Just _ <- Map.lookup v (progFunctions prog) = return (ValClosure v [] []) -- this should never be used
     | Just _ <- Map.lookup v (progDatatypes prog) = return ValType
-    | otherwise = execError loc ("unbound variable " ++ qshow v)
+    | otherwise = execError loc ("unbound variable" <+> quoted v)
 
 -- |Process a list of definitions into the global environment.
 prog :: Exec Globals
@@ -55,7 +55,7 @@ definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc)
   dl <- case (vl,d) of
           ([_],_) -> return [d]
           (_, ValCons c dl) | isTuple c, length vl == length dl -> return dl
-          _ -> execError noLoc ("expected "++show (length vl)++"-tuple, got "++qshow d)
+          _ -> execError noLoc ("expected" <+> length vl <> "-tuple, got" <+> quoted d)
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
 
 -- |A placeholder for when implicit casts stop being nops on the data.
@@ -65,11 +65,11 @@ cast _ x = x
 --runInfer :: SrcLoc -> Infer Type -> Exec Type
 runInfer l action f = do
   t <- liftInfer f
-  when (t == TyVoid) $ execError l $ "refusing to "++action++", result is Void"
+  when (t == TyVoid) $ execError l $ "refusing to" <+> action <> ", result is Void"
   return t
 
 inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec Type
-inferExpr env loc e = runInfer loc ("evaluate "++qshow e) $ Infer.expr env loc e
+inferExpr env loc e = runInfer loc ("evaluate" <+> quoted e) $ Infer.expr env loc e
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
@@ -98,13 +98,13 @@ expr global tenv env loc = exp where
             let Just tl = Infer.lookupCons conses c
             cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
           Nothing -> case def of
-            Nothing -> execError loc ("pattern match failed: exp = " ++ qshow d ++ ", cases = " ++ show pl) -- XXX data printed
+            Nothing -> execError loc ("pattern match failed: exp =" <+> quoted d <> ", cases =" <+> show pl) -- XXX data printed
             Just e' -> cast ct $ expr global tenv env loc e'
       ValType -> do
         let (c,vl,e') = head pl
             Just tl = Infer.lookupCons conses c
         cast ct $ expr global (insertList tenv vl tl) (foldl (\s v -> Map.insert v ValType s) env vl) loc e'
-      _ -> execError loc ("expected block, got "++qshow v)
+      _ -> execError loc ("expected block, got" <+> quoted v)
   exp (Cons c el) = ValCons c =.< mapM exp el
   exp (Prim op el) = Base.prim loc op =<< mapM exp el
   exp (Bind v e1 e2) = do
@@ -135,11 +135,11 @@ applyExpr global tenv env loc ft f e =
 apply :: Globals -> SrcLoc -> Type -> Value -> (Maybe Trans -> Exec Value) -> Type -> Exec Value
 apply global loc ft (ValClosure f types args) ae at = do
   -- infer return type
-  rt <- runInfer loc ("apply "++qshow ft++" to "++qshow at) $ Infer.apply loc ft at
+  rt <- runInfer loc ("apply" <+> quoted ft <+> "to" <+> quoted at) $ Infer.apply loc ft at
   -- lookup appropriate overload (parallels Infer.apply/resolve)
   let tl = types ++ [at]
   o <- maybe
-    (execError loc ("unresolved overload: " ++ pshow f ++ " " ++ pshowlist tl))
+    (execError loc ("unresolved overload:" <+> quoted (prettyap f tl)))
     return =<< liftInfer (Infer.lookupOver f tl)
   -- determine type transform for this argument, and evaluate
   let tt = map fst $ overArgs o
@@ -155,10 +155,10 @@ apply global loc ft (ValClosure f types args) ae at = do
       let tl = map snd tl'
       cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
 apply global loc ft (ValDelay tenv env e) _ at = do
-  rt <- runInfer loc ("force "++qshow ft) $ Infer.apply loc ft at
+  rt <- runInfer loc ("force" <+> quoted ft) $ Infer.apply loc ft at
   cast rt $ expr global tenv env loc e
 apply _ _ _ ValType _ _ = return ValType
-apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply '"++pshow v1++" :: "++pshow t1++"' to '"++pshow v2++" :: "++pshow t2++"'")
+apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1 <+> "::" <+> t1) <+> "to" <+> quoted (v2 <+> "::" <+> t2))
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()
@@ -176,7 +176,7 @@ runIO global (ValBindIO v tm m tenv env e) = do
   t <- liftInfer $ Infer.runIO tm
   d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
   runIO global d'
-runIO _ d = execError noLoc ("expected IO computation, got "++qshow d)
+runIO _ d = execError noLoc ("expected IO computation, got" <+> quoted d)
 
 testAll :: Globals -> Exec Value
 testAll global = do

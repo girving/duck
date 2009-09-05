@@ -237,23 +237,23 @@ argType (Just c, t) = transType c t
 instance Pretty TypePat where
   pretty' (TsVar v) = pretty' v
   pretty' (TsCons t []) = pretty' t
-  pretty' (TsCons t tl) | isTuple t = (2, hcat $ List.intersperse (pretty ", ") $ map (guard 3) tl)
-  pretty' (TsCons t tl) = (50, guard 50 t <+> hsep (map (guard 51) tl))
+  pretty' (TsCons t tl) | isTuple t = 3 #> punctuate ',' tl
+  pretty' (TsCons t tl) = prettyap t tl
   pretty' (TsFun f) = pretty' f
-  pretty' TsVoid = (100, pretty "Void")
+  pretty' TsVoid = pretty' "Void"
 
 instance Pretty Type where
   pretty' = pretty' . singleton
 
 instance Pretty t => Pretty (TypeFun t) where
   pretty' (FunClosure f []) = pretty' f
-  pretty' (FunClosure f tl) = (50, pretty f <+> prettylist tl)
-  pretty' (FunArrow s t) = (1, guard 2 s <+> pretty "->" <+> guard 1 t)
+  pretty' (FunClosure f tl) = prettyap f tl
+  pretty' (FunArrow s t) = 1 #> s <+> "->" <+> guard 1 t
 
 instance Pretty t => Pretty [TypeFun t] where
   pretty' [f] = pretty' f
-  pretty' fl = (40, hsep (List.intersperse (pretty "&") (map (guard 41) fl)))
+  pretty' fl = 5 #> punctuate '&' fl
 
 instance (Pretty t, IsType t) => Pretty (TransType t) where
   pretty' (Nothing, t) = pretty' t
-  pretty' (Just c, t) = (1, pretty (show c) <+> guard 2 t)
+  pretty' (Just c, t) = prettyap (show c) [t]

@@ -1,26 +1,26 @@
-{-# LANGUAGE FlexibleInstances, OverlappingInstances #-}
+{-# LANGUAGE FlexibleInstances, OverlappingInstances, TypeSynonymInstances #-}
 -- | Pretty printing typeclass
 --
--- Mostly a re-export of "Text.PrettyPrint", with a few conveniences such as precedence.
+-- Mostly a class-based re-export of "Text.PrettyPrint", with a few conveniences such as precedence.
+-- For precedence, we use the (extended) precedences listed at the top of base.duck, which range from 0 (always parethesized) to 110 (never); note that this is exactly 10 times the standand Haskell precedences.
 
 module Pretty 
   ( Pretty(..)
-  , Doc
-  , guard
-  -- * Convenience functions
-  , pprint
-  , pshow
-  , pshowlist
-  , qshow
+  , Doc, Doc'
+  , (#>), guard
 
-  -- * Operators
-  , (<>), (<+>), (<?>), (<?+>), ($$)
-  , hcat, hsep, vcat, sep
-  , punct, sepPunct, (<:+>)
-  , nested, nestedPunct
-  , PP.equals -- probably eliminable
-  , parens, brackets, quoted
+  -- * Composition
+  , (<>), (<+>), (<&>), (<&+>), ($$)
+  , hcat, hsep, hcons, vcat, sep
+  , punct, joinPunct, (<:>)
   , punctuate
+  , nested, nestedPunct
+  , parens, brackets, quoted
+  , prettyap
+  , sPlural
+
+  -- * Extraction and use
+  , pout, qout, poutlist
   ) where
 
 import Text.PrettyPrint (Doc, empty, isEmpty)
@@ -28,151 +28,193 @@ import qualified Text.PrettyPrint as PP
 import qualified Data.Map as Map
 import Util
 
--- It may be cleaner to use showsPrec-type precedence
+type PrecDoc = Int -> Doc
+type Doc' = PrecDoc
 
+appPrec :: Int
+appPrec = 100
+
+instance Show PrecDoc where
+  showsPrec i p = shows (p (10*i))
+
+-- |Things that can be converted to Doc (formatted text) representation, possibly with precedence.
 class Pretty t where
   pretty :: t -> Doc
-  pretty' :: t -> (Int, Doc)
-  prettylist :: [t] -> Doc
+  pretty' :: t -> PrecDoc
 
-  pretty = snd . pretty'
-  pretty' t = (0, pretty t)
-  prettylist = hsep . map (guard 99)
-
-guard :: Pretty t => Int -> t -> Doc
-guard prec x
-  | prec > inner = PP.parens doc
-  | otherwise = doc
-  where (inner, doc) = pretty' x
+  pretty x = pretty' x 0
+  pretty' x _ = pretty x
 
 instance Pretty Doc where
   pretty = id
 
-instance Pretty () where
-  pretty' () = (100, empty)
-
-instance Pretty Int where
-  pretty' i = (100, PP.int i)
-
-instance Pretty Char where
-  pretty' c = (100, PP.char c)
-
-instance Pretty [Char] where
-  pretty' "" = (100, empty)
-  pretty' s = (100, PP.text s)
-
-instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
-  pretty = PP.vcat . map (uncurry $ nestedPunct '=') . Map.toList
-
-newtype PrecDoc = PrecDoc (Int,Doc)
-
 instance Pretty PrecDoc where
-  pretty' (PrecDoc pd) = pd
+  pretty' p i = p i
 
 
-infixl 6 <>, <+>, <?>, <?+>, <:+>
+guard :: Pretty t => Int -> t -> Doc
+guard = flip pretty'
+
+prec' :: Pretty t => Int -> t -> PrecDoc
+prec' i x o
+  | o > i = PP.parens d
+  | otherwise = d
+  where d = pretty' x i
+
+infixr 1 #>
+
+-- |Create a representation of the given value with at least the given precedence, wrapping in parentheses as necessary.
+(#>) :: Pretty t => Int -> t -> PrecDoc
+(#>) i = prec' i . guard (succ i)
+
+
+infixl 6 <>, <+>, <&>, <&+>
 infixl 5 $$
 
 -- these could also take into account precedence somehow
 
-(<>) :: (Pretty a, Pretty b) => a -> b -> Doc
-a <> b = pretty a PP.<> pretty b
+(<>) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+(<>) a b i = pretty' a i PP.<> pretty' b i
 
-(<+>) :: (Pretty a, Pretty b) => a -> b -> Doc
-a <+> b = pretty a PP.<+> pretty b
+(<+>) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+(<+>) a b i = pretty' a i PP.<+> pretty' b i
 
 -- |Just like '(<>)' except remains 'empty' if either side is empty.
-(<?>) :: (Pretty a, Pretty b) => a -> b -> Doc
-a <?> b
+(<&>) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+(<&>) a b i
   | isEmpty pa || isEmpty pb = empty
   | otherwise = pa PP.<> pb
   where
-    pa = pretty a
-    pb = pretty b
+    pa = pretty' a i
+    pb = pretty' b i
 
 -- |Just like '(<+>)' except remains 'empty' if either side is empty.
-(<?+>) :: (Pretty a, Pretty b) => a -> b -> Doc
-a <?+> b
+(<&+>) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+(<&+>) a b i
   | isEmpty pa || isEmpty pb = empty
   | otherwise = pa PP.<+> pb
   where
-    pa = pretty a
-    pb = pretty b
+    pa = pretty' a i
+    pb = pretty' b i
 
-($$) :: (Pretty a, Pretty b) => a -> b -> Doc
-a $$ b = pretty a PP.$$ pretty b
+($$) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+($$) a b i = pretty' a i PP.$$ pretty' b i
 
-hcat :: Pretty t => [t] -> Doc
-hcat = PP.hcat . map pretty
+hcat :: Pretty t => [t] -> PrecDoc
+hcat l i = PP.hcat $ map (guard i) l
 
-hsep :: Pretty t => [t] -> Doc
-hsep = PP.hsep . map pretty
+hsep :: Pretty t => [t] -> PrecDoc
+hsep l i = PP.hsep $ map (guard i) l
 
-vcat :: Pretty t => [t] -> Doc
-vcat = PP.vcat . map pretty
+hcons :: (Pretty a, Pretty t) => a -> [t] -> PrecDoc
+hcons h l i = PP.hsep $ guard i h : map (guard i) l
 
-sep :: Pretty t => [t] -> Doc
-sep = PP.sep . map pretty
+prettyap :: (Pretty a, Pretty t) => a -> [t] -> PrecDoc
+prettyap h l = appPrec #> hcons h l
 
-pprint :: Pretty t => t -> IO ()
-pprint = puts . pshow
+vcat :: Pretty t => [t] -> PrecDoc
+vcat l i = PP.vcat $ map (guard i) l
 
-pshow :: Pretty t => t -> String
-pshow = PP.render . pretty
+sep :: Pretty t => [t] -> PrecDoc
+sep l i = PP.sep $ map (guard i) l
 
-qshow :: Pretty t => t -> String
-qshow = PP.render . PP.quotes . pretty
-
-pshowlist :: Pretty t => [t] -> String
-pshowlist = PP.render . prettylist
-
-punct :: Pretty a => Char -> a -> Doc
-punct c a
+punct :: Pretty a => Char -> a -> PrecDoc
+punct c a i
   | isEmpty pa = empty
-  | otherwise = pretty a `pc` PP.char c
+  | otherwise = pa `pc` PP.char c
   where
-    pa = pretty a
-    pc | c `elem` ":;," = (<>)
-       | otherwise = (<+>)
+    pa = pretty' a i
+    pc | c `elem` ":;," = (PP.<>)
+       | otherwise = (PP.<+>)
 
-withPunct :: (Pretty a, Pretty b) => (Doc -> Doc -> Doc) -> Char -> a -> b -> Doc
-withPunct f c a b
+withPunct :: (Pretty a, Pretty b) => (Doc -> Doc -> PrecDoc) -> Char -> a -> b -> PrecDoc
+withPunct f c a b i
   | isEmpty pa = pb
   | isEmpty pb = pa
-  | otherwise = punct c pa `f` pb
+  | otherwise = f (punct c pa i) pb i
   where 
-    pa = pretty a
-    pb = pretty b
+    pa = pretty' a i
+    pb = pretty' b i
 
-sepPunct :: (Pretty a, Pretty b) => Char -> a -> b -> Doc
-sepPunct = withPunct (<+>)
+joinPunct :: (Pretty a, Pretty b) => Char -> a -> b -> PrecDoc
+joinPunct = withPunct (<+>)
 
-(<:+>) :: (Pretty a, Pretty b) => a -> b -> Doc
-(<:+>) = sepPunct ':'
+infixl 6 <:>
 
-nested :: (Pretty a, Pretty b) => a -> b -> Doc
-nested a b
+(<:>) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+(<:>) = joinPunct ':'
+
+nested :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+nested a b i
   | isEmpty pb = pa
   | isEmpty pa = pb
   | otherwise = PP.hang pa 2 pb
   where 
-    pa = pretty a
-    pb = pretty b
+    pa = pretty' a i
+    pb = pretty' b i
 
-nestedPunct :: (Pretty a, Pretty b) => Char -> a -> b -> Doc
+nestedPunct :: (Pretty a, Pretty b) => Char -> a -> b -> PrecDoc
 nestedPunct = withPunct nested
 
-punctuate :: (Pretty d, Pretty t) => d -> [t] -> Doc
-punctuate d = sep . PP.punctuate (pretty d) . map pretty
+punctuate :: Pretty t => Char -> [t] -> PrecDoc
+punctuate _ [] = const empty
+punctuate _ [x] = pretty' x
+punctuate d (x:l) = punct d x <+> punctuate d l
 
-grouped :: Pretty t => (Doc -> Doc) -> t -> PrecDoc
-grouped f t = PrecDoc (100,f (pretty t))
+grouped :: Pretty t => (Doc -> Doc) -> t -> Doc
+grouped f x = f $ pretty x
 
-quoted :: Pretty t => t -> PrecDoc
+quoted :: Pretty t => t -> Doc
 quoted = grouped PP.quotes
 
-parens :: Pretty t => t -> PrecDoc
+parens :: Pretty t => t -> Doc
 parens = grouped PP.parens
 
-brackets :: Pretty t => t -> PrecDoc
+brackets :: Pretty t => t -> Doc
 brackets = grouped PP.brackets
+
+sPlural :: [a] -> Doc
+sPlural [_] = empty
+sPlural _ = PP.char 's'
+
+
+class PrettyOut o where
+  pout :: Pretty t => t -> o
+
+instance PrettyOut Doc where
+  pout = pretty
+
+instance PrettyOut PrecDoc where
+  pout = pretty'
+
+instance PrettyOut String where
+  pout = PP.render . pretty
+
+instance PrettyOut ShowS where
+  pout = shows . pretty
+
+instance PrettyOut (IO ()) where
+  pout = puts . pout
+
+qout :: (Pretty t, PrettyOut o) => t -> o
+qout = pout . quoted
+
+poutlist :: (Pretty t, PrettyOut o) => [t] -> o
+poutlist = pout . hsep
+
+
+instance Pretty () where
+  pretty () = empty
+
+instance Pretty Int where
+  pretty = PP.int
+
+instance Pretty Char where
+  pretty = PP.char
+
+instance Pretty String where
+  pretty "" = empty
+  pretty s = PP.text s
+
+instance (Pretty k, Pretty v) => Pretty (Map.Map k v) where
+  pretty' = vcat . map (uncurry $ nestedPunct '=') . Map.toList

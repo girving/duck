@@ -71,7 +71,7 @@ loadModule s l m = do
   (f,c) <- case m of
     "" -> ((,) "<stdin>") =.< getContents
     m -> runMaybeT (findModule l m) >>= maybe 
-      (fatalIO $ msg ("module " ++ qshow m ++ " not found"))
+      (fatalIO $ msg ("module" <+> quoted m <+> "not found"))
       (\f -> ((,) (dropExtension f)) =.< readFile f)
   let (d,f') = splitFileName f
       l' = l `union` [d]
@@ -97,9 +97,9 @@ main = do
 
   let ifv p = when (Set.member p (phases flags))
   let phase p pf io = do
-        ifv p $ putStr ("\n-- "++pshow p++" --\n")
+        ifv p $ putStr ("\n-- "++show p++" --\n")
         r <- runStage p io
-        ifv p $ pprint $ pf r
+        ifv p $ pout $ pf r
         return r
       phase' p pf = phase p pf . evaluate
 

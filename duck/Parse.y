@@ -201,7 +201,7 @@ parserError :: Loc Token -> P a
 parserError (Loc l t) = parseError l ("syntax error "++showAt t)
 
 unmatched :: Loc Token -> P a
-unmatched (Loc l t) = parseError l ("unmatched "++qshow t)
+unmatched (Loc l t) = parseError l $ "unmatched" <+> quoted t
 
 tscons :: CVar -> [TypePat] -> TypePat
 tscons (V "Void") [] = TsVoid
@@ -266,7 +266,7 @@ arrows (Loc l stack) = case splitStack stack of
 
 patternExp :: SrcLoc -> Exp -> P Pattern
 patternExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
-patternExp l (Apply e _) = parseError l ("only constructors can be applied in patterns, not "++qshow e)
+patternExp l (Apply e _) = parseError l $ "only constructors can be applied in patterns, not" <+> quoted e
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
 patternExp l Any = return PatAny
@@ -288,8 +288,8 @@ patternOps l (OpBin v o1 o2) | isCons v = do
   p1 <- patternOps l o1
   p2 <- patternOps l o2
   return $ OpBin v p1 p2
-patternOps l (OpBin v _ _) = parseError l ("only constructor operators are allowed in patterns, not "++qshow v)
-patternOps l (OpUn v _) = parseError l ("unary operator "++qshow v++" not allowed in pattern")
+patternOps l (OpBin v _ _) = parseError l $ "only constructor operators are allowed in patterns, not" <+> quoted v
+patternOps l (OpUn v _) = parseError l $ "unary operator" <+> quoted v <+> "not allowed in pattern"
 
 ty :: Loc Exp -> P (Loc TypePat)
 ty (Loc l e) = Loc l =.< typeExp l e
@@ -299,7 +299,7 @@ tys (Loc l el) = Loc l =.< mapM (typeExp l) el
 
 typeExp :: SrcLoc -> Exp -> P TypePat
 typeExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = tscons c =.< mapM (typeExp l) el
-typeExp l (Apply e _) = parseError l ("only constructors can be applied in types, not "++qshow e)
+typeExp l (Apply e _) = parseError l ("only constructors can be applied in types, not" <+> quoted e)
 typeExp l (Var c) | isCons c = return $ tscons c []
 typeExp l (Var v) = return $ TsVar v
 typeExp l (Lambda pl e) = do
@@ -352,7 +352,7 @@ unVar _ _ = Nothing
 -- Currently, specifications are only allowed to be single lowercase variables
 spec :: Loc Exp -> P (Loc Var)
 spec (Loc l e) | Just v <- unVar l e = return v
-spec (Loc l e) = parseError l ("only variables are allowed in top level type specifications, not "++qshow e)
+spec (Loc l e) = parseError l ("only variables are allowed in top level type specifications, not" <+> quoted e)
 
 -- Reparse an expression into a constructor
 constructor :: Loc Exp -> P (Loc CVar,[TypePat])
@@ -365,6 +365,6 @@ constructor (Loc l (Ops (OpBin v (OpAtom e1) (OpAtom e2)))) | isCons v = do
   t1 <- typeExp l e1
   t2 <- typeExp l e2
   return (Loc l v,[t1,t2])
-constructor (Loc l e) = parseError l ("invalid constructor expression "++qshow e++" (must be <constructor> <args>... or equivalent)")
+constructor (Loc l e) = parseError l ("invalid constructor expression" <+> quoted e <+> "(must be <constructor> <args>... or equivalent)")
 
 }

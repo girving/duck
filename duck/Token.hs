@@ -7,6 +7,7 @@ module Token
 
 import Pretty
 import Var
+import ParseOps
 
 data Token
   = TokVar { tokVar :: !Var }
@@ -89,7 +90,7 @@ instance Pretty Token where
     TokEOF -> "<eof>"
 
 showAt :: Token -> String
-showAt (TokLC (Just t)) = "before "++qshow t
-showAt (TokRC (Just t)) = "before "++qshow t
-showAt (TokSemi (Just t)) = "before "++qshow t
-showAt t = "at "++qshow t
+showAt (TokLC (Just t)) = "before "++qout t
+showAt (TokRC (Just t)) = "before "++qout t
+showAt (TokSemi (Just t)) = "before "++qout t
+showAt t = "at "++qout t

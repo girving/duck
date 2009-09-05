@@ -7,6 +7,7 @@ module Ir
   ( Decl(..)
   , Exp(..)
   , prog
+  , dupError
   ) where
 
 import Data.List
@@ -69,6 +70,9 @@ type Branch = ([Pattern], Exp)
 irError :: Pretty s => SrcLoc -> s -> a
 irError l = fatal . locMsg l
 
+dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
+dupError v n o = irError n $ "duplicate definition of" <+> quoted v <> (", previously declared at" <&+> o)
+
 prog_vars :: Ast.Prog -> InScopeSet
 prog_vars = foldl' decl_vars Set.empty . map unLoc
 
@@ -96,7 +100,7 @@ prog_precs = foldl' set_precs where
   set_precs s (Loc l (Ast.Infix p vl)) = foldl' (\s v -> Map.insertWithKey check v p s) s vl where
     check v new old
       | new == old = new
-      | otherwise = irError l $ "conflicting fixity declaration for " ++ qshow v ++ " (previously " ++ pshow old ++ ")"
+      | otherwise = irError l $ "conflicting fixity declaration for" <+> quoted v <+> "(previously" <+> old <+> ")"
   set_precs s _ = s
 
 instance HasVar Exp where
@@ -168,10 +172,10 @@ prog pprec p = (precs, decls p) where
     isfcase _ = Nothing
     n = case group $ map (length . fst . unLoc) defs of
       [n:_] -> n
-      _ -> irError l $ "equations for " ++ qshow f ++ " have different numbers of arguments"
+      _ -> irError l $ "equations for" <+> quoted f <+> "have different numbers of arguments"
   decls (Loc l (Ast.SpecD (Loc _ f) t) : rest) = case decls rest of
     LetD (Loc l' f') e : rest | f == f' -> Over (Loc (mappend l l') f) t e : rest
-    _ -> irError l $ "type specification for "++qshow f++" must be followed by its definition"
+    _ -> irError l $ "type specification for" <+> quoted f <+> "must be followed by its definition"
   decls (Loc l (Ast.LetD ap ae) : rest) = d : decls rest where
     d = case Map.toList vm of
       [] -> LetD (Loc l ignored) $ body $ Cons (V "()") []
@@ -187,10 +191,10 @@ prog pprec p = (precs, decls p) where
   pattern' :: Map Var SrcLoc -> SrcLoc -> Ast.Pattern -> (Pattern, Map Var SrcLoc)
   pattern' s _ Ast.PatAny = (anyPat, s)
   pattern' s l (Ast.PatVar v)
-    | Just l' <- Map.lookup v s = irError l $ "duplicate definition of "++qshow v++"; previously declared at "++show l'
+    | Just l' <- Map.lookup v s = dupError v l l'
     | otherwise = (anyPat { patVars = [v] }, Map.insert v l s)
   pattern' s l (Ast.PatAs v p) 
-    | Just l' <- Map.lookup v s = irError l $ "duplicate definition of "++qshow v++"; previously declared at "++show l'
+    | Just l' <- Map.lookup v s = dupError v l l'
     | otherwise = first (addPatVar v) $ pattern' (Map.insert v l s) l p
   pattern' s l (Ast.PatSpec p t) = first (addPatSpec t) $ pattern' s l p
   pattern' s _ (Ast.PatLoc l p) = pattern' s l p
@@ -198,7 +202,7 @@ prog pprec p = (precs, decls p) where
   pattern' s l (Ast.PatList apl) = (foldr (\p pl -> consPat (V ":") [p, pl]) (consPat (V "[]") []) pl, s') where
     (pl, s') = patterns' s l apl
   pattern' s l (Ast.PatCons c pl) = first (consPat c) $ patterns' s l pl
-  pattern' _ l (Ast.PatLambda _ _) = irError l $ qshow "->" ++ " (lambda) patterns not yet implemented"
+  pattern' _ l (Ast.PatLambda _ _) = irError l $ quoted "->" <+> "(lambda) patterns not yet implemented"
 
   patterns' :: Map Var SrcLoc -> SrcLoc -> [Ast.Pattern] -> ([Pattern], Map Var SrcLoc)
   patterns' s l = foldl' (\(pl,s) -> first ((pl ++).(:[])) . pattern' s l) ([],s)
@@ -220,7 +224,7 @@ prog pprec p = (precs, decls p) where
   expr s l (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) $ map (expr s l) el
   expr s l (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) $ e c) $ e e1) $ e e2 where e = expr s l
   expr s _ (Ast.ExpLoc l e) = ExpLoc l $ expr s l e
-  expr _ l a = irError l $ qshow a ++ " not allowed in expressions"
+  expr _ l a = irError l $ quoted a <+> "not allowed in expressions"
 
   -- |process a multi-argument lambda expression
   lambdas :: InScopeSet -> SrcLoc -> [Ast.Pattern] -> Ast.Exp -> Exp
@@ -296,62 +300,46 @@ prog pprec p = (precs, decls p) where
 -- Pretty printing
 
 instance Pretty Decl where
-  pretty (LetD v e) =
-    nested (pretty v <+> equals) (pretty e)
-  pretty (LetM vl e) =
-    nested (hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals) (pretty e)
-  pretty (Over v t e) =
-    pretty v <+> pretty "::" <+> pretty t $$
-    nested (pretty v <+> equals) (pretty e)
-  pretty (Data t args cons) =
-    pretty (Ast.Data t args cons)
+  pretty' (LetD v e) =
+    nestedPunct '=' v e
+  pretty' (LetM vl e) =
+    nestedPunct '=' (punctuate ',' vl) e
+  pretty' (Over v t e) =
+    v <+> "::" <+> t $$
+    nestedPunct '=' v e
+  pretty' (Data t args cons) =
+    pretty' (Ast.Data t args cons)
 
 instance Pretty [Decl] where
-  pretty = vcat
+  pretty' = vcat
 
 instance Pretty Exp where
-  pretty' (Spec e t) = (0, guard 1 e <+> pretty "::" <+> guard 60 t)
-  pretty' (Let v e body) = (0,
-    pretty "let" <+> pretty v <+> equals <+> guard 0 e <+> pretty "in"
-      $$ guard 0 body)
-  pretty' (Case v pl d) = (0,
-    nested (pretty "case" <+> pretty v <+> pretty "of") $
-    vcat (map arm pl ++ def d)) where
-    arm (c, vl, e) 
-      | isTuple c = hcat (intersperse (pretty ", ") pvl) <+> end
-      | otherwise = pretty c <+> sep pvl <+> end
-      where pvl = map pretty vl
-            end = pretty "->" <+> pretty e
+  pretty' (Spec e t) = 2 #> guard 2 e <+> "::" <+> t
+  pretty' (Let v e body) = 1 #>
+    "let" <+> v <+> '=' <+> pretty e <+> "in" $$ pretty body
+  pretty' (Case v pl d) = 1 #>
+    nested ("case" <+> v <+> "of")
+      (vcat (map arm pl ++ def d)) where
+    arm (c, vl, e) = prettyop c vl <+> "->" <+> pretty e
     def Nothing = []
-    def (Just e) = [pretty "_" <+> pretty "->" <+> pretty e]
+    def (Just e) = ["_ ->" <+> pretty e]
   pretty' (Int i) = pretty' i
-  pretty' (Chr c) = (100, pretty (show c))
+  pretty' (Chr c) = pretty' (show c)
   pretty' (Var v) = pretty' v
-  pretty' (Lambda v e) = (1, nested (pretty v <+> pretty "->") (guard 1 e))
-  pretty' (Apply e1 e2) = case (apply e1 [e2]) of
-    (Var v, [e1,e2]) | Just prec <- precedence v -> (prec,
-      let V s = v in
-      (guard prec e1) <+> pretty s <+> (guard (prec+1) e2))
-    (Var c, el) | Just n <- tupleLen c, n == length el -> (1,
-      hcat $ intersperse (pretty ", ") $ map (guard 2) el)
-    (e, el) -> (50, guard 50 e <+> prettylist el)
+  pretty' (Lambda v e) = 1 #>
+    v <+> "->" <+> guard 1 e
+  pretty' (Apply e1 e2) = uncurry prettyop (apply e1 [e2])
     where apply (Apply e a) al = apply e (a:al) 
           apply e al = (e,al)
   pretty' (Cons (V ":") [h,t]) | Just t' <- extract t = pretty' $
-    brackets (punctuate ',' $ map (guard 2) (h : t')) where
+    brackets $ 3 #> punctuate ',' (h : t') where
     extract (Cons (V "[]") []) = Just []
     extract (Cons (V ":") [h,t]) = (h :) =.< extract t
     extract _ = Nothing
-  pretty' (Cons c args) | isTuple c = (1,
-    hcat $ intersperse (pretty ", ") $ map (guard 2) args)
-  pretty' (Cons c args) = (50, pretty c <+> sep (map (guard 51) args))
-  pretty' (Prim (Binop op) [e1,e2]) | prec <- binopPrecedence op = (prec,
-    guard prec e1 <+> pretty (binopString op) <+> guard prec e2)
-  pretty' (Prim p []) = pretty' p
-  pretty' (Prim p el) = (50,
-    pretty p <+> prettylist el)
-  pretty' (Bind v e1 e2) = (6,
-    pretty v <+> pretty "<-" <+> guard 0 e1 $$ guard 0 e2)
-  pretty' (Return e) = (6, pretty "return" <+> guard 7 e)
+  pretty' (Cons c args) = prettyop c args
+  pretty' (Prim p el) = prettyop (V (primString p)) el
+  pretty' (Bind v e1 e2) = 0 #>
+    v <+> "<-" <+> e1 $$ pretty e2
+  pretty' (Return e) = prettyap "return" [e]
   pretty' (ExpLoc _ e) = pretty' e
-  --pretty' (ExpLoc l e) = fmap (pretty "{-@" <+> pretty (show l) <+> pretty "-}" <+>) $ pretty' e
+  --pretty' (ExpLoc l e) = "{-@" <+> show l <+> "-}" <+> pretty' e

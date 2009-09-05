@@ -58,7 +58,7 @@ type Locals = TypeEnv
 -- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
 insertOver :: Bool -> Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
 insertOver _ f a o = do
-  --debugInfer ("recorded "++pshow f++" "++pshowlist a++" = "++pshow (overRet o))
+  --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> overRet o
   modify $ Ptrie.mapInsert f a o
 
 -- |Lookup an overload from the table, or make one if it's partial
@@ -84,24 +84,24 @@ lookup env loc v
     | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
     | Just _ <- Map.lookup v (progFunctions prog) = return $ typeClosure v [] -- if we find overloads, make a new closure
     | Just _ <- Map.lookup v (progDatatypes prog) = return $ typeType (TyCons v []) -- found a type constructor, return Type v
-    | otherwise = inferError loc ("unbound variable " ++ qshow v)
+    | otherwise = inferError loc $ "unbound variable" <+> quoted v
 
 lookupDatatype :: SrcLoc -> Type -> Infer [(Loc CVar, [Type])]
 lookupDatatype loc (TyCons (V "Type") [t]) = case t of
   TyCons c tl -> return [(Loc noLoc c, map typeType tl)]
   TyVoid -> return [(Loc noLoc (V "Void"), [])]
-  TyFun _ -> inferError loc ("can't pattern match on "++qshow (typeType t)++"; matching on function types isn't implemented yet")
+  TyFun _ -> inferError loc $ "cannot pattern match on" <+> quoted (typeType t) <> "; matching on function types isn't implemented yet"
 lookupDatatype loc (TyCons tv types) = getProg >>= \prog ->
   case Map.lookup tv (progDatatypes prog) of
     Just (Data _ vl cons _) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
-    _ -> inferError loc ("unbound datatype constructor " ++ qshow tv)
-lookupDatatype loc t = typeError loc ("expected datatype, got "++qshow t)
+    _ -> inferError loc ("unbound datatype constructor" <+> quoted tv)
+lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 
 lookupFunction :: SrcLoc -> Var -> Infer [Overload TypePat]
 lookupFunction loc f = getProg >>= \prog ->
   case Map.lookup f (progFunctions prog) of
     Just o -> return o
-    _ -> inferError loc ("unbound function " ++ qshow f)
+    _ -> inferError loc ("unbound function" <+> quoted f)
 
 lookupConstructor :: SrcLoc -> Var -> Infer (CVar, [Var], [TypePat])
 lookupConstructor loc c = getProg >>= lp where
@@ -110,7 +110,7 @@ lookupConstructor loc c = getProg >>= lp where
     , Just td <- Map.lookup tc (progDatatypes prog)
     , Just tl <- lookupCons (dataConses td) c
     = return (tc,dataTyVars td,tl)
-    | otherwise = inferError loc ("unbound constructor " ++ qshow c)
+    | otherwise = inferError loc ("unbound constructor" <+> quoted c)
 
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
@@ -128,7 +128,7 @@ definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl)
   tl <- case (vl,t) of
           ([_],_) -> return [t]
           (_, TyCons c tl) | isTuple c, length vl == length tl -> return tl
-          _ -> inferError l ("expected "++show (length vl)++"-tuple, got "++pshow t)
+          _ -> inferError l $ "expected" <+> length vl <> "-tuple, got" <+> quoted t
   return (zip (map unLoc vl) tl)
   where l = loc d
 
@@ -156,10 +156,10 @@ expr env loc = exp where
               Just tl | length tl == length vl ->
                 expr (insertList env vl tl) loc e'
               Just tl | a <- length tl ->
-                inferError loc ("arity mismatch in pattern: "++qshow c++" expected "++show a++" argument"++(if a == 1 then "" else "s")
-                  ++" but got ["++intercalate ", " (map pshow vl)++"]")
+                inferError loc $ "arity mismatch in pattern:" <+> quoted c <+> "expected" <+> a <+> "argument"<>sPlural tl 
+                  <+>"but got" <+> quoted (hsep vl)
               Nothing ->
-                inferError loc ("datatype "++qshow t++" has no constructor "++qshow c)
+                inferError loc ("datatype" <+> quoted t <+> "has no constructor" <+> quoted c)
             defaultType Nothing = return []
             defaultType (Just e') = expr env loc e' >.= (:[])
         caseResults <- mapM caseType pl
@@ -182,25 +182,25 @@ expr env loc = exp where
 cons :: SrcLoc -> CVar -> [Type] -> Infer Type
 cons loc c args = do
   (tv,vl,tl) <- lookupConstructor loc c
-  r <- typeReError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args) $
+  r <- typeReError loc (quoted c<+>"expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
     subsetList args tl
   case r of
-    Left leftovers -> inferError loc (qshow c++" expected arguments "++pshowlist tl++", got "++pshowlist args++"; can't overload on " ++ showVars leftovers)
+    Left leftovers -> inferError loc (quoted c<+>"expected arguments"<+> quoted (hsep tl) <> ", got" <+> quoted (hsep args) <> "; cannot overload on" <+> showVars leftovers)
     Right tenv -> do
       let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       return $ TyCons tv targs where
 
 spec :: SrcLoc -> TypePat -> Exp -> Type -> Infer Type
 spec loc ts e t = do
-  r <- typeReError loc (qshow e++" has type "++qshow t++", which is incompatible with type specification "++qshow ts) $
+  r <- typeReError loc (quoted e<+>"has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
     subset t ts
   case r of
-    Left leftovers -> inferError loc ("type specification "++qshow ts++" is invalid; cannot overload on "++showVars leftovers)
+    Left leftovers -> inferError loc ("type specification" <+> quoted ts <+> "is invalid; cannot overload on" <+> showVars leftovers)
     Right tenv -> return $ substVoid tenv ts
 
 join :: SrcLoc -> Type -> Type -> Infer Type
 join loc t1 t2 =
-  typeReError loc ("failed to unify types "++qshow t1++" and "++qshow t2) $
+  typeReError loc ("failed to unify types" <+> quoted t1 <+> "and" <+> quoted t2) $
     union t1 t2
 
 -- In future, we might want this to produce more informative error messages
@@ -211,7 +211,7 @@ apply :: SrcLoc -> Type -> Type -> Infer Type
 apply _ TyVoid _ = return TyVoid
 apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
   fun f@(FunArrow a r) = do
-    typeReError loc ("cannot apply "++qshow f++" to "++qshow t2) $
+    typeReError loc ("cannot apply" <+> quoted f <+> "to" <+> quoted t2) $
       subset'' t2 a
     return r
   fun (FunClosure f args) = do
@@ -230,9 +230,9 @@ apply loc t1 t2 = do
           r <- isTypeType t2
           case r of
             Just t -> return $ TyCons c (tl++[t])
-            _ -> typeError loc ("can't apply "++qshow t1++" to non-type "++qshow t2)
-        else typeError loc ("can't apply "++qshow t1++" to "++qshow t2++", "++qshow c++" is already fully applied")
-    _ -> typeError loc ("can't apply "++qshow t1++" to "++qshow t2)
+            _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to non-type" <+> quoted t2)
+        else typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2 <> "," <+> quoted c <+> "is already fully applied")
+    _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2)
 
 isTypeC1 :: String -> Type -> Infer (Maybe Type)
 isTypeC1 c tt = do
@@ -256,8 +256,8 @@ lookupVariances :: Prog -> Var -> [Variance]
 lookupVariances prog c | Just d <- Map.lookup c (progDatatypes prog) = dataVariances d
 lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization works cleanly
 
-overDesc :: Overload TypePat -> Doc
-overDesc o = pretty (o { overBody = Nothing }) <+> parens (pretty "at" <+> pretty (show (overLoc o)))
+overDesc :: Overload TypePat -> Doc'
+overDesc o = pretty (o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [Type] -> SrcLoc -> Infer (Overload Type)
@@ -270,10 +270,10 @@ resolve f args loc = do
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
       findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
       options overs = vcat $ map overDesc overs
-      call = quoted $ f <+> prettylist args
+      call = quoted $ prettyap f args
   pruned <- mapM prune rawOverloads
   overloads <- case partitionEithers pruned of
-    (errs,[]) -> typeErrors loc (call <+> pretty "does not match any overloads, tried") $ zip (map overDesc rawOverloads) errs
+    (errs,[]) -> typeErrors loc (call <+> "does not match any overloads, tried") $ zip (map overDesc rawOverloads) errs
     (_,os) -> return $ findmin os
 
   -- determine applicable argument type transform annotations
@@ -308,10 +308,10 @@ resolve f args loc = do
 cache :: Var -> [Type] -> Overload TypePat -> SrcLoc -> Infer (Overload Type)
 cache f args (Over oloc atypes rt vl ~(Just e)) loc = do
   let (tt,types) = unzip atypes
-      call = qshow (pretty f <+> prettylist args)
+      call = quoted (prettyap f args)
   result <- subsetList args types
   case result of
-    Left leftovers -> inferError loc (call++" uses invalid overload "++qshow (foldr typeArrow rt types)++"; can't overload on "++showVars leftovers)
+    Left leftovers -> inferError loc (call <+> "uses invalid overload" <+> quoted (foldr typeArrow rt types)<>"; cannot overload on"<+>showVars leftovers)
     Right tenv -> do
       let al = zip tt args
           tl = map (argType . fmap (substVoid tenv)) atypes
@@ -320,7 +320,7 @@ cache f args (Over oloc atypes rt vl ~(Just e)) loc = do
           fix prev = do
             insertOver False f al (or prev)
             r' <- withFrame f args loc (expr (Map.fromList (zip vl tl)) oloc e)
-            r <- typeReError loc ("in call "++call++", failed to unify result "++qshow r'++" with return signature "++qshow rs) $
+            r <- typeReError loc ("in call"<+>call<>", failed to unify result" <+> quoted r' <+>"with return signature" <+> quoted rs) $
               union r' rs
             if r == prev
               then return (or r)
@@ -331,7 +331,7 @@ cache f args (Over oloc atypes rt vl ~(Just e)) loc = do
 main :: Infer ()
 main = do
   main <- lookup Map.empty noLoc (V "main")
-  typeReError noLoc ("main has type "++qshow main++", but should have type IO ()") $
+  typeReError noLoc ("main has type" <+> quoted main <> ", but should have type IO ()") $
     subset'' main (typeIO typeUnit)
 
 -- |This is the analog for 'Interp.runIO' for types.  It exists by analogy even though it is very simple.
@@ -340,15 +340,12 @@ runIO io = do
   r <- isTypeIO io
   case r of
     Just t -> return t
-    Nothing -> typeError noLoc ("expected IO type, got "++qshow io)
+    Nothing -> typeError noLoc ("expected IO type, got" <+> quoted io)
 
 -- |Verify that a type is in IO, and leave it unchanged if so
 checkIO :: Type -> Infer Type
 checkIO t = typeIO =.< runIO t
 
 -- |Convenience function for printing a list of variables nicely
-showVars :: [Var] -> String
-showVars vl = case vl of
-  [] -> "no contravariant variables (internal error)?"
-  [v] -> "contravariant variable "++pshow v
-  vl -> "contravariant variables "++List.intercalate ", " (map pshow vl)
+showVars :: [Var] -> Doc'
+showVars vl = "contravariant variable" <> sPlural vl <+> quoted (hsep vl)

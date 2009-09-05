@@ -42,8 +42,8 @@ layout lex = do
 
   where
   layout' :: ParseState -> SrcLoc -> Token -> P (Loc Token)
-  layout' s@(ParseState{ ps_comment = c:_ }) _ TokEOF = psError s ("unterminated comment starting " ++ show c)
-  layout' s@(ParseState{ ps_comment = _:_ }) _ tok = psError s ("internal error: token " ++ qshow tok ++ " in comment")
+  layout' s@(ParseState{ ps_comment = c:_ }) _ TokEOF = psError s $ "unterminated comment starting" <+> c
+  layout' s@(ParseState{ ps_comment = _:_ }) _ tok = psError s $ "unexpected token" <+> quoted tok <+> "in comment"
   layout' state loc token = (if ps_start state then start else normal) token (ps_layout state) where
 
     push :: Context -> P ()

@@ -4,8 +4,8 @@ main = exit 0
 -- Declare a contravariant datatype
 data T a of A a (a -> Int)
 
-f = A [1] (x -> 1 :: List Int -> Int)
-g = A [] (x -> 1 :: List Void -> Int)
+f = A [1] ((x -> 1) :: (List Int -> Int))
+g = A [] ((x -> 1) :: (List Void -> Int))
 
 -- union (T Void) (T Int) should fail
 _ = case True of 

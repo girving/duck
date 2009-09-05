@@ -6,10 +6,6 @@ module Var
   , CVar
   , ModuleName
   , InScopeSet
-  , Precedence
-  , Fixity(..)
-  , PrecFix
-  , PrecEnv
   , addVar
   , fresh
   , freshen
@@ -25,45 +21,28 @@ module Var
   , isTuple
   , tupleLen
   , isCons
-  -- ** Pretty printing helpers
-  , precedence
   ) where
 
 import Pretty
 import Data.Char
 import Data.List
-
 import Data.Set (Set)
 import qualified Data.Set as Set
-import Data.Map (Map)
+
+import SrcLoc
 
 newtype Var = V { unV :: String } deriving (Eq, Ord)
 type CVar = Var
 type ModuleName = String
 
-type Precedence = Int
-data Fixity = LeftFix | NonFix | RightFix deriving (Eq, Show, Ord)
-type PrecFix = (Precedence, Fixity)
-type PrecEnv = Map Var PrecFix
-
 instance Show Var where
   show (V s) = show s
 
 instance Pretty Var where
-  pretty' (V v) =
-    (case v of
-      c:_ | isAlpha c || c == '_' || c == '(' || c == '[' -> pretty'
-      _ -> pretty' . parens) v
+  pretty' (V v@(c:_)) | isAlpha c || c `elem` "_([" = pretty' v
+  pretty' (V v) = -1 #> v
 
 type InScopeSet = Set Var
-
-instance Pretty Fixity where
-  pretty LeftFix = pretty "infixl"
-  pretty RightFix = pretty "infixr"
-  pretty NonFix = pretty "infix"
-
-instance Pretty PrecFix where
-  pretty (p,d) = pretty d <+> pretty p
 
 addVar :: Var -> InScopeSet -> InScopeSet
 addVar (V "_") = id
@@ -91,14 +70,6 @@ standardVars = letters ++ others where
 
 moduleVar :: ModuleName -> Var -> Var
 moduleVar m (V v) = V (m ++ '.' : v)
-
-precedence :: Var -> Maybe Int
-precedence (V op) = case head op of
-  '+' -> Just 20
-  '-' -> Just 20
-  '*' -> Just 30
-  '/' -> Just 30 
-  _ -> Nothing
 
 ignored :: Var
 ignored = V "_"
@@ -129,3 +100,11 @@ class HasVar a where
 instance HasVar Var where
   var x = x
   unVar = Just
+
+instance HasVar String where
+  var = unV
+  unVar = Just . V
+
+instance HasVar a => HasVar (Loc a) where
+  var = Loc noLoc . var
+  unVar = unVar . unLoc 

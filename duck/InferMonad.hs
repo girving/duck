@@ -81,9 +81,9 @@ rerunInfer ps f = fst =.< runInfer ps f
 instance ProgMonad Infer where
   getProg = fst =.< ask
 
-debugInfer :: String -> Infer ()
+debugInfer :: Pretty m => m -> Infer ()
 debugInfer m = Infer $ ask >>= \(_,s) -> liftIO $ do
-  putStrLn (concatMap (\f -> pshow (callFunction f) ++ ":") (reverse s) ++ ' ':m)
+  putStrLn $ pout $ punctuate ':' (map callFunction (reverse s)) <:> m
 
 
 -- |Indicate a potentially recoverable substitution failure/type error that could be caught during overload resolution

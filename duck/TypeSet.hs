@@ -67,7 +67,7 @@ class MonadError TypeError m => TypeMonad m where
 data ConstraintOp = Equal | Superset deriving (Eq)
 type Constraints = Map Var (ConstraintOp, Type)
 
-typeMismatchList x op y = typeMismatch (prettylist x) op (prettylist y)
+typeMismatchList x op y = typeMismatch (hsep x) op (hsep y)
 
 -- |Unify two type constructors, coercing them to be the same and modifying
 -- their arguments if possible.
@@ -102,7 +102,7 @@ coerceCons (V "Type") [t] c' | isTuple c', Just (c,tl) <- unTypeCons t = do
 coerceCons c tl c'@(V "Type") | isTuple c, Just ctl <- mapM unTypeCons tl = do
   tl <- mapM (\ (c,tl) -> coerceCons c tl c' >.= \[t] -> t) ctl
   return [typeCons c tl]
-coerceCons c tl c' = typeError noLoc $ "can't coerce" <+> quoted (typeCons c tl) <+> "to have type constructor" <+> quoted c'
+coerceCons c tl c' = typeError noLoc $ "cannot coerce" <+> quoted (typeCons c tl) <+> "to have type constructor" <+> quoted c'
 
 zipWithVariances :: (TypeMonad m, Pretty a, Pretty b) => (Variance -> a -> b -> m c) -> CVar -> [a] -> [b] -> m [c]
 zipWithVariances f c tl tl' = do
@@ -111,7 +111,7 @@ zipWithVariances f c tl tl' = do
     zcv _ [] [] = return []
     zcv (v:vl) (t:tl) (t':tl') = f v t t' >>= \z -> zcv vl tl tl' >.= (z:)
     zcv [] _ _ = typeError noLoc $ quoted c <+> "applied to too many arguments"
-    zcv _ tl tl' = typeError noLoc $ quoted c <+> "missing arguments:" <+> prettylist (map pretty tl ++ map pretty tl')
+    zcv _ tl tl' = typeError noLoc $ quoted c <+> "missing arguments:" <+> hsep tl <+> hsep tl'
 
 -- |Exact type equality
 equal :: TypeMonad m => Type -> Type -> m ()

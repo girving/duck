@@ -114,7 +114,7 @@ lirError :: Pretty s => SrcLoc -> s -> a
 lirError l = fatal . locMsg l
 
 dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
-dupError v n o = lirError n $ "duplicate definition of" <+> quoted v <> (", previously declared at" <?+> o)
+dupError = Ir.dupError
 
 empty :: ModuleName -> Prog
 empty n = Prog n Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
@@ -186,17 +186,17 @@ check prog = runSequence $ do
     return s
   funs s (f,fl) = mapM_ fun fl where
     fun (Over l _ _ vl body) = do
-      when (vl == []) $ lirError l $ "overload "++qshow f++" has no arguments"
+      when (vl == []) $ lirError l $ "overload" <+> quoted f <+> "has no arguments"
       vs <- foldM (\s v -> do
-        when (Set.member v s) $ lirError l $ qshow v++" appears more than once in argument list for "++qshow f
+        when (Set.member v s) $ lirError l $ quoted v <+> "appears more than once in argument list for" <+> quoted f
         return $ addVar v s) Set.empty vl
       maybe nop (expr (Set.union s vs)) body
-  expr s = mapM_ (\(v,l) -> lirError l $ qshow v ++ " undefined") . free s noLoc
+  expr s = mapM_ (\(v,l) -> lirError l $ quoted v <+> "undefined") . free s noLoc
   datatype (_, d) = mapM_ cons (dataConses d) where
     cons (Loc l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
       [] -> success
-      [v] -> lirError l $ "variable "++qshow v++" is unbound in constructor "++qshow (TsCons c tl)
-      fv -> lirError l $ "variables '"++pshowlist fv++"' are unbound in constructor "++qshow (TsCons c tl)
+      [v] -> lirError l $ "variable" <+> quoted v <+> "is unbound in constructor" <+> quoted (TsCons c tl)
+      fv -> lirError l $ "variables" <+> quoted (hsep fv) <+> "are unbound in constructor" <+> quoted (TsCons c tl)
 
 decl_vars :: InScopeSet -> Ir.Decl -> InScopeSet
 decl_vars s (Ir.LetD (Loc _ v) _) = addVar v s
@@ -230,7 +230,7 @@ definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefiniti
 -- |Add a global overload
 overload :: Loc Var -> [TypeSetArg] -> TypePat -> [Var] -> Exp -> State Prog ()
 overload (Loc l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
-overload (Loc l v) tl _ vl _ = lirError l $ "overload arity mismatch for "++pshow v++": argument types "++pshowlist tl++", variables "++pshowlist vl
+overload (Loc l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
 
 -- |Add an unoverloaded global function
 function :: Loc Var -> [Var] -> Exp -> State Prog ()
@@ -362,27 +362,27 @@ union p1 p2 = Prog
 -- Pretty printing
 
 instance Pretty Prog where
-  pretty prog = vcat $
+  pretty' prog = vcat $
        [pretty "-- datatypes"]
     ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c _) <- Map.toList (progDatatypes prog)]
     ++ [pretty "-- functions"]
-    ++ [function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
+    ++ [pretty $ function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
     ++ [pretty "-- overloads"]
     ++ [pretty (progOverloads prog)]
     ++ [pretty "-- definitions"]
-    ++ map definition (progDefinitions prog)
+    ++ [pretty $ definition d | d <- progDefinitions prog]
     where
-    function :: Var -> Overload TypePat -> Doc
-    function v o = nested (pretty v <+> pretty "::") (pretty o)
-    definition (Def vl e) = nested (hcat (intersperse (pretty ", ") (map pretty vl)) <+> equals) (pretty e)
+    function v o = nested (v <+> "::") o
+    definition (Def vl e) = nestedPunct '=' (punctuate ',' vl) e
 
 instance Pretty (Map Var Overloads) where
-  pretty info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
-    pr f tl o = nested (pretty f <+> pretty "::") (pretty (o{ overArgs = tl }))
+  pretty' info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
+    pr f tl o = nested (f <+> "::") (o{ overArgs = tl })
 
 instance (IsType t, Pretty t) => Pretty (Overload t) where
-  pretty (Over _ a r _ Nothing) = hsep $ intersperse (pretty "->") (map (guard 2) (a ++ [(Nothing,r)]))
-  pretty o@(Over _ _ _ v (Just e)) = sep [pretty (o{ overBody = Nothing }), equals <+> prettylist v <+> pretty "->" <+> pretty e]
+  pretty' (Over _ a r _ Nothing) = 1 #> hsep (map (<+> "->") a) <+> r
+  pretty' o@(Over _ _ _ v (Just e)) = sep [pretty' (o{ overBody = Nothing }),
+    '=' <+> (1 #> hsep (map (<+> "->") v)) <+> e]
 
 instance Pretty Exp where
   pretty' = pretty' . revert

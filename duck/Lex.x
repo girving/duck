@@ -16,6 +16,7 @@ import Var
 import Token
 import SrcLoc
 import ParseMonad
+import ParseOps
 }
 
 $white = [\ \n\r] -- No tabs!

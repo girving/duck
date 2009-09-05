@@ -63,14 +63,17 @@ instance Pretty Stage where
 newtype Msg = Msg Doc
   deriving (Pretty)
 
+instance Show Msg where
+  showsPrec p (Msg m) = showsPrec p m
+
 msg :: Pretty s => s -> Msg
 msg = Msg . pretty
 
 locMsg :: Pretty s => SrcLoc -> s -> Msg
-locMsg l = Msg . nestedPunct ':' l
+locMsg l = msg . nestedPunct ':' l
 
 stageMsg :: Pretty s => Stage -> SrcLoc -> s -> Msg
-stageMsg st l m = locMsg l (st <+> "error" <:+> m)
+stageMsg st l m = locMsg l (st <+> "error" <:> m)
 
 -- |To Err is human; to report anatine.
 data Err = 
@@ -78,7 +81,7 @@ data Err =
   deriving (Typeable)
 
 instance Show Err where
-  show (Err m) = pshow m
+  showsPrec p (Err m) = showsPrec p m
 
 instance Exception Err
 
@@ -118,8 +121,8 @@ instance Functor CallFrame where
   fmap f c = c { callArgs = map f (callArgs c) }
 
 instance Pretty a => Pretty (CallStack a) where
-  pretty s = vcat $ map p s where
-    p (CallFrame f args loc) = loc <:+> "in" <+> f <+> prettylist args <+> "..."
+  pretty' s = vcat $ map p s where
+    p (CallFrame f args loc) = loc <:> "in" <+> prettyap f args <+> "..."
 
 mapStackArgs :: (a -> b) -> CallStack a -> CallStack b
 mapStackArgs f = map $ fmap f
@@ -130,4 +133,4 @@ data StackMsg a = StackMsg
   }
 
 instance Pretty a => Pretty (StackMsg a) where
-  pretty (StackMsg s m) = s $$ m
+  pretty' (StackMsg s m) = s $$ m

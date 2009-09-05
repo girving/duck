@@ -1,3 +1,4 @@
+{-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
 -- | Duck Operator Tree Parsing
 --
 -- Since the precedence of operators is adjustable, we parse expressions
@@ -6,7 +7,12 @@
 
 module ParseOps 
   ( Ops(..)
+  , Precedence
+  , Fixity(..)
+  , PrecFix
+  , PrecEnv
   , sortOps
+  , prettyop
   ) where
 
 import Data.Maybe
@@ -18,6 +24,11 @@ import Pretty
 import SrcLoc
 import ParseMonad
 
+type Precedence = Int
+data Fixity = LeftFix | NonFix | RightFix deriving (Eq, Show, Ord)
+type PrecFix = (Precedence, Fixity)
+type PrecEnv = Map.Map Var PrecFix
+
 data Ops a =
     OpAtom !a
   | OpUn !Var !(Ops a)
@@ -27,6 +38,27 @@ data Ops a =
 minPrec, defaultPrec :: PrecFix
 minPrec = (minBound, NonFix)
 defaultPrec = (100, LeftFix)
+
+-- This is just used for pretty printing, so we hard-code the defaults
+opPrecs :: PrecEnv
+opPrecs = Map.fromList [ (V v,p) | (p,vl) <-
+  [((90,RightFix),  ["."])
+  ,((80,RightFix),  ["^", "^^", "**"])
+  ,((70,LeftFix),   ["*","/"])
+  ,((60,LeftFix),   ["+","-"])
+  ,((50,RightFix),  [":","++"])
+  ,((40,NonFix),    ["==","!=","<","<=",">=",">"])
+  ,((30,RightFix),  ["&&"])
+  ,((20,RightFix),  ["||"])
+  ,((10,LeftFix),   [">>",">>="])
+  ,((10,RightFix),  ["<<=","$"])
+  ,((2,LeftFix),    ["::"])
+  ,((1,RightFix),   ["->"])
+  ,((0,RightFix),   ["\\","="])
+  ], v <- vl ]
+
+opPrec :: Var -> Maybe PrecFix
+opPrec op = Map.lookup op opPrecs
 
 orderPrec :: PrecFix -> PrecFix -> Fixity
 orderPrec (p1,d1) (p2,d2) = case compare p1 p2 of
@@ -58,10 +90,37 @@ sortOps precs loc input = out where
   prec o = fromMaybe defaultPrec $ Map.lookup o precs
   err o = parseError loc $ "ambiguous operator expression involving" <+> quoted o
 
+prettyop :: (Pretty f, HasVar f, Pretty a) => f -> [a] -> Doc'
+prettyop f a 
+  | Just v <- unVar f
+  , Just (i,d) <- opPrec v = case (v,a,d) of
+      (V "-",[x],_)       -> i #> pf <+> x
+      (_,[x,y],LeftFix)   -> i #> guard i x <+> pf <+> y
+      (_,[x,y],NonFix)    -> i #> x <+> pf <+> y
+      (_,[x,y],RightFix)  -> i #> x <+> pf <+> guard i y
+      _ -> prettyap f a
+    where pf = guard (-1) f
+prettyop f a
+  | Just v <- unVar f
+  , Just n <- tupleLen v
+  , n == length a = 3 #> punctuate ',' a
+prettyop f a
+  | Just (V "if") <- unVar f
+  , [c,x,y] <- a = 1 #> "if" <+> pretty c <+> "then" <+> pretty x <+> "else" <+> pretty y
+prettyop f a = prettyap f a
+
 instance Pretty a => Pretty (Ops a) where
   pretty' (OpAtom a) = pretty' a
-  pretty' (OpUn (V o) a) = (20, pretty o <+> pretty a)
-  pretty' (OpBin (V o) l r) = (20, guard 21 l <+> pretty o <+> guard 21 r)
+  pretty' (OpUn o a) = prettyop o [a]
+  pretty' (OpBin o l r) = prettyop o [l,r]
+
+instance Pretty Fixity where
+  pretty LeftFix = pretty "infixl"
+  pretty RightFix = pretty "infixr"
+  pretty NonFix = pretty "infix"
+
+instance Pretty PrecFix where
+  pretty' (p,d) = d <+> p
 
 instance Functor Ops where
   fmap f (OpAtom a) = OpAtom (f a)

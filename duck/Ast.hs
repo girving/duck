@@ -108,54 +108,47 @@ instance HasVar Pattern where
 -- Pretty printing
 
 instance Pretty Decl where
-  pretty (SpecD f t) =
-    pretty f <+> pretty "::" <+> pretty t
-  pretty (DefD f args e) =
-    nested (pretty f <+> prettylist args <+> equals) (guard 0 e)
-  pretty (LetD p e) =
-    pretty p <+> equals <+> pretty e
-  pretty (Data t args []) =
-    pretty "data" <+> pretty t <+> prettylist args
-  pretty (Data t args (hd:tl)) =
-    nested (pretty "data" <+> pretty t <+> prettylist args) (vcat (
-      (equals <+> f hd) : map (\x -> pretty "|" <+> f x) tl))
-    where f (c,args) = pretty c <+> prettylist args
-  pretty (Infix pf syms) =
-    pretty pf <+> hcat (intersperse (pretty ", ") (map (\ (V s) -> pretty s) syms))
-  pretty (Import v) =
-    pretty "import" <+> pretty v
+  pretty' (SpecD f t) =
+    f <+> "::" <+> t
+  pretty' (DefD f args e) =
+    nestedPunct '=' (prettyop f args) e
+  pretty' (LetD p e) =
+    nestedPunct '=' p e
+  pretty' (Data t args []) =
+    "data" <+> prettyap t args
+  pretty' (Data t args l) =
+    nested ("data" <+> prettyap t args <+> "of") $
+      vcat $ map (\(c,args) -> prettyop c args) l
+  pretty' (Infix pf syms) =
+    pf <+> punctuate ',' (map (guard (-1)) syms)
+  pretty' (Import v) =
+    "import" <+> v
 
 instance Pretty Prog where
-  pretty = vcat
+  pretty' = vcat
 
 instance Pretty Exp where
-  pretty' (Spec e t) = (0, guard 1 e <+> pretty "::" <+> guard 60 t)
-  pretty' (Let p e body) = (1,
-    pretty "let" <+> pretty p <+> equals <+> guard 0 e <+> pretty "in"
-      $$ (guard 0 body))
-  pretty' (Def f args e body) = (1,
-    nestedPunct '=' ("let" <+> f <+> prettylist args) $
-      guard 0 e <+> "in" $$ guard 0 body)
-  pretty' (Case e cases) = (1,
-    nested (pretty "case" <+> pretty e <+> pretty "of") $ 
-      vcat (map (\ (p,e) -> pretty p <+> pretty "->" <+> pretty e) cases))
-  pretty' (If c e1 e2) = (1,
-    pretty "if" <+> pretty c <+> pretty "then" <+> pretty e1 <+> pretty "else" <+> pretty e2)
-  pretty' (Lambda pl e) = (1, hsep (map (\p -> guard 2 p <+> pretty "->") pl) <+> guard 1 e)
-  pretty' (Apply (Var v) [e1, e2]) | Just prec <- precedence v =
-    let V s = v in
-    (prec, (guard prec e1) <+> pretty s <+> (guard (prec+1) e2) )
-  pretty' (Apply (Var c) el) | Just n <- tupleLen c, n == length el = (2,
-    punctuate ',' $ map (guard 3) el)
-  pretty' (Apply e el) = (50, guard 51 e <+> prettylist el)
+  pretty' (Spec e t) = 2 #> guard 2 e <+> "::" <+> t
+  pretty' (Let p e body) = 1 #>
+    "let" <+> p <+> '=' <+> pretty e <+> "in" $$ pretty body
+  pretty' (Def f args e body) = 1 #>
+    nestedPunct '=' ("let" <+> prettyop f args)
+      (pretty e <+> "in" $$ pretty body)
+  pretty' (Case e cases) = 1 #>
+    nested ("case" <+> pretty e <+> "of")
+      (vcat (map (\ (p,e) -> p <+> "->" <+> pretty e) cases))
+  pretty' (If c e1 e2) = 1 #>
+    "if" <+> pretty c <+> "then" <+> pretty e1 <+> "else" <+> pretty e2
+  pretty' (Lambda pl e) = 1 #>
+    hsep (map (<+> "->") pl) <+> guard 1 e
+  pretty' (Apply e el) = prettyop e el
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
-  pretty' (Chr c) = (100, pretty (show c))
+  pretty' (Chr c) = pretty' (show c)
   pretty' Any = pretty' '_'
-  pretty' (List el) = pretty' $
-    brackets $ (punctuate ',' $ map (guard 2) el)
+  pretty' (List el) = pretty' $ brackets $ 3 #> punctuate ',' el
   pretty' (Ops o) = pretty' o
-  pretty' (Equals v e) = (1, pretty v <+> equals <+> guard 0 e)
+  pretty' (Equals v e) = 0 #> v <+> '=' <+> guard 0 e
   pretty' (ExpLoc _ e) = pretty' e
 
 patToExp :: Pattern -> Exp
