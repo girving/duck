@@ -8,13 +8,15 @@ Duck uses conservative garbage collection in order to avoid constraints on how w
 
 h2. Primitive types
 
-Primitive types such as @Int@ and @Chr@ are unboxed and identical to their C analogs.  The current C mapping is
+Primitive types such as @Int@ and @Char@ are unboxed and identical to their C analogs.  The current C mapping is
 # @Int = int@
-# @Chr = char@
+# @Char = char@
 
 h2. Structure packing
 
 Boxed representations are arranged with C alignment rules, except that zero-size entries actually have zero size.  For example, the tuple type @((),Int,(),Int)@ has identical memory layout to the tuple @(Int,Int)@.
+
+In order to make structure packing behave covariantly, size is always an invariant property of a type.  In particular, zero size datatypes such as @()@ never have supertypes.  @Void@ is the only special case; since it never exists, no structure that exists can contain it, and it never interferes with rules of any kind.
 
 h2. Algebraic datatypes
 
@@ -35,8 +37,9 @@ The memory layout of such a type is given by the following rules:
 # Zero size constructor arguments are treated as if they didn't exist for purposes of these rules.  In particular, constructors with only zero size arguments are treated as nullary.
 # Nullary type constructors are represented as unboxed, word-size integer tags counting from 0.  I.e., S0 is 0, S1 is 1, etc.
 # A non-nullary constructor @Ci t0 ...@ is stored as a pointer to a struct of the form @{ i32, t0, ... }@, where the first entry is a word-size integer tag word.  C0 has tag 0, C1 has tag 1, etc.  Note that the tag space of boxed constructors is completely separate from the space of unboxed constructors.
-# If there is only one non-nullary constructor, the tag word is omitted from the boxed representation.
-# If there is only one non-nullary constructor, no nullary constructors, and the single constructor has only one nonzero-size argument, that argument is stored unboxed.
+# If there is exactly one non-nullary constructor, the tag word is omitted from its boxed representation.
+# If there is exactly one non-nullary constructor, no nullary constructors, and the single constructor has exactly one nonzero-size argument, that argument is stored unboxed.
+# If there is exactly one nullary constructor and no other constructors, the datatype has zero size.
 
 There are several optimizations that we are not currently performing but may add in future:
 # Smaller unboxed tags: If all constructors are nullary, tags could be stored in a single byte.
@@ -45,6 +48,14 @@ There are several optimizations that we are not currently performing but may add
 # Maybe optimization: If there is a single boxed constructor with a single argument, and that argument is always a pointer, the constructor could be unboxed even if there are other nullary constructors.  This optimization avoids the extra level of boxing for @Maybe (Int,Int)@ and similar types.
 
 Additional notes:
-# The zero size argument removal rules mean that many types that should be isomorphic in memory actually are.  For example, @Maybe Int@ and @Either () Int@ have identical representations.
+# The zero size argument removal rules mean that many types that seem isomorphic actually are.  For example, @Maybe Int@ and @Either () Int@ have identical memory representations.
 # If we implement the Maybe optimization, we will force the "nullability" of a type to become a covariant property so that Maybe continues to be a covariant type constructor.
 # In order to unambiguously distinguish between boxed and unboxed values, we restrict the number of unboxed type constructors per type to 256 and assume that pointers never point into the first 256 bytes of address space.  This assumption is not always reasonable; it can fail on severely memory constrained architectures (like Anton).  We'll deal with that when it comes up.
+
+h2. Strings
+
+Currently strings are stored as List Char.  This will change.
+
+h2. Overlods
+
+TODO
