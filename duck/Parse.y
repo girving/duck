@@ -104,6 +104,15 @@ exp_1 :: { Loc Exp }
 
 exp :: { Loc Exp }
   : arrows {% arrows $1 }
+  | '{' stmts '}' { loc $1 $> $ Seq (reverse $2) }
+
+stmts :: { [Loc Stmt] }
+  : stmt { [$1] }
+  | stmts ';' stmt { $3 : $1 }
+
+stmt :: { Loc Stmt }
+  : exp { loc1 $1 $ StmtExp (expLoc $1) }
+  | exp '=' exp {% lefthandside $1 >.= loc $1 $> . either (\p -> StmtLet p (expLoc $3)) (\(v,pl) -> StmtDef (unLoc v) pl (expLoc $3)) }
 
 arrows :: { Loc (Stack Exp Exp) }
   : notarrow { loc1 $1 (Base (expLoc $1)) }
@@ -277,10 +286,7 @@ patternExp l (Spec e t) = patternExp l e >.= \p -> PatSpec p t
 patternExp l (Lambda pl e) = PatLambda pl =.< patternExp l e
 patternExp _ (ExpLoc l e) = PatLoc l =.< patternExp l e
 patternExp l (Int _) = parseError l ("integer patterns aren't implemented yet")
-patternExp l (Def _ _ _ _) = parseError l ("let expression not allowed in pattern")
-patternExp l (Let _ _ _) = parseError l ("let expression not allowed in pattern")
-patternExp l (Case _ _) = parseError l ("case expression not allowed in pattern")
-patternExp l (If _ _ _) = parseError l ("if expression not allowed in pattern")
+patternExp l e = parseError l $ expTypeDesc e <+> "expression not allowed in pattern"
 
 patternOps :: SrcLoc -> Ops Exp -> P (Ops Pattern)
 patternOps l (OpAtom e) = OpAtom =.< patternExp l e
@@ -309,14 +315,7 @@ typeExp l (Lambda pl e) = do
 typeExp _ (ExpLoc l e) = typeExp l e
 typeExp l (Int _) = parseError l ("integer types aren't implemented yet")
 typeExp l Any = parseError l ("'_' isn't implemented for types yet")
-typeExp l (Def _ _ _ _) = parseError l ("let expression not allowed in type")
-typeExp l (Let _ _ _) = parseError l ("let expression not allowed in type")
-typeExp l (Case _ _) = parseError l ("case expression not allowed in type")
-typeExp l (If _ _ _) = parseError l ("if expression not allowed in type")
-typeExp l (Ops _) = parseError l ("operator expression not allowed in type")
-typeExp l (Equals _ _) = parseError l ("equals expression not allowed in type")
-typeExp l (Spec _ _) = parseError l ("type specifier expression not allowed in type")
-typeExp l (List _) = parseError l ("list expression not allowed in type")
+typeExp l e = parseError l $ expTypeDesc e <+> "expression not allowed in type"
 
 typePat :: SrcLoc -> Pattern -> P TypePat
 typePat l (PatCons c pl) = tscons c =.< mapM (typePat l) pl
@@ -327,9 +326,7 @@ typePat l (PatLambda pl p) = do
   return $ foldr typeArrow t tl
 typePat _ (PatLoc l p) = typePat l p
 typePat l PatAny = parseError l ("'_' isn't implemented for types yet")
-typePat l (PatOps _) = parseError l ("operator expression not allowed in type")
-typePat l (PatSpec _ _) = parseError l ("type specifier expression not allowed in type")
-typePat l (PatList _) = parseError l ("list expression not allowed in type")
+typePat l p = parseError l $ patTypeDesc p <+> "expression not allowed in type"
 
 -- Reparse an expression on the left side of an '=' into either a pattern
 -- (for a let) or a function declaraction (for a def).

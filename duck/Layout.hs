@@ -63,7 +63,10 @@ layout lex = do
     -- Accept the next explicit token
     accept :: P (Loc Token)
     accept = do
-      when (token == TokOf) $ modify $ \s -> s { ps_start = True }
+      case token of
+        TokOf -> modify $ \s -> s { ps_start = True }
+        TokLC _ -> push (Explicit loc)
+        _ -> nop
       advance >. Loc loc token
 
     -- Inject an extra token before the next explicit one and rewind
@@ -79,14 +82,14 @@ layout lex = do
     -- |start is called after the beginning of the file or after \'of\', and
     -- inserts an implicit '{' if an explicit one is not given.
     start :: Token -> [Context] -> P (Loc Token)
-    start (TokLC _) _ = push (Explicit loc) >> accept -- found an explicit '{', so push an explicit context
+    start (TokLC _) _ = accept -- found an explicit '{', so push an explicit context
     start _ ms -- no '{', so we need to insert one
       | srcCol loc > top ms = push (Implicit (beforeLoc loc) (srcCol loc)) >> advance >> inject TokLC -- we're to the left of the enclosing context, so insert '{' and push implicit context
       | otherwise = push (Implicit (beforeLoc loc) maxBound) >> inject TokLC -- otherwise insert '{' with a location such that '}' will be inserted immediately after
 
     normal :: Token -> [Context] -> P (Loc Token)
     normal (TokRC _) (Explicit _:ms) = pop ms >> accept -- found '}' in an explicit context, so pop
-    normal (TokRC _) (Implicit l _:_) = layoutError ("unmatched '}' in block start at "++show l)
+    normal (TokRC _) (Implicit _ _:ms) = pop ms >> inject TokRC -- found '}' in implicit, so escape back to enclosing explicit
     normal TokEOF (Implicit _ _:ms) = pop ms >> inject TokRC -- end of file reached inside implicit context, add a '}'
     normal TokEOF (Explicit l:_) = layoutError ("unmatched '{' at "++show l)
     normal _ (m:ms) | sameLine (ps_last state) loc = accept -- another token on the same line

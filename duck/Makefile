@@ -6,7 +6,7 @@ ALEX = alex
 ALEXFLAGS = -g
 
 OTHERS = Parse.hs Lex.hs
-TESTS = basic layout curry delay match io tyfun success types base-test
+TESTS = basic layout curry delay match io tyfun success types base-test expseq
 TESTS_C = apply base ops null
 TESTS_FAIL := $(patsubst test/fail/%.duck, fail/%, $(wildcard test/fail/*.duck))
 

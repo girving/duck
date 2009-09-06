@@ -165,14 +165,9 @@ prog pprec p = (precs, decls p) where
   decls :: [Loc Ast.Decl] -> [Decl]
   decls [] = []
   decls decs@(Loc _ (Ast.DefD (Loc _ f) _ _):_) = LetD (Loc l f) body : decls rest where
-    body = lambdacases (Set.insert f globals) l n (map unLoc defs)
-    l = loc defs
-    (defs,rest) = spanJust isfcase decs
+    (Loc l body, rest) = funcases globals f isfcase decs
     isfcase (Loc l (Ast.DefD (Loc _ f') a b)) | f == f' = Just (Loc l (a,b))
     isfcase _ = Nothing
-    n = case group $ map (length . fst . unLoc) defs of
-      [n:_] -> n
-      _ -> irError l $ "equations for" <+> quoted f <+> "have different numbers of arguments"
   decls (Loc l (Ast.SpecD (Loc _ f) t) : rest) = case decls rest of
     LetD (Loc l' f') e : rest | f == f' -> Over (Loc (mappend l l') f) t e : rest
     _ -> irError l $ "type specification for" <+> quoted f <+> "must be followed by its definition"
@@ -181,7 +176,7 @@ prog pprec p = (precs, decls p) where
       [] -> LetD (Loc l ignored) $ body $ Cons (V "()") []
       [(v,l)] -> LetD (Loc l v) $ body $ Var v
       vl -> LetM (map (\(v,l) -> Loc l v) vl) $ body $ Cons (tupleCons vl) (map (Var . fst) vl)
-    body r = match (Set.union globals $ Map.keysSet vm) [e] [([p],r)] Nothing
+    body r = match globals [e] [([p],r)] Nothing
     e = expr globals l ae
     (p,vm) = pattern' Map.empty l ap
   decls (Loc _ (Ast.Data t args cons) : rest) = Data t args cons : decls rest
@@ -223,8 +218,29 @@ prog pprec p = (precs, decls p) where
   expr s l (Ast.Spec e t) = Spec (expr s l e) t
   expr s l (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) $ map (expr s l) el
   expr s l (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) $ e c) $ e e1) $ e e2 where e = expr s l
+  expr s _ (Ast.Seq q) = seq s q
   expr s _ (Ast.ExpLoc l e) = ExpLoc l $ expr s l e
   expr _ l a = irError l $ quoted a <+> "not allowed in expressions"
+
+  seq :: InScopeSet -> [Loc Ast.Stmt] -> Exp
+  seq _ [] = Cons (V "()") [] -- only used when last is assignment; might as well be a warning/error
+  seq s [Loc l (Ast.StmtExp e)] = expr s l e
+  seq s (Loc l (Ast.StmtExp e):q) = seq s (Loc l (Ast.StmtLet (Ast.PatCons (V "()") []) e):q) -- should we just assign to '_'?
+  seq s (Loc l (Ast.StmtLet p e):q) = case1 s l (expr s l e) [(p,Ast.Seq q)]
+  seq s q@(Loc _ (Ast.StmtDef f _ _):_) = ExpLoc l $ Let f body $ seq (Set.insert f s) rest where
+    (Loc l body, rest) = funcases s f isfcase q -- TODO: local recursion (scope)
+    isfcase (Loc l (Ast.StmtDef f' a b)) | f == f' = Just (Loc l (a,b))
+    isfcase _ = Nothing
+
+  funcases :: InScopeSet -> Var -> (a -> Maybe (Loc ([Ast.Pattern],Ast.Exp))) -> [a] -> (Loc Exp, [a])
+  funcases s f isfdef dl = (Loc l body, rest) where
+    body = lambdacases s l n (map unLoc defs)
+    l = loc defs
+    (defs,rest) = spanJust isfdef dl
+    n = case group $ map (length . fst . unLoc) defs of
+      [n:_] -> n
+      _ -> irError l $ "equations for" <+> quoted f <+> "have different numbers of arguments"
+    
 
   -- |process a multi-argument lambda expression
   lambdas :: InScopeSet -> SrcLoc -> [Ast.Pattern] -> Ast.Exp -> Exp

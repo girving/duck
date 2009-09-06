@@ -7,10 +7,12 @@ module Ast
   ( Prog
   , Decl(..)
   , Exp(..)
+  , Stmt(..)
   , Pattern(..)
   , imports
   , opsExp
   , opsPattern
+  , expTypeDesc, patTypeDesc
   ) where
 
 import Data.List
@@ -39,8 +41,8 @@ data Decl
 -- |Expression
 -- Patterns and types are also parsed into these before being converted to 'Pattern' or 'TypePat' in "Parse"
 data Exp
-  = Def !Var [Pattern] Exp Exp          -- ^ Local function definition with arguments: @let VAR PATs = EXP in EXP@
-  | Let !Pattern Exp Exp                -- ^ Local variable definition: @let PAT = EXP in EXP@
+  = Def !Var [Pattern] Exp Exp          -- ^ Local function definition with arguments: @let VAR PATs = EXP in EXP@ (equivalent to @DoSeq [StmtDef VAR PATs EXP, EXP]@)
+  | Let !Pattern Exp Exp                -- ^ Local variable definition: @let PAT = EXP in EXP@ (equivalent to @DoSeq [StmtLet PAT EXP, EXP]@)
   | Lambda [Pattern] Exp                -- ^ @PAT1 -> PAT2 ... -> EXP@
   | Apply Exp [Exp]                     -- ^ Application: @EXP EXPs@
   | Var !Var
@@ -53,7 +55,17 @@ data Exp
   | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
   | Case Exp [(Pattern,Exp)]            -- ^ @case EXP of { PAT -> EXP ; ... }@
   | If Exp Exp Exp                      -- ^ @if EXP then EXP else EXP@
+  | Seq [Loc Stmt]                      -- ^ Expression sequence: @{ STMT ; ... }@
   | ExpLoc SrcLoc !Exp                  -- ^ Meta source location information, inserted at almost every level
+  deriving Show
+
+-- |Statement
+-- Statements are thins that can be in a "do" expression block.
+data Stmt
+  = StmtExp Exp                         -- ^ Simple expression, either to return (if last) or presumably with effect
+  | StmtLet Pattern Exp                 -- ^ Variable definition: @PAT = EXP@
+  | StmtDef Var [Pattern] Exp           -- ^ Function definition: @VAR PATs = EXP@
+  -- StmtSpec ?
   deriving Show
 
 -- |Pattern
@@ -149,7 +161,13 @@ instance Pretty Exp where
   pretty' (List el) = pretty' $ brackets $ 3 #> punctuate ',' el
   pretty' (Ops o) = pretty' o
   pretty' (Equals v e) = 0 #> v <+> '=' <+> guard 0 e
+  pretty' (Seq q) = nested "do" (pretty $ vcat q) -- XXX not valid syntax (yet)
   pretty' (ExpLoc _ e) = pretty' e
+
+instance Pretty Stmt where
+  pretty' (StmtExp e) = pretty' e
+  pretty' (StmtLet p e) = p <+> '=' <+> e
+  pretty' (StmtDef f args e) = nestedPunct '=' (prettyop f args) e
 
 patToExp :: Pattern -> Exp
 patToExp (PatAs v p) = Equals v (patToExp p)
@@ -164,3 +182,24 @@ patToExp (PatLoc l p) = ExpLoc l (patToExp p)
 
 instance Pretty Pattern where
   pretty' = pretty' . patToExp
+
+expTypeDesc :: Exp -> String
+expTypeDesc (Def {}) = "let"
+expTypeDesc (Let {}) = "let"
+expTypeDesc (Lambda {}) = "lambda"
+expTypeDesc (Apply {}) = "apply"
+expTypeDesc (Var {}) = "variable"
+expTypeDesc (Int {}) = "integer"
+expTypeDesc (Char {}) = "character"
+expTypeDesc (Any {}) = show (quoted '_')
+expTypeDesc (List {}) = "list"
+expTypeDesc (Ops {}) = "operator"
+expTypeDesc (Equals {}) = "equals"
+expTypeDesc (Spec {}) = "type specifier"
+expTypeDesc (Case {}) = "case"
+expTypeDesc (If {}) = "if"
+expTypeDesc (Seq {}) = "sequence"
+expTypeDesc (ExpLoc _ e) = expTypeDesc e
+
+patTypeDesc :: Pattern -> String
+patTypeDesc = expTypeDesc . patToExp
