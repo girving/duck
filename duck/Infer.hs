@@ -135,7 +135,7 @@ definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl)
 expr :: Locals -> SrcLoc -> Exp -> Infer Type
 expr env loc = exp where
   exp (Int _) = return typeInt
-  exp (Chr _) = return typeChr
+  exp (Char _) = return typeChar
   exp (Var v) = lookup env loc v
   exp (Apply e1 e2) = do
     t1 <- exp e1

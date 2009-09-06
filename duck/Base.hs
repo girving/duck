@@ -60,10 +60,10 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
-  , PrimOp ChrIntOrd "ord" [typeChr] typeInt $ \[ValChr c] -> ValInt (Char.ord c)
-  , PrimOp IntChrChr "chr" [typeInt] typeChr $ \[ValInt c] -> ValChr (Char.chr c)
+  , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \[ValChar c] -> ValInt (Char.ord c)
+  , PrimOp IntCharChr "chr" [typeInt] typeChar $ \[ValInt c] -> ValChar (Char.chr c)
   , ioOp Exit "exit" [typeInt] typeVoid
-  , ioOp IOPutChr "put" [typeChr] typeUnit
+  , ioOp IOPutChar "put" [typeChar] typeUnit
   , ioOp TestAll "testAll" [] typeUnit
   ]
 
@@ -88,7 +88,7 @@ primType loc prim args
 -- |Execute an IO primitive
 runPrimIO :: Prim -> [Value] -> Exec Value
 runPrimIO Exit [ValInt i] = liftIO (exit i)
-runPrimIO IOPutChr [ValChr c] = liftIO (putChar c) >. valUnit
+runPrimIO IOPutChar [ValChar c] = liftIO (putChar c) >. valUnit
 runPrimIO p args = execError noLoc $ invalidPrim p args
 
 -- |The internal, implicit declarations giving names to primitive operations.
@@ -111,7 +111,7 @@ base = Lir.union types (Lir.prog "" (decTuples ++ prims ++ io)) where
   types = (Lir.empty "")
     { Lir.progDatatypes = Map.fromList
       [ (V "Int", Lir.Data noLoc [] [] [])
-      , (V "Chr", Lir.Data noLoc [] [] [])
+      , (V "Char", Lir.Data noLoc [] [] [])
       , (V "IO", Lir.Data noLoc [V "a"] [] [Covariant]) 
       , (V "Delayed", Lir.Data noLoc [V "a"] [] [Covariant])
       , (V "Type", Lir.Data noLoc [V "t"] [] [Invariant])

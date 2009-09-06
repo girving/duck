@@ -24,7 +24,7 @@ import ParseOps
 
 data Value
   = ValInt !Int
-  | ValChr !Char
+  | ValChar !Char
   | ValCons !CVar ![Value] -- ^ Constructed data
   | ValClosure !Var ![Type] ![Value] -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
   | ValDelay !TypeEnv !Env !Lir.Exp -- ^ Delay (lazy) evaluation
@@ -43,7 +43,7 @@ valUnit = ValCons (V "()") []
 
 instance Pretty Value where
   pretty' (ValInt i) = pretty' i
-  pretty' (ValChr c) = pretty' (show c)
+  pretty' (ValChar c) = pretty' (show c)
   pretty' (ValCons (V ":") [h,t]) | Just t' <- extract t = pretty' $
     brackets $ 3 #> punctuate ',' (h : t')
     where

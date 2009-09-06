@@ -45,7 +45,7 @@ data Exp
   | Apply Exp [Exp]                     -- ^ Application: @EXP EXPs@
   | Var !Var
   | Int !Int
-  | Chr !Char
+  | Char !Char
   | Any                                 -- ^ Magic underscore variable: @_@
   | List [Exp]                          -- ^ List: @[EXP1,...]@
   | Ops !(Ops Exp)
@@ -144,7 +144,7 @@ instance Pretty Exp where
   pretty' (Apply e el) = prettyop e el
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
-  pretty' (Chr c) = pretty' (show c)
+  pretty' (Char c) = pretty' (show c)
   pretty' Any = pretty' '_'
   pretty' (List el) = pretty' $ brackets $ 3 #> punctuate ',' el
   pretty' (Ops o) = pretty' o

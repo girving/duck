@@ -88,7 +88,7 @@ instance HasLoc Definition where loc = loc . defVars
 data Exp
   = ExpLoc SrcLoc !Exp
   | Int !Int
-  | Chr !Char
+  | Char !Char
   | Var !Var
   | Apply Exp Exp
   | Let !Var Exp Exp
@@ -269,7 +269,7 @@ noLocExpr = (noLoc,Nothing)
 -- |Lambda lift an expression
 expr :: InScopeSet -> (SrcLoc, Maybe Var) -> Ir.Exp -> State Prog Exp
 expr _ _ (Ir.Int i) = return $ Int i
-expr _ _ (Ir.Chr c) = return $ Chr c
+expr _ _ (Ir.Char c) = return $ Char c
 expr _ _ (Ir.Var v) = return $ Var v
 expr locals l (Ir.Apply e1 e2) = do
   e1 <- expr locals l e1
@@ -329,7 +329,7 @@ free s l (Var v)
   | Set.notMember v s = [(v,l)]
   | otherwise = []
 free _ _ (Int _) = []
-free _ _ (Chr _) = []
+free _ _ (Char _) = []
 free s l (Apply e1 e2) = free s l e1 ++ free s l e2
 free s l (Let v e c) = free s l e ++ free (addVar v s) l c
 free s l (Cons _ el) = concatMap (free s l) el
@@ -389,7 +389,7 @@ instance Pretty Exp where
 
 revert :: Exp -> Ir.Exp
 revert (Int i) = Ir.Int i
-revert (Chr c) = Ir.Chr c
+revert (Char c) = Ir.Char c
 revert (Var v) = Ir.Var v
 revert (Apply e1 e2) = Ir.Apply (revert e1) (revert e2)
 revert (Let v e rest) = Ir.Let v (revert e) (revert rest)

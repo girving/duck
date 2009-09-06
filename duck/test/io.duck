@@ -8,7 +8,7 @@ mapIO f l = case l of
     mapIO f l >>= \l ->
     returnIO (y:l)
 
-put :: List Chr -> IO ()
+put :: List Char -> IO ()
 put s = mapIO put s >> returnIO ()
 
 main = put ['H','e','l','l','o',' ','w','o','r','l','d','!','\n']

@@ -15,7 +15,7 @@ data Token
   | TokSym { tokVar :: !Var }
   | TokCSym { tokVar :: !Var }
   | TokInt { tokInt :: !Int }
-  | TokChr { tokChr :: !Char }
+  | TokChar { tokChar :: !Char }
   | TokEq
   | TokLP
   | TokRP
@@ -56,7 +56,7 @@ instance Pretty Token where
     TokSym (V v) -> v
     TokCSym (V v) -> v
     TokInt i -> show i
-    TokChr c -> show c
+    TokChar c -> show c
     TokDef -> "def"
     TokLet -> "let"
     TokData -> "data"

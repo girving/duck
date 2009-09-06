@@ -43,7 +43,7 @@ data Decl
 data Exp
   = ExpLoc SrcLoc !Exp                  -- ^ Meta source location information, present at every non-generated level
   | Int !Int
-  | Chr !Char
+  | Char !Char
   | Var !Var
   | Lambda !Var Exp                     -- ^ Simple lambda expression: @VAR -> EXP@
   | Apply Exp Exp                       -- ^ Application: @EXP EXP@
@@ -212,7 +212,7 @@ prog pprec p = (precs, decls p) where
 
   expr :: InScopeSet -> SrcLoc -> Ast.Exp -> Exp
   expr _ _ (Ast.Int i) = Int i
-  expr _ _ (Ast.Chr c) = Chr c
+  expr _ _ (Ast.Char c) = Char c
   expr _ _ (Ast.Var v) = Var v
   expr s l (Ast.Lambda pl e) = lambdas s l pl e
   expr s l (Ast.Apply f args) = foldl' Apply (expr s l f) $ map (expr s l) args
@@ -324,7 +324,7 @@ instance Pretty Exp where
     def Nothing = []
     def (Just e) = ["_ ->" <+> pretty e]
   pretty' (Int i) = pretty' i
-  pretty' (Chr c) = pretty' (show c)
+  pretty' (Char c) = pretty' (show c)
   pretty' (Var v) = pretty' v
   pretty' (Lambda v e) = 1 #>
     v <+> "->" <+> guard 1 e

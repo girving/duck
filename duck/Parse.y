@@ -35,7 +35,7 @@ import Util
   sym  { Loc _ (TokSym _) }
   csym { Loc _ (TokCSym _) }
   int  { Loc _ (TokInt _) }
-  chr  { Loc _ (TokChr _) }
+  chr  { Loc _ (TokChar _) }
   data { Loc _ (TokData) }
   let  { Loc _ (TokLet) }
   in   { Loc _ (TokIn) }
@@ -157,7 +157,7 @@ atom :: { Loc Exp }
 
 atom_ :: { Loc Exp }
   : int { fmap (Int . tokInt) $1 }
-  | chr { fmap (Chr . tokChr) $1 }
+  | chr { fmap (Char . tokChar) $1 }
   | lvar { fmap Var $1 }
   | cvar { fmap Var $ locVar $1 }
   | '_' { loc1 $1 Any }

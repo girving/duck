@@ -12,7 +12,7 @@ module Prims
   , typeClosure
   , typeTuple
   , typeInt
-  , typeChr
+  , typeChar
   , typeIO
   , typeType
   ) where
@@ -34,11 +34,11 @@ data Binop
 
 data Prim
   = Binop Binop
-  | ChrIntOrd
-  | IntChrChr
+  | CharIntOrd
+  | IntCharChr
   -- * IO primitives
   | Exit
-  | IOPutChr
+  | IOPutChar
   | TestAll
   deriving (Eq, Ord, Show)
 
@@ -68,8 +68,8 @@ typeTuple tl = typeCons (tupleCons tl) tl
 typeInt :: IsType t => t
 typeInt = typeC "Int"
 
-typeChr :: IsType t => t
-typeChr = typeC "Chr"
+typeChar :: IsType t => t
+typeChar = typeC "Char"
 
 typeIO :: IsType t => t -> t
 typeIO = typeC1 "IO"

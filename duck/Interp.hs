@@ -74,7 +74,7 @@ inferExpr env loc e = runInfer loc ("evaluate" <+> quoted e) $ Infer.expr env lo
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
   exp (Int i) = return (ValInt i)
-  exp (Chr i) = return (ValChr i)
+  exp (Char i) = return (ValChar i)
   exp (Var v) = lookup global env loc v
   exp (Apply e1 e2) = do
     t1 <- inferExpr tenv loc e1

@@ -87,25 +87,25 @@ sym "-" = TokMinus
 sym s@(':':_) = TokCSym (V s)
 sym s = TokSym (V s)
 
-readsChr :: ReadS Char
-readsChr ('\\':'0':s) = map (first Char.chr) $ readOct s
-readsChr ('\\':'o':s) = map (first Char.chr) $ readOct s
-readsChr ('\\':'x':s) = map (first Char.chr) $ readHex s
-readsChr ('\\':'^':a:s) = [(Char.chr (Char.ord a - Char.ord '@'),s)]
-readsChr ('\\':'a':s) = [('\a',s)]
-readsChr ('\\':'b':s) = [('\b',s)]
-readsChr ('\\':'t':s) = [('\t',s)]
-readsChr ('\\':'n':s) = [('\n',s)]
-readsChr ('\\':'v':s) = [('\v',s)]
-readsChr ('\\':'f':s) = [('\f',s)]
-readsChr ('\\':'r':s) = [('\r',s)]
-readsChr ('\\':c:s) = [(c,s)]
-readsChr ('\\':_) = []
-readsChr (c:s) = [(c,s)]
-readsChr [] = []
+readsChar :: ReadS Char
+readsChar ('\\':'0':s) = map (first Char.chr) $ readOct s
+readsChar ('\\':'o':s) = map (first Char.chr) $ readOct s
+readsChar ('\\':'x':s) = map (first Char.chr) $ readHex s
+readsChar ('\\':'^':a:s) = [(Char.chr (Char.ord a - Char.ord '@'),s)]
+readsChar ('\\':'a':s) = [('\a',s)]
+readsChar ('\\':'b':s) = [('\b',s)]
+readsChar ('\\':'t':s) = [('\t',s)]
+readsChar ('\\':'n':s) = [('\n',s)]
+readsChar ('\\':'v':s) = [('\v',s)]
+readsChar ('\\':'f':s) = [('\f',s)]
+readsChar ('\\':'r':s) = [('\r',s)]
+readsChar ('\\':c:s) = [(c,s)]
+readsChar ('\\':_) = []
+readsChar (c:s) = [(c,s)]
+readsChar [] = []
 
 chr :: Action
-chr ('\'':s) | [(c,"'")] <- readsChr s = TokChr c
+chr ('\'':s) | [(c,"'")] <- readsChar s = TokChar c
 chr s = error ("bad character: " ++ s) -- should not happen
 
 -- Each action has type :: String -> Token
