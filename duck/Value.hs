@@ -26,13 +26,13 @@ data Value
   = ValInt !Int
   | ValChar !Char
   | ValCons !CVar ![Value] -- ^ Constructed data
-  | ValClosure !Var ![Type] ![Value] -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
+  | ValClosure !Var ![TypeVal] ![Value] -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
   | ValDelay !TypeEnv !Env !Lir.Exp -- ^ Delay (lazy) evaluation
   | ValType
     -- Monadic IO
   | ValLiftIO !Value -- ^ lifted (returned) value within IO monad
   | ValPrimIO !Prim ![Value] -- ^ Closure of unexecuted IO call
-  | ValBindIO !Var !Type !Value !TypeEnv !Env !Lir.Exp -- ^ Unexecuted IO binding
+  | ValBindIO !Var !TypeVal !Value !TypeEnv !Env !Lir.Exp -- ^ Unexecuted IO binding
 
 type Env = Map Var Value
 
@@ -59,5 +59,5 @@ instance Pretty Value where
   pretty' (ValBindIO v t d _ _ e) = 0 #>
     v <+> "<-" <+> (d,t) $$ pretty e
 
-instance Pretty (Value,Type) where
+instance Pretty (Value,TypeVal) where
   pretty' (v,t) = 2 #> v <+> "::" <+> t

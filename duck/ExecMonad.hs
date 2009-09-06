@@ -31,7 +31,7 @@ import SrcLoc
 import InferMonad hiding (withFrame)
 import Lir (Prog, ProgMonad)
 
-type ExecStack = CallStack (Value,Type)
+type ExecStack = CallStack (Value,TypeVal)
 
 newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
   deriving (Monad, MonadIO, MonadReader (Prog, ExecStack), MonadInterrupt)
@@ -43,7 +43,7 @@ execError :: Pretty s => SrcLoc -> s -> Exec a
 execError l m = Exec $ ReaderT $ \(_,s) ->
   fatalIO $ stageMsg StageExec noLoc $ StackMsg (reverse s) $ locMsg l m
 
-withFrame :: Var -> [Type] -> [Value] -> SrcLoc -> Exec a -> Exec a
+withFrame :: Var -> [TypeVal] -> [Value] -> SrcLoc -> Exec a -> Exec a
 withFrame f types args loc e = Exec $ ReaderT $ \(p,s) -> do
   let r e = runReaderT (unExec e) (p, CallFrame f (zip args types) loc : s)
   when (length s > 32) $ r $ execError loc "stack overflow"

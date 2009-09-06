@@ -73,7 +73,7 @@ instance HasLoc (Overload t) where loc = overLoc
 
 -- |The main overload table of specific overload resolutions used by the program.
 -- Note that there may be many more entries than actual overload definitions, since every specific set of argument types creates a new overload.
-type Overloads = Ptrie Type (Maybe Trans) (Overload Type)
+type Overloads = Ptrie TypeVal (Maybe Trans) (Overload TypeVal)
 
 type TypeSetArg = TransType TypePat
 

@@ -59,16 +59,16 @@ definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc)
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
 
 -- |A placeholder for when implicit casts stop being nops on the data.
-cast :: Type -> Exec Value -> Exec Value
+cast :: TypeVal -> Exec Value -> Exec Value
 cast _ x = x
 
---runInfer :: SrcLoc -> Infer Type -> Exec Type
+--runInfer :: SrcLoc -> Infer TypeVal -> Exec TypeVal
 runInfer l action f = do
   t <- liftInfer f
   when (t == TyVoid) $ execError l $ "refusing to" <+> action <> ", result is Void"
   return t
 
-inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec Type
+inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec TypeVal
 inferExpr env loc e = runInfer loc ("evaluate" <+> quoted e) $ Infer.expr env loc e
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
@@ -122,7 +122,7 @@ transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Maybe Trans -> 
 transExpr global tenv env loc e Nothing = expr global tenv env loc e
 transExpr _ tenv env _ e (Just Delayed) = return $ ValDelay tenv env e
 
-applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Type -> Value -> Exp -> Exec Value
+applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> TypeVal -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =
   apply global loc ft f (transExpr global tenv env loc e)
     =<< liftInfer (Infer.expr tenv loc e)
@@ -132,7 +132,7 @@ applyExpr global tenv env loc ft f e =
 -- be delayed until we know the correct transform to apply.  The second type
 -- "at" is the type of the value which was passed in, and is the type used for
 -- type inference/overload resolution.
-apply :: Globals -> SrcLoc -> Type -> Value -> (Maybe Trans -> Exec Value) -> Type -> Exec Value
+apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Maybe Trans -> Exec Value) -> TypeVal -> Exec Value
 apply global loc ft (ValClosure f types args) ae at = do
   -- infer return type
   rt <- runInfer loc ("apply" <+> quoted ft <+> "to" <+> quoted at) $ Infer.apply loc ft at

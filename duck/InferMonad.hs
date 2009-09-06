@@ -31,13 +31,13 @@ import Type
 import Lir
 import SrcLoc
 
-type InferStack = CallStack Type
+type InferStack = CallStack TypeVal
 
 -- |Stores our current knowledge about the types of functions
 type FunctionInfo = Map Var Overloads
 
 -- |Type errors that may be resolvable substitution failures
-type TypeError = StackMsg Type
+type TypeError = StackMsg TypeVal
 
 instance Error TypeError where
   strMsg = StackMsg [] . msg
@@ -50,7 +50,7 @@ inferError :: Pretty s => SrcLoc -> s -> Infer a
 inferError l m = Infer $ ReaderT $ \(_,s) -> 
   fatalIO $ msg $ StackMsg (reverse s) $ locMsg l m
 
-withFrame :: Var -> [Type] -> SrcLoc -> Infer a -> Infer a
+withFrame :: Var -> [TypeVal] -> SrcLoc -> Infer a -> Infer a
 withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
   let frame = CallFrame f args loc
       r e = runReaderT (unInfer e) $ (p, frame : s)
@@ -59,7 +59,7 @@ withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
     catchError (r e) $ \e ->
       throwError (e { msgStack = frame : msgStack e }) -- preprend frame to resolve errors
 
-withGlobals :: TypeEnv -> Infer [(Var,Type)] -> Infer TypeEnv
+withGlobals :: TypeEnv -> Infer [(Var,TypeVal)] -> Infer TypeEnv
 withGlobals g f = Infer $ ReaderT $ \(p,s) -> 
   foldr (uncurry Map.insert) g =.< 
     runReaderT (unInfer f) (p{ progGlobalTypes = g },s)

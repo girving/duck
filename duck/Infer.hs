@@ -56,13 +56,13 @@ type Locals = TypeEnv
 -- Utility functions
 
 -- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
-insertOver :: Bool -> Var -> [(Maybe Trans, Type)] -> Overload Type -> Infer ()
+insertOver :: Bool -> Var -> [(Maybe Trans, TypeVal)] -> Overload TypeVal -> Infer ()
 insertOver _ f a o = do
   --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> overRet o
   modify $ Ptrie.mapInsert f a o
 
 -- |Lookup an overload from the table, or make one if it's partial
-lookupOver :: Var -> [Type] -> Infer (Maybe (Overload Type))
+lookupOver :: Var -> [TypeVal] -> Infer (Maybe (Overload TypeVal))
 lookupOver f tl = get >.=
   (maybe Nothing (makeover . second (fmap Ptrie.unLeaf) . Ptrie.lookup tl) . Map.lookup f)
   where
@@ -76,7 +76,7 @@ transOvers [] _ = Nothing
 transOvers os n = if all (tt ==) tts then Just tt else Nothing
   where tt:tts = map (map fst . (take n) . overArgs) os
 
-lookup :: Locals -> SrcLoc -> Var -> Infer Type
+lookup :: Locals -> SrcLoc -> Var -> Infer TypeVal
 lookup env loc v
   | Just r <- Map.lookup v env = return r -- check for local definitions first
   | otherwise = getProg >>= lp where
@@ -86,7 +86,7 @@ lookup env loc v
     | Just _ <- Map.lookup v (progDatatypes prog) = return $ typeType (TyCons v []) -- found a type constructor, return Type v
     | otherwise = inferError loc $ "unbound variable" <+> quoted v
 
-lookupDatatype :: SrcLoc -> Type -> Infer [(Loc CVar, [Type])]
+lookupDatatype :: SrcLoc -> TypeVal -> Infer [(Loc CVar, [TypeVal])]
 lookupDatatype loc (TyCons (V "Type") [t]) = case t of
   TyCons c tl -> return [(Loc noLoc c, map typeType tl)]
   TyVoid -> return [(Loc noLoc (V "Void"), [])]
@@ -122,7 +122,7 @@ lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 prog :: Infer TypeEnv
 prog = getProg >>= foldM (\g -> withGlobals g . definition) Map.empty . progDefinitions
 
-definition :: Definition -> Infer [(Var,Type)]
+definition :: Definition -> Infer [(Var,TypeVal)]
 definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl) [] l $ do
   t <- expr Map.empty l e
   tl <- case (vl,t) of
@@ -132,7 +132,7 @@ definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl)
   return (zip (map unLoc vl) tl)
   where l = loc d
 
-expr :: Locals -> SrcLoc -> Exp -> Infer Type
+expr :: Locals -> SrcLoc -> Exp -> Infer TypeVal
 expr env loc = exp where
   exp (Int _) = return typeInt
   exp (Char _) = return typeChar
@@ -179,7 +179,7 @@ expr env loc = exp where
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr env l e
 
-cons :: SrcLoc -> CVar -> [Type] -> Infer Type
+cons :: SrcLoc -> CVar -> [TypeVal] -> Infer TypeVal
 cons loc c args = do
   (tv,vl,tl) <- lookupConstructor loc c
   r <- typeReError loc (quoted c<+>"expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
@@ -190,7 +190,7 @@ cons loc c args = do
       let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
       return $ TyCons tv targs where
 
-spec :: SrcLoc -> TypePat -> Exp -> Type -> Infer Type
+spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do
   r <- typeReError loc (quoted e<+>"has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
     subset t ts
@@ -198,16 +198,16 @@ spec loc ts e t = do
     Left leftovers -> inferError loc ("type specification" <+> quoted ts <+> "is invalid; cannot overload on" <+> showVars leftovers)
     Right tenv -> return $ substVoid tenv ts
 
-join :: SrcLoc -> Type -> Type -> Infer Type
+join :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
 join loc t1 t2 =
   typeReError loc ("failed to unify types" <+> quoted t1 <+> "and" <+> quoted t2) $
     union t1 t2
 
 -- In future, we might want this to produce more informative error messages
-joinList :: SrcLoc -> [Type] -> Infer Type
+joinList :: SrcLoc -> [TypeVal] -> Infer TypeVal
 joinList loc = foldM1 (join loc)
 
-apply :: SrcLoc -> Type -> Type -> Infer Type
+apply :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
 apply _ TyVoid _ = return TyVoid
 apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
   fun f@(FunArrow a r) = do
@@ -234,7 +234,7 @@ apply loc t1 t2 = do
         else typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2 <> "," <+> quoted c <+> "is already fully applied")
     _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2)
 
-isTypeC1 :: String -> Type -> Infer (Maybe Type)
+isTypeC1 :: String -> TypeVal -> Infer (Maybe TypeVal)
 isTypeC1 c tt = do
   r <- tryError $ subset tt (TsCons (V c) [TsVar x])
   return $ case r of
@@ -242,11 +242,11 @@ isTypeC1 c tt = do
     _ -> Nothing
   where x = V "x"
 
-isTypeType :: Type -> Infer (Maybe Type)
+isTypeType :: TypeVal -> Infer (Maybe TypeVal)
 isTypeType = isTypeC1 "Type"
 
-isTypeIO :: Type -> Infer (Maybe Type)
-isTypeIO = isTypeC1 "IO"
+isTypeValO :: TypeVal -> Infer (Maybe TypeVal)
+isTypeValO = isTypeC1 "IO"
 
 instance TypeMonad Infer where
   typeApply = apply noLoc
@@ -260,7 +260,7 @@ overDesc :: Overload TypePat -> Doc'
 overDesc o = pretty (o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
-resolve :: Var -> [Type] -> SrcLoc -> Infer (Overload Type)
+resolve :: Var -> [TypeVal] -> SrcLoc -> Infer (Overload TypeVal)
 resolve f args loc = do
   rawOverloads <- lookupFunction loc f -- look up possibilities
   let nargs = length args
@@ -305,7 +305,7 @@ resolve f args loc = do
 --
 -- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
-cache :: Var -> [Type] -> Overload TypePat -> SrcLoc -> Infer (Overload Type)
+cache :: Var -> [TypeVal] -> Overload TypePat -> SrcLoc -> Infer (Overload TypeVal)
 cache f args (Over oloc atypes rt vl ~(Just e)) loc = do
   let (tt,types) = unzip atypes
       call = quoted (prettyap f args)
@@ -335,15 +335,15 @@ main = do
     subset'' main (typeIO typeUnit)
 
 -- |This is the analog for 'Interp.runIO' for types.  It exists by analogy even though it is very simple.
-runIO :: Type -> Infer Type
+runIO :: TypeVal -> Infer TypeVal
 runIO io = do
-  r <- isTypeIO io
+  r <- isTypeValO io
   case r of
     Just t -> return t
     Nothing -> typeError noLoc ("expected IO type, got" <+> quoted io)
 
 -- |Verify that a type is in IO, and leave it unchanged if so
-checkIO :: Type -> Infer Type
+checkIO :: TypeVal -> Infer TypeVal
 checkIO t = typeIO =.< runIO t
 
 -- |Convenience function for printing a list of variables nicely

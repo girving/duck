@@ -1,8 +1,8 @@
-{-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances, FlexibleInstances, TypeSynonymInstances, StandaloneDeriving #-}
 -- | Duck Types
 
 module Type
-  ( Type(..)
+  ( TypeVal(..)
   , TypePat(..)
   , TypeFun(..)
   , IsType(..)
@@ -41,25 +41,34 @@ import Var
 data TypeFun t
   = FunArrow !t !t
   | FunClosure !Var ![t]
-  deriving (Eq, Ord, Show)
+
+deriving instance Eq t => Eq (TypeFun t)
+deriving instance Ord t => Ord (TypeFun t)
+deriving instance Show t => Show (TypeFun t)
 
 -- |A concrete type (the types of values are always concrete)
-data Type
-  = TyCons !CVar [Type]
-  | TyFun ![TypeFun Type]
+data TypeVal
+  = TyCons !CVar [TypeVal]
+  | TyFun ![TypeFun TypeVal]
   | TyVoid
-  deriving (Eq, Ord, Show)
+
+deriving instance Eq TypeVal
+deriving instance Ord TypeVal
+deriving instance Show TypeVal
 
 -- |A polymorphic set of concrete types (used for function overloads).  This is the same
--- as 'Type' except that it can contain type variables.
+-- as 'TypeVal' except that it can contain type variables.
 data TypePat
   = TsVar !Var
   | TsCons !CVar [TypePat]
   | TsFun ![TypeFun TypePat]
   | TsVoid
-  deriving (Eq, Ord, Show)
 
-type TypeEnv = Map Var Type
+deriving instance Eq TypePat
+deriving instance Ord TypePat
+deriving instance Show TypePat
+
+type TypeEnv = Map Var TypeVal
 
 -- |Variance of type constructor arguments.
 --
@@ -103,7 +112,7 @@ class IsType t where
 
   typePat :: t -> TypePat
 
-instance IsType Type where
+instance IsType TypeVal where
   typeCons = TyCons
   typeFun = TyFun
   typeVoid = TyVoid
@@ -140,7 +149,7 @@ subst _ TsVoid = TsVoid
 _subst = subst
 
 -- |Type environment substitution with unbound type variables defaulting to void
-substVoid :: TypeEnv -> TypePat -> Type
+substVoid :: TypeEnv -> TypePat -> TypeVal
 substVoid env (TsVar v) = Map.findWithDefault TyVoid v env
 substVoid env (TsCons c tl) = TyCons c (map (substVoid env) tl)
 substVoid env (TsFun f) = TyFun (map fun f) where
@@ -160,7 +169,7 @@ occurs _ _ TsVoid = False
 _occurs = occurs
 
 -- |Types contains no variables
-occurs' :: Var -> Type -> Bool
+occurs' :: Var -> TypeVal -> Bool
 occurs' _ _ = False
 
 -- |This way is easy
@@ -169,7 +178,7 @@ occurs' _ _ = False
 class Singleton a b | a -> b where
   singleton :: a -> b
 
-instance Singleton Type TypePat where
+instance Singleton TypeVal TypePat where
   singleton (TyCons c tl) = TsCons c (singleton tl)
   singleton (TyFun f) = TsFun (singleton f)
   singleton TyVoid = TsVoid
@@ -186,28 +195,28 @@ instance Singleton a b => Singleton (TypeFun a) (TypeFun b) where
 -- skolemize will need to be fixed to turn TsVar variables into fresh TyCons
 -- variables.
 _ignore = skolemize
-skolemize :: TypePat -> Type
+skolemize :: TypePat -> TypeVal
 skolemize (TsVar v) = TyCons v [] -- skolemization
 skolemize (TsCons c tl) = TyCons c (map skolemize tl)
 skolemize (TsFun f) = TyFun (map skolemizeFun f)
 skolemize TsVoid = TyVoid
 
-skolemizeFun :: TypeFun TypePat -> TypeFun Type
+skolemizeFun :: TypeFun TypePat -> TypeFun TypeVal
 skolemizeFun (FunArrow s t) = FunArrow (skolemize s) (skolemize t)
 skolemizeFun (FunClosure f tl) = FunClosure f (map skolemize tl)
 
 -- |Convert a singleton typeset to a type if possible
-unsingleton :: TypePat -> Maybe Type
+unsingleton :: TypePat -> Maybe TypeVal
 unsingleton = unsingleton' Map.empty
 
-unsingleton' :: TypeEnv -> TypePat -> Maybe Type
+unsingleton' :: TypeEnv -> TypePat -> Maybe TypeVal
 unsingleton' env (TsVar v) | Just t <- Map.lookup v env = Just t
 unsingleton' _ (TsVar _) = Nothing
 unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
 unsingleton' env (TsFun f) = TyFun =.< mapM (unsingletonFun' env) f
 unsingleton' _ TsVoid = Just TyVoid
 
-unsingletonFun' :: TypeEnv -> TypeFun TypePat -> Maybe (TypeFun Type)
+unsingletonFun' :: TypeEnv -> TypeFun TypePat -> Maybe (TypeFun TypeVal)
 unsingletonFun' env (FunArrow s t) = do
   s <- unsingleton' env s
   t <- unsingleton' env t
@@ -242,7 +251,7 @@ instance Pretty TypePat where
   pretty' (TsFun f) = pretty' f
   pretty' TsVoid = pretty' "Void"
 
-instance Pretty Type where
+instance Pretty TypeVal where
   pretty' = pretty' . singleton
 
 instance Pretty t => Pretty (TypeFun t) where

@@ -32,12 +32,12 @@ import InferMonad
 data PrimOp = PrimOp
   { primPrim :: Prim
   , primName :: String
-  , primArgs :: [Type]
-  , primRet :: Type
+  , primArgs :: [TypeVal]
+  , primRet :: TypeVal
   , primBody :: [Value] -> Value
   }
 
-intOp :: Binop -> Type -> (Int -> Int -> Value) -> PrimOp
+intOp :: Binop -> TypeVal -> (Int -> Int -> Value) -> PrimOp
 intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \[ValInt i, ValInt j] -> fun i j
 
 intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
@@ -46,7 +46,7 @@ intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> ValCons (V $ if fun
 intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
 intBinOp op fun = intOp op typeInt $ \i -> ValInt . fun i
 
-ioOp :: Prim -> String -> [Type] -> Type -> PrimOp
+ioOp :: Prim -> String -> [TypeVal] -> TypeVal -> PrimOp
 ioOp p name tl t = PrimOp p name tl (typeIO t) (ValPrimIO p)
 
 primOps :: Map.Map Prim PrimOp
@@ -79,7 +79,7 @@ prim loc prim args
   | otherwise = execError loc $ invalidPrim prim args
 
 -- |Determine the type of a primitive when called with the given arguments
-primType :: SrcLoc -> Prim -> [Type] -> Infer Type
+primType :: SrcLoc -> Prim -> [TypeVal] -> Infer TypeVal
 primType loc prim args
   | Just primop <- Map.lookup prim primOps
   , args == primArgs primop = return $ primRet primop
