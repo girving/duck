@@ -1,0 +1,14 @@
+h1. Error Reporting
+
+There are two approaches for reporting nice errors:
+
+# Detect errors at an early stage
+# Annotate later stages so that error information can be transformed into the format the user expects.
+
+(2) is by far the better approach.  First, the extra complexity will come in handy for runtime errors.  Second, and more importantly, pushing error reporting later will lower the overhead for writing additional passes, optimizations, etc., since late stage IR is generally simpler than early stage AST or IR.
+
+One possible way to preserve information through phases would be to add a notion of "weak variable" in order to map intermediate expressions back to the source.  I don't think this adds fundamental complexity to the IR.  Similarly, instead of annotating each expression with source location info, we currently add one new IR expression type of the form
+
+<pre><code>| ExpLoc Loc Exp</code></pre>
+
+which tags an expression with a location.  This is less verbose that tagging each expression type with a location unconditionally, and avoids some of the need to add dummy locations in generated code.

@@ -1,0 +1,57 @@
+h1. Type Inference
+
+The Duck type system is designed to be both flexible and easy to implement.  On the flexibility side, it supports arbitrary overloading and ad-hoc polymorphism of functions, similar to overloaded templates in C++.  To make this easy to implement, type inference is implemented via brute force polyinstantiation, with no attempt to detect or prevent infinite loops in type inference beyond straightforward limits on stack depth.  Intuitively, the type inference algorithm can be thought of a simple interpreter operating on types, plus caching and fixpoint iteration support to handle repeated and recursive function calls.
+
+h2. What type inference computes
+
+For simplicity, type inference always operates on lifted IR (LIR), where there are no nested functions.  Each toplevel function can be overloaded, so the result of type inference over a set of functions is a map,
+<pre><code>overloads : Var -> [Type] -> Type</code></pre>
+which maps functions and their argument types to return types.  For example, we might have
+<pre><code>f Int = Int
+f Float Int = Float
+map (Type f) [Int] = [Int]
+</code></pre>
+
+The size of this output is roughly proportional to the total number of possible types that flow through each program point, considered over all possible executions of the program.  This can easily be infinite, in which the type inference algorithm will not complete (or will hit an iteration cutoff).  *This is a feature*.  Attempting to make type inference decidable would severely hamper it's flexibility, make it much more complicated to implement, and (I claim) gain very little in practice.
+
+h2. Structure of the type inference algorithm
+
+The goal of type inference is to check that every overload resolution succeeds and every primitive operation has correct types.  To do this, we simulate the execution of the program along all possible paths, keeping track of types but ignoring data (similar to model checking).  We then apply a series of optimizations to speed up this basic approach:
+
+h4. Caching
+
+Once we infer the type of calling a function with a given set of argument types, the result is cached and reused for future calls to the the same function with the same types.
+
+h4. Fixpoint inference
+
+Naive simulation would take infinite time to infer the types of recursive function calls, so we use fixpoint iteration to speed this up.  At the start of the iteration, all functions are assumed to return @Void@, which means they never return.  For each function overload that arises, we repeatedly infer the body of the function, updating the return type each time through.  If a fixpoint is reached, we have inferred the correct type of the function and can stop.
+
+As an example of how this works, consider the factorial function:
+<pre><code>fact n = if n then n * fact (n-1) else 1
+</code></pre>
+To infer the type of @fact@, the inference algorithm goes through the following steps:
+# @fact Int = Void@
+# @fact Int = if Int then Int * (fact Int) else Int = union (Int * Void) Int = Int@
+# @fact Int = if Int then Int * (fact Int) else Int = union (Int * Int) Int = Int@
+
+Since the last two iterations had the same result, we've reached the fixpoint.
+
+h4. Function argument generalization
+
+"Unimplemented so far":http://github.com/girving/duck/issues#issue/7.
+
+When inferring higher order functions without type signatures, straightforward caching produces entries like
+# @map f [Int] = [Int]@
+# @map g [Int] = [Int]@
+# ...
+
+Even if @f@ and @g@ both have @Int -> Int@ overloads, they have different types due to their possible overloads, and therefore get cached separately.  To avoid this problem, type inference should notice that @map@ only ever applies it's function argument to type @Int@ when the second argument is @[Int]@, and does not return or otherwise store @f@.  Therefore, after inferring the type of @map@ for @f@, we can produce the generalized result
+<pre><code>map (Int -> Int) [Int] = [Int]</code></pre>
+
+When I began writing type inference, I thought this optimization would be essential to make type inference converge for most programs.  However, since type signatures have the same effect for free, so the automatic version is never strictly necessary.
+
+h2. Type inference vs. specialization
+
+When thinking about the different phases of the compiler, it is important to separate _type inference_ and _specialization_/_polyinstantiation_.  The distinction is that type inference computes the types that result when code is evaluated without modifying the code, while specialization produces new code with specific type information baked in.  It is easy to confuse these two passes since type inference is just a prelude to specialization, but they are still usefully separate concepts.
+
+Moreover, since Duck has first class overloaded closures, even specialized code still passes types around during function calls.

@@ -1,0 +1,58 @@
+h1. Layout
+
+Layout parsing (i.e., whitespace-implied parsing) issues and ideas.
+
+Generally we follow and refer to the "Haskell rules":http://www.haskell.org/onlinereport/syntax-iso.html#layout.
+
+Currently the only context leading token in duck is @of@.
+Ideally, @let@ will be added, and possibly @where@ and @do@.
+The "case":matches.textile proposals would add @case@.
+
+h2. Relaxed Rules
+
+To both allow more layout-parsed structures (like @let@ groups) and avoid the huge amounts of excessive indenting that Haskell often requires, here are some rule relaxation proposals.
+
+h3. Full relaxation
+
+Allow deeper contexts to be less indented (violating Note 1 of the Haskell rules).  So, for example, this program is legal:
+
+<pre><code>
+f =   case x of
+    y -> case z of
+  w -> ...
+</pre></code>
+
+Or, with lets:
+
+<pre><code>
+f x = let y = case x of
+  0 -> 0
+  z -> let
+  w = z in w
+</code></pre>
+
+Effectively this does two things:
+# Disallow empty implicit contexts.  Otherwise, these would often be parsed as @{}@, which is (on very rare occasions) a sensible thing to want, but it seems reasonable to say you need to explicitly write @{}@ if you do.
+# Makes programs that were previously incomplete (e.g., a @case ... of@ somewhere deeply nested for which the cases had not yet been filled in) possibly valid, and possibly in unintentional ways.  It also lets you, for example, make it impossible to get back to a certain context (even the top level) if a nested level has taken it over.
+
+This may make it too easy to accidentally do unwanted things, like take over the toplevel context, so...
+
+h3. Partial relaxation
+
+Require contexts only to be more deeply indented than "used" parent contexts.
+Here "used" refers to a context which has been used to insert a delimiter.
+That is, the first code block above would be allowed, since none of the contexts are ever "used", but the second one would not be, because the case context has been "used" by the @z ->@ line.
+
+Even more restrictively, a context could also be considered "used" if the first token in the context is on a different line than the token which led the context.
+In this case, neither code block would be allowed, since all contexts are used in both except for the first @let@ context.
+
+h2. Added intellegence
+
+Currently layout is "dumb": the only tokens it cares about are leads and @{;}@.
+Ideally, and especially for @case@, we could add some more intellegence to this.
+In many contexts (@let@, @case@, @of@ in a case), layout should not add any delimeters until each line is "opened".
+For a @let@, the line is opened by @=@, and in @case@ by @->@.
+This would allow, for example, multi-line patterns or case expressions, which is often desireable.
+
+Layout could also know how to properly close contexts, for example by adding an @in@ at the end of a @let@ context.
+This would make normal lets look much like in @do@ blocks.

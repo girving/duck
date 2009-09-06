@@ -1,0 +1,19 @@
+h1. Templates
+
+* Templates are the argument type annotation "opposite" of Delayed, meaning they must be given values at compile time.
+* Does a template type imply that the next arrow always happens at compile time?  It seems that it must.
+* How do templates relate to things like array sizes?  Is a fixed-size array one with a templated size field, or is Array parameterized over the type of the length, which could be a templated int?  Do you have to write two versions of indexing, one where the bounds check can be templatized?  (What is the right verb form of template?)
+
+h2. Syntax
+
+Current idea:
+<pre><code>
+printf :: Template String -> a
+printf ('%':s) = ?
+</code><code>
+ntuple :: Template Int -> a
+ntuple 0 = ()
+ntuple 1 = ?
+ntuple 2 = (,)
+...
+</pre></code>

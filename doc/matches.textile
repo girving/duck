@@ -1,0 +1,77 @@
+h1. Pattern Matching
+
+Notes on patterns, implicit and explicit @case@, possibly list comprehensions, ...
+
+h2. Patterns
+
+Syntax:
+<pre><code>
+VAR
+CONS PATs
+(VAR = PAT)
+</code></pre>
+
+h2. Case and functions
+
+Minimum syntax:
+<pre><code>
+case EXP of { PAT1 -> EXP1 ; ... }
+</code><code>
+VAR PAT1s = EXP1
+VAR PAT2s = EXP2
+...
+</code></pre>
+This evaluates @EXP@ or @ARGs@ to the function, matches with each arm's @PATn@ in sequence and executes the
+first @EXPn@ that for the arm that matches, if any.
+
+h3. Match failures
+
+What do we do?
+* throw exception
+* compile-time error
+
+h3. Extensions
+
+Things we could add to basic pattern matching.
+
+h4. Guards
+
+A simple expression following a pattern that must evaluate to True for the arm to match.
+
+Possible syntax:
+<pre><code>
+case EXP of { PAT1 | GUARD1 -> EXP1 ; ... }
+</code></pre>
+Options:
+* It could be allowed to have more than one guard, expression pair per pattern, though this is semantically identical to duplicating the PAT with a different guard.
+* Would the GUARD have to be a Bool, or would it call @bool :: a -> Bool@?
+
+h4. Continuing matches
+
+Haskell has "pattern guards."  They could be a bit more general, like this:
+<pre><code>
+case EXP of { PAT and EXP of { PAT1 -> EXP ; ... } ; ... }
+case lookup a of
+  Just x and lookup b of Just y -> Just (x,y)
+  _ -> Nothing
+</code></pre>
+Here @and@ is a delimiting keyword, though @case@ or @|@ might make more sense, or anything else.
+This would also mean guards are syntactic sugar for @and GUARD of True@.
+In the most general form, allowing multiple guards with the same delimiter, it would allow:
+<pre><code>
+case { COND1 -> EXP1 ; COND2 -> EXP2 ; ... }
+</code></pre>
+as a nice substitute for @else if@ chains, though I'm not sure how easily this could be parsed (with layout).
+
+h4. Fallthrough
+
+We could allow a special keyword/primitive/function (like @continue@) that would cause the most recently enclosing case statement or function definition to proceed as if the current case failed to match.  It wouldn't (necessarily) transfer control, but rather cause that other thing to happen as well.  This could be used to implement (semantically) any of the above extensions, though somewhat messily, with things like this:
+<pre><code>
+case EXP of { PAT1 -> case GUARD1 of { True -> EXP ; _ -> continue } ; ... }
+</code></pre>
+All in all this is a bit unclean.
+
+h2. Constructors and extractors
+
+* Extractors have some type @t -> Maybe (a,b,c,...)@?
+* Constructors are integers/Ints are constructors?
