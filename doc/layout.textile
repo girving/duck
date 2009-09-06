@@ -8,7 +8,53 @@ Currently the only context leading token in duck is @of@.
 Ideally, @let@ will be added, and possibly @where@ and @do@.
 The "case":matches.textile proposals would add @case@.
 
-h2. Relaxed Rules
+h2. Revised Rules: Multiline Blocks
+
+These rules invalidate a number of valid haskell layouts, but none that reasonable people use.
+As a teaser, here is some valid code under these rules (and @case@ enhancements):
+
+<pre><code>
+f x = case x of 
+  Just z ->
+    f [] = 0
+    f (i:l) =
+      n = i + f l
+      n
+        / (1 + length l)
+    r = f z
+    case r of 0 -> () ; _ -> print
+      (show r)
+    r
+  Nothing -> 0
+</code></pre>
+
+And this code is not valid (though it would be by the standard rules):
+
+<pre><code>
+f x = case x of Just y case y > 0 -> y
+                            otherwise = -y
+                Nothing -> 0
+</pre></code>
+
+Introduce two classes of context leader:
+* Mandatory: @of@ (perhaps @do@, @where@)
+* Optional: @=@, @->@, @then@, @else@, @in@ (perhaps @let@, @case@)
+
+Rules:
+# If a leader is followed by a @{@, (do nothing and) open an explicit context as usual.
+# If a leader is followed by a newline (i.e., if the next token is on a different line), a multi-line implicit context is opened and delimiters inserted under standard rules.
+# If a mandatory leader is followed by a token on the same line, a single-line implicit context is opened.  This context will never insert a delimiter, but will close itself with the next injection (delimit or close) of the surrounding context (i.e., will considered to have the column of the surrounding context + 1?).
+# If an optional leader is followed by a token on the same line, do nothing.
+
+There are some slight complications here:
+* All optional leaders have to allow optional @{;}@ groups in the parser (but this is true for expressions already).
+* The exact rules for closing nested single-line contexts should be thought through carefully.
+* The only reason for optional leaders is to avoid error-handling misparses: they could all be mandatory if we got rules about closing with @in@, @else@, etc. right.
+
+Ideally these rules should eliminate the need for let blocks and @do@ entirely.
+If expression-leaders became mandatory, then single-definition lets could be replaced with @p = e1 ; e2@ as well.
+
+h2. Relaxed Rules (old)
 
 To both allow more layout-parsed structures (like @let@ groups) and avoid the huge amounts of excessive indenting that Haskell often requires, here are some rule relaxation proposals.
 
