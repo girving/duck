@@ -1,0 +1,3 @@
+-- | Duck variables
+
+data Var of V (List Char)

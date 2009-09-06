@@ -50,7 +50,7 @@ prog :: Exec Globals
 prog = getProg >>= foldM definition Map.empty . progDefinitions
 
 definition :: Globals -> Definition -> Exec Globals
-definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl) [] [] (loc d) $ do
+definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl) [] [] (loc d) $ do
   d <- expr env Map.empty Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]

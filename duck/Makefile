@@ -10,9 +10,11 @@ TESTS = basic layout curry delay match io tyfun success types base-test expseq
 TESTS_C = apply base ops null
 TESTS_FAIL := $(patsubst test/fail/%.duck, fail/%, $(wildcard test/fail/*.duck))
 
-all: duck
+default: duck
 
 info: Parse.info
+
+### Compile
 
 .PHONY: duck
 duck: Duck.hs $(OTHERS)
@@ -29,6 +31,19 @@ duck: Duck.hs $(OTHERS)
 	@rm -f $@
 	umask a-w ; $(ALEX) $(ALEXFLAGS) $< -o $@
 
+### Generate Haskell files from Duck
+
+GEN = $(patsubst %,Gen/%.hs, Var Type)
+gen: $(GEN)
+Gen/Var.hs: var.duck
+Gen/Type.hs: type.duck
+$(GEN): duck
+
+Gen/%.hs:
+	./duck --haskell $< > $@
+
+### Test
+
 ALL_TESTS = $(TESTS) $(TESTS_C) $(TESTS_FAIL)
 .PHONY: test $(ALL_TESTS)
 test: $(ALL_TESTS)
@@ -41,6 +56,8 @@ $(TESTS_C): duck
 $(TESTS_FAIL): duck
 	@echo "! ./duck -Itest test/$@.duck"
 	@./duck -Itest test/$@.duck; s=$$?; if [ $$s -eq 1 ]; then :; else echo $@ failed: exit status $$s != 1; false; fi
+
+### Misc
 
 tags: $(filter-out $(OTHERS),$(wildcard *.hs)) Parse.y Lex.x
 	hasktags -c $^

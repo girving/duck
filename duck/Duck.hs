@@ -30,12 +30,14 @@ import qualified Base
 import qualified Infer
 import ExecMonad
 import InferMonad
+import ToHaskell
 
 -- Options
 
 data Flags = Flags
   { phases :: Set Stage
   , compileOnly :: Bool
+  , toHaskell :: Bool
   , path :: [FilePath]
   }
 type Option = OptDescr (Flags -> IO Flags)
@@ -49,6 +51,7 @@ options :: [Option]
 options =
   [ enumOption ['d'] ["dump"] "PHASE" (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
   , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main"
+  , Option [] ["haskell"] (NoArg $ \f -> return $ f { toHaskell = True }) "generate equivalent Haskell code from AST"
   , Option ['I'] ["include"] (ReqArg (\p f -> return $ f { path = p : path f }) "DIRECTORY") "add DIRECTORY to module search path"
   , Option ['h'] ["help"] (NoArg $ \_ -> putStr usage >> exitSuccess) "show this help" ]
 usage = usageInfo "duck [options] [files...]" options
@@ -56,6 +59,7 @@ usage = usageInfo "duck [options] [files...]" options
 defaults = Flags
   { phases = Set.empty
   , compileOnly = False
+  , toHaskell = False
   , path = [""]
   }
 
@@ -104,6 +108,8 @@ main = do
       phase' p pf = phase p pf . evaluate
 
   (names,ast) <- phase StageParse (concat . snd) (unzip =.< loadModule Set.empty (path flags) f)
+  when (toHaskell flags) $ (pout $ uncurry ToHaskell.prog $ head $ reverse $ zip names ast :: IO ()) >> exitSuccess
+
   ir <- phase' StageIr concat (snd $ mapAccumL Ir.prog Map.empty ast)
   lir <- phase' StageLir vcat (zipWith Lir.prog names ir)
   lir <- phase' StageLink id (foldl' Lir.union Base.base lir)

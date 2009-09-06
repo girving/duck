@@ -10,12 +10,12 @@ module Pretty
   , (#>), guard
 
   -- * Composition
-  , (<>), (<+>), (<&>), (<&+>), ($$)
-  , hcat, hsep, hcons, vcat, sep
+  , (<>), (<+>), (<&>), (<&+>), ($$), ($+$)
+  , hcat, hsep, hcons, vcat, sep, vsep
   , punct, joinPunct, (<:>)
   , punctuate
   , nested, nestedPunct
-  , parens, brackets, quoted
+  , parens, brackets, quoted, dquoted
   , prettyap
   , sPlural
 
@@ -100,6 +100,15 @@ infixl 5 $$
 ($$) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
 ($$) a b i = pretty' a i PP.$$ pretty' b i
 
+($+$) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
+($+$) a b i
+  | isEmpty pa = pb
+  | isEmpty pb = pa
+  | otherwise = pa PP.$+$ pretty " " PP.$+$ pb
+  where
+    pa = pretty' a i
+    pb = pretty' b i
+
 hcat :: Pretty t => [t] -> PrecDoc
 hcat l i = PP.hcat $ map (guard i) l
 
@@ -110,10 +119,15 @@ hcons :: (Pretty a, Pretty t) => a -> [t] -> PrecDoc
 hcons h l i = PP.hsep $ guard i h : map (guard i) l
 
 prettyap :: (Pretty a, Pretty t) => a -> [t] -> PrecDoc
+prettyap h [] = pretty' h
 prettyap h l = appPrec #> hcons h l
 
 vcat :: Pretty t => [t] -> PrecDoc
 vcat l i = PP.vcat $ map (guard i) l
+
+-- | List version of $+$
+vsep :: Pretty t => [t] -> PrecDoc
+vsep = foldl ($+$) (const empty) . map pretty'
 
 sep :: Pretty t => [t] -> PrecDoc
 sep l i = PP.sep $ map (guard i) l
@@ -166,6 +180,9 @@ grouped f x = f $ pretty x
 
 quoted :: Pretty t => t -> Doc
 quoted = grouped PP.quotes
+
+dquoted :: Pretty t => t -> Doc
+dquoted = grouped PP.doubleQuotes
 
 parens :: Pretty t => t -> Doc
 parens = grouped PP.parens

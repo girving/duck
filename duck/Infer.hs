@@ -123,7 +123,7 @@ prog :: Infer TypeEnv
 prog = getProg >>= foldM (\g -> withGlobals g . definition) Map.empty . progDefinitions
 
 definition :: Definition -> Infer [(Var,TypeVal)]
-definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (unV . unLoc) vl) [] l $ do
+definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl) [] l $ do
   t <- expr Map.empty l e
   tl <- case (vl,t) of
           ([_],_) -> return [t]

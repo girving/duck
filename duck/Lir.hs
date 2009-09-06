@@ -347,7 +347,7 @@ free s _ (ExpLoc l e) = free s l e
 
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
-  { progName = ""
+  { progName = progName p2 -- use the second module's name
   , progDatatypes = Map.unionWithKey conflictLoc (progDatatypes p2) (progDatatypes p1)
   , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
   , progGlobals = Set.union (progGlobals p1) (progGlobals p2)
