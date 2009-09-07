@@ -1,4 +1,5 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, StandaloneDeriving #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck primitive operation declarations
 
 module Prims 
@@ -20,27 +21,16 @@ module Prims
 import Type
 import Var
 
-data Binop
-  = IntAddOp
-  | IntSubOp
-  | IntMulOp
-  | IntDivOp
-  | IntEqOp
-  | IntLTOp
-  | IntGTOp
-  | IntLEOp
-  | IntGEOp
-  deriving (Eq, Ord, Show)
+-- Pull in definitions of Binop and Prim
+import Gen.Prims
 
-data Prim
-  = Binop Binop
-  | CharIntOrd
-  | IntCharChr
-  -- * IO primitives
-  | Exit
-  | IOPutChar
-  | TestAll
-  deriving (Eq, Ord, Show)
+-- Add instance declarations
+deriving instance Eq Binop
+deriving instance Ord Binop
+deriving instance Show Binop
+deriving instance Eq Prim
+deriving instance Ord Prim
+deriving instance Show Prim
 
 typeC :: IsType t => String -> t
 typeC c = typeCons (V c) []

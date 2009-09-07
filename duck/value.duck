@@ -1,0 +1,26 @@
+-- | Duck interpreter values
+
+import var
+import type
+import lir
+import prims
+
+-- For now, values are a dynamic algebraic datatype.  Soon, however, the Value
+-- type will vanish in a poof of self-referential smoke.
+
+-- In order to simplify the low level representation, the type and variable
+-- environments in ValDelay and ValBindIO are stored lists of (Var,TypeVal,Value)
+-- trips.  The set of variables is exactly the free variables of the expression
+-- as computed by Lir.freeOf.
+
+data Value of
+  ValInt Int
+  ValChar Char
+  ValCons CVar (List Value) -- ^ Constructed data
+  ValClosure Var (List TypeVal) (List Value) -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
+  ValDelay Exp (List (Var, TypeVal, Value)) -- ^ Delay (lazy) evaluation.
+  ValType
+  -- Monadic IO
+  ValLiftIO Value -- ^ lifted (returned) value within IO monad
+  ValPrimIO Prim (List Value) -- ^ Closure of unexecuted IO call
+  ValBindIO Var TypeVal Value Exp (List (Var, TypeVal, Value)) -- ^ Unexecuted IO binding

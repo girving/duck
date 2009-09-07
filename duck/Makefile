@@ -33,15 +33,15 @@ duck: Duck.hs $(OTHERS)
 
 ### Generate Haskell files from Duck
 
-GEN = $(patsubst %,Gen/%.hs, Var Type)
+GEN = ./duck --haskell
 .PHONY: gen
-gen: $(GEN)
-Gen/Var.hs: var.duck
-Gen/Type.hs: type.duck
-$(GEN): duck
-
-Gen/%.hs:
-	./duck --haskell $< > $@
+gen:
+	$(GEN) var.duck > Gen/Var.hs
+	$(GEN) type.duck > Gen/Type.hs
+	$(GEN) srcLoc.duck > Gen/SrcLoc.hs
+	$(GEN) prims.duck > Gen/Prims.hs
+	$(GEN) lir.duck > Gen/Lir.hs
+	$(GEN) value.duck > Gen/Value.hs
 
 ### Test
 

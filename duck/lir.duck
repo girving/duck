@@ -1,0 +1,22 @@
+-- | Duck Lifted Intermediate Representation
+
+import var
+import type
+import srcLoc
+import prims
+
+-- |Expression.  Identical to 'Ir.Exp' except without 'Lambda'.
+data Exp of
+  ExpLoc SrcLoc Exp
+  ExpInt Int
+  ExpChar Char
+  ExpVar Var
+  ExpApply Exp Exp
+  ExpLet Var Exp Exp
+  ExpCons CVar (List Exp)
+  ExpCase Var (List (Var, List Var, Exp)) (Maybe Exp)
+  ExpPrim Prim (List Exp)
+  ExpSpec Exp TypePat
+  -- Monadic IO
+  ExpBind Var Exp Exp
+  ExpReturn Exp

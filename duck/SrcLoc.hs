@@ -1,3 +1,4 @@
+{-# OPTIONS -fno-warn-orphans #-}
 -- | Source file location annotations for reporting
 
 module SrcLoc
@@ -18,18 +19,24 @@ import Data.Monoid
 import Data.Maybe
 import Pretty
 
-data SrcLoc 
-  = SrcNone
-    { srcFile :: String }
-  | SrcLoc 
-    { srcFile :: String
-    , srcLine, srcCol :: !Int
-    }
-  | SrcRng
-    { srcFile :: String
-    , srcLine, srcCol :: !Int
-    , _srcEndLine, _srcEndCol :: !Int
-    }
+-- Pull in definition of SrcLoc
+import Gen.SrcLoc
+
+-- Add missing record names (TODO: declare these in srcLoc.duck)
+srcFile :: SrcLoc -> String
+srcFile (SrcNone f) = f
+srcFile (SrcLoc f _ _) = f
+srcFile (SrcRng f _ _ _ _) = f
+
+srcLine :: SrcLoc -> Int
+srcLine (SrcNone _) = error "SrcNone has no line number"
+srcLine (SrcLoc _ i _) = i
+srcLine (SrcRng _ i _ _ _) = i
+
+srcCol :: SrcLoc -> Int
+srcCol (SrcNone _) = error "SrcNone has no column number"
+srcCol (SrcLoc _ _ i) = i
+srcCol (SrcRng _ _ i _ _) = i
 
 data Loc a = Loc { srcLoc :: SrcLoc, unLoc :: !a }
 
@@ -86,9 +93,9 @@ startLoc :: String -> SrcLoc
 startLoc file = SrcLoc file 1 1
 
 incrLoc :: SrcLoc -> Char -> SrcLoc
-incrLoc l@(SrcNone _) _ = l
-incrLoc l '\n' = l{ srcLine = succ $ srcLine l, srcCol = 1 }
-incrLoc l _    = l{ srcCol = succ $ srcCol l }
+incrLoc (SrcLoc f l _) '\n' = SrcLoc f (l+1) 1
+incrLoc (SrcLoc f l c) _    = SrcLoc f l (c+1)
+incrLoc _ _ = error "incrLoc works only on SrcLoc, not SrcNone or SrcRng"
 
 unzipLoc :: [Loc a] -> ([SrcLoc], [a])
 unzipLoc [] = ([],[])
@@ -116,11 +123,16 @@ joinLocs l s2 r2 c2
   | otherwise = SrcRng s (srcLine l) (srcCol l) r2 c2
   where s = joinFile (srcFile l) s2
 
+setFile :: SrcLoc -> String -> SrcLoc
+setFile (SrcNone _) f = SrcNone f
+setFile (SrcLoc _ r c) f = SrcLoc f r c
+setFile (SrcRng _ r c r2 c2) f = SrcRng f r c r2 c2
+
 instance Monoid SrcLoc where
   mempty = SrcNone ""
 
-  mappend (SrcNone s) l = l{ srcFile = joinFile s (srcFile l) }
-  mappend l (SrcNone s) = l{ srcFile = joinFile (srcFile l) s }
+  mappend (SrcNone s) l = setFile l (joinFile s (srcFile l))
+  mappend l (SrcNone s) = setFile l (joinFile (srcFile l) s)
   mappend l (SrcLoc s2 r2 c2) = joinLocs l s2 r2 c2
   mappend l (SrcRng s2 _ _ r2 c2) = joinLocs l s2 r2 c2
 

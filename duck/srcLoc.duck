@@ -1,0 +1,6 @@
+-- | Source file location annotations for reporting
+
+data SrcLoc of
+  SrcNone (List Char) 
+  SrcLoc (List Char) Int Int
+  SrcRng (List Char) Int Int Int Int

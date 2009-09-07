@@ -1,4 +1,5 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances, StandaloneDeriving #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck Lifted Intermediate Representation
 --
 -- Processes "Ir" into its final representation for processing.
@@ -11,6 +12,7 @@ module Lir
   , Datatype(..), Overload(..), Definition(..)
   , Overloads
   , Exp(..)
+  , freeOf
   , overTypes
   , empty
   , prog
@@ -38,6 +40,10 @@ import Stage
 import Type
 import qualified Ir
 import Prims
+
+-- Pull in definition of Exp and add a Show instance
+import Gen.Lir
+deriving instance Show Exp
 
 -- Lifted IR data structures
 
@@ -84,23 +90,6 @@ data Definition = Def
   }
 instance HasLoc Definition where loc = loc . defVars
 
--- |Expression.  Identical to 'Ir.Exp' except without 'Lambda'.
-data Exp
-  = ExpLoc SrcLoc !Exp
-  | Int !Int
-  | Char !Char
-  | Var !Var
-  | Apply Exp Exp
-  | Let !Var Exp Exp
-  | Cons !CVar [Exp]
-  | Case Var [(CVar, [Var], Exp)] (Maybe Exp)
-  | Prim !Prim [Exp]
-  | Spec Exp !TypePat
-    -- Monadic IO
-  | Bind !Var Exp Exp
-  | Return Exp
-  deriving Show
-
 class Monad m => ProgMonad m where
   getProg :: m Prog
 
@@ -136,8 +125,8 @@ prog name decls = flip execState (empty name) $ do
     f (c,tyl) = do
       modify $ \p -> p { progConses = Map.insert (unLoc c) tc (progConses p) }
       case tyl of
-        [] -> definition [c] (Cons (unLoc c) [])
-        _ -> function c vl (Cons (unLoc c) (map Var vl)) where
+        [] -> definition [c] (ExpCons (unLoc c) [])
+        _ -> function c vl (ExpCons (unLoc c) (map ExpVar vl)) where
           vl = take (length tyl) standardVars
 
   -- Compute datatype argument variances via fixpoint iteration.  We start out
@@ -180,7 +169,7 @@ check prog = runSequence $ do
     let add s (Loc _ (V "_")) = return s
         add s (Loc l v) = do
           maybe nop (dupError v l) $ Map.lookup v s
-          return $ Map.insert v l s 
+          return $ Map.insert v l s
     s <- foldM add s vl
     expr (Set.union (Map.keysSet s) types) body
     return s
@@ -268,34 +257,34 @@ noLocExpr = (noLoc,Nothing)
 
 -- |Lambda lift an expression
 expr :: InScopeSet -> (SrcLoc, Maybe Var) -> Ir.Exp -> State Prog Exp
-expr _ _ (Ir.Int i) = return $ Int i
-expr _ _ (Ir.Char c) = return $ Char c
-expr _ _ (Ir.Var v) = return $ Var v
+expr _ _ (Ir.Int i) = return $ ExpInt i
+expr _ _ (Ir.Char c) = return $ ExpChar c
+expr _ _ (Ir.Var v) = return $ ExpVar v
 expr locals l (Ir.Apply e1 e2) = do
   e1 <- expr locals l e1
   e2 <- expr locals l e2
-  return $ Apply e1 e2
+  return $ ExpApply e1 e2
 expr locals l@(loc,_) (Ir.Let v e rest) = do
   e <- expr locals (loc,Just v) e
   rest <- expr (addVar v locals) l rest
-  return $ Let v e rest
+  return $ ExpLet v e rest
 expr locals l e@(Ir.Lambda _ _) = lambda locals l e
 expr locals l (Ir.Cons c el) = do
   el <- mapM (expr locals l) el
-  return $ Cons c el
+  return $ ExpCons c el
 expr locals l (Ir.Case v pl def) = do
   pl <- mapM (\ (c,vl,e) -> expr (foldl (flip addVar) locals vl) l e >.= \e -> (c,vl,e)) pl
   def <- mapM (expr locals l) def
-  return $ Case v pl def
+  return $ ExpCase v pl def
 expr locals l (Ir.Prim prim el) = do
   el <- mapM (expr locals l) el
-  return $ Prim prim el
+  return $ ExpPrim prim el
 expr locals l (Ir.Bind v e rest) = do
   e <- expr locals l e
   rest <- expr (addVar v locals) l rest
-  return $ Bind v e rest
-expr locals l (Ir.Return e) = Return =.< expr locals l e
-expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> Spec e t
+  return $ ExpBind v e rest
+expr locals l (Ir.Return e) = ExpReturn =.< expr locals l e
+expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> ExpSpec e t
 expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l =.< expr locals (l,v) e
 
 -- |Lift a single lambda expression
@@ -308,7 +297,7 @@ lambda locals l@(loc,v) e = do
   e <- expr localsPlus l e'
   let vs = freeOf localsMinus e
   function (Loc loc f) (vs ++ vl) e
-  return $ foldl Apply (Var f) (map Var vs)
+  return $ foldl ExpApply (ExpVar f) (map ExpVar vs)
 
 -- |Generate a fresh variable
 freshenM :: Var -> State Prog Var
@@ -324,23 +313,23 @@ freeOf locals e = Set.toList (Set.intersection locals (f e)) where
   f = Set.fromList . map fst . free Set.empty noLoc
 
 free :: InScopeSet -> SrcLoc -> Exp -> [(Var,SrcLoc)]
-free _ _ (Var (V "_")) = []
-free s l (Var v) 
+free _ _ (ExpVar (V "_")) = []
+free s l (ExpVar v)
   | Set.notMember v s = [(v,l)]
   | otherwise = []
-free _ _ (Int _) = []
-free _ _ (Char _) = []
-free s l (Apply e1 e2) = free s l e1 ++ free s l e2
-free s l (Let v e c) = free s l e ++ free (addVar v s) l c
-free s l (Cons _ el) = concatMap (free s l) el
-free s l (Case v al d) = 
-  free s l (Var v) 
+free _ _ (ExpInt _) = []
+free _ _ (ExpChar _) = []
+free s l (ExpApply e1 e2) = free s l e1 ++ free s l e2
+free s l (ExpLet v e c) = free s l e ++ free (addVar v s) l c
+free s l (ExpCons _ el) = concatMap (free s l) el
+free s l (ExpCase v al d) =
+  free s l (ExpVar v)
   ++ concatMap (\(_,vl,e) -> free (foldr addVar s vl) l e) al
   ++ maybe [] (free s l) d
-free s l (Prim _ el) = concatMap (free s l) el
-free s l (Bind v e c) = free s l e ++ free (addVar v s) l c
-free s l (Return e) = free s l e
-free s l (Spec e _) = free s l e
+free s l (ExpPrim _ el) = concatMap (free s l) el
+free s l (ExpBind v e c) = free s l e ++ free (addVar v s) l c
+free s l (ExpReturn e) = free s l e
+free s l (ExpSpec e _) = free s l e
 free s _ (ExpLoc l e) = free s l e
 
 -- |Merge two programs into one
@@ -388,15 +377,15 @@ instance Pretty Exp where
   pretty' = pretty' . revert
 
 revert :: Exp -> Ir.Exp
-revert (Int i) = Ir.Int i
-revert (Char c) = Ir.Char c
-revert (Var v) = Ir.Var v
-revert (Apply e1 e2) = Ir.Apply (revert e1) (revert e2)
-revert (Let v e rest) = Ir.Let v (revert e) (revert rest)
-revert (Cons c el) = Ir.Cons c (map revert el)
-revert (Case v pl def) = Ir.Case v [(c,vl,revert e) | (c,vl,e) <- pl] (fmap revert def)
-revert (Prim prim el) = Ir.Prim prim (map revert el)
-revert (Bind v e rest) = Ir.Bind v (revert e) (revert rest)
-revert (Return e) = Ir.Return (revert e)
-revert (Spec e t) = Ir.Spec (revert e) t
+revert (ExpInt i) = Ir.Int i
+revert (ExpChar c) = Ir.Char c
+revert (ExpVar v) = Ir.Var v
+revert (ExpApply e1 e2) = Ir.Apply (revert e1) (revert e2)
+revert (ExpLet v e rest) = Ir.Let v (revert e) (revert rest)
+revert (ExpCons c el) = Ir.Cons c (map revert el)
+revert (ExpCase v pl def) = Ir.Case v [(c,vl,revert e) | (c,vl,e) <- pl] (fmap revert def)
+revert (ExpPrim prim el) = Ir.Prim prim (map revert el)
+revert (ExpBind v e rest) = Ir.Bind v (revert e) (revert rest)
+revert (ExpReturn e) = Ir.Return (revert e)
+revert (ExpSpec e t) = Ir.Spec (revert e) t
 revert (ExpLoc l e) = Ir.ExpLoc l (revert e)

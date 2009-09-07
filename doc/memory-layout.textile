@@ -46,6 +46,7 @@ There are several optimizations that we are not currently performing but may add
 # Smaller boxed tags: In some cases, smaller tags can be used for boxed constructors, but this is harder due to alignment.
 # Tag/pointer compression: Due to alignment restrictions on pointers, it is possible to compress a small number of tags into the low bits of the pointer.
 # Maybe optimization: If there is a single boxed constructor with a single argument, and that argument is always a pointer, the constructor could be unboxed even if there are other nullary constructors.  This optimization avoids the extra level of boxing for @Maybe (Int,Int)@ and similar types.
+# Tuple unboxing: We could decide that all tuples are unboxed by default.
 
 Additional notes:
 # The zero size argument removal rules mean that many types that seem isomorphic actually are.  For example, @Maybe Int@ and @Either () Int@ have identical memory representations.
@@ -56,6 +57,18 @@ h2. Strings
 
 Currently strings are stored as List Char.  This will change.
 
-h2. Overlods
+h2. Code
 
-TODO
+Types, expressions and other code representation data structures are represented by Duck algebraic datatypes declared in Duck source files such as type.duck.  For details, look in those files.  Here is a list of the relevant modules:
+
+# var: variables
+# srcLoc: source locations
+# type: type representations (concrete and pattern)
+# prims: primitive operations
+# lir: lifted IR expressions
+
+h2. Any: dynamically typed values
+
+In order to mix notions of "compile time" and "runtime", code representation constructs such as Exp must be able to directly include pointers to runtime values.  Since Exp has a fixed static type and values can have any type, we intorduce a modicum of dynamic typing via the @Any@ type.
+
+The memory layout of @Any@ is equivalent to @(TypeVal, t)@, with the invariant that the first element exactly describes the type of the second element.  As a consequence, @Any@ has variable size.

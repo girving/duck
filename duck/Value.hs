@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances #-}
+{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck interpreter values
 
 -- For now, this is dynamically typed
@@ -19,20 +20,10 @@ import Var
 import Type
 import Prims
 import Pretty
-import qualified Lir
 import ParseOps
 
-data Value
-  = ValInt !Int
-  | ValChar !Char
-  | ValCons !CVar ![Value] -- ^ Constructed data
-  | ValClosure !Var ![TypeVal] ![Value] -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
-  | ValDelay !TypeEnv !Env !Lir.Exp -- ^ Delay (lazy) evaluation
-  | ValType
-    -- Monadic IO
-  | ValLiftIO !Value -- ^ lifted (returned) value within IO monad
-  | ValPrimIO !Prim ![Value] -- ^ Closure of unexecuted IO call
-  | ValBindIO !Var !TypeVal !Value !TypeEnv !Env !Lir.Exp -- ^ Unexecuted IO binding
+-- Pull in definition of Value
+import Gen.Value
 
 type Env = Map Var Value
 
@@ -53,10 +44,10 @@ instance Pretty Value where
   pretty' (ValCons c fields) = prettyop c fields
   pretty' ValType = pretty' '_'
   pretty' (ValClosure v types args) = prettyop v (zip args types)
-  pretty' (ValDelay _ _ e) = prettyop "delay" [e]
+  pretty' (ValDelay e _) = prettyop "delay" [e]
   pretty' (ValLiftIO v) = prettyop "return" [v]
   pretty' (ValPrimIO p args) = prettyop (V (primString p)) args
-  pretty' (ValBindIO v t d _ _ e) = 0 #>
+  pretty' (ValBindIO v t d e _) = 0 #>
     v <+> "<-" <+> (d,t) $$ pretty e
 
 instance Pretty (Value,TypeVal) where

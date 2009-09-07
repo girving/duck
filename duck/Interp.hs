@@ -45,6 +45,17 @@ lookup global env loc v
     | Just _ <- Map.lookup v (progDatatypes prog) = return ValType
     | otherwise = execError loc ("unbound variable" <+> quoted v)
 
+-- | Pack up the free variables of an expression into a packed environment
+packEnv :: LocalTypes -> Locals -> Exp -> [(Var, TypeVal, Value)]
+packEnv tenv env e = map grab vl where
+  vl = freeOf (Map.keysSet tenv) e
+  grab v = (v, fromJust (Map.lookup v tenv), fromJust (Map.lookup v env))
+
+unpackEnv :: [(Var, TypeVal, Value)] -> (LocalTypes, Locals)
+unpackEnv penv = (tenv,env) where
+  tenv = foldl (\e (v,t,_) -> Map.insert v t e) Map.empty penv
+  env = foldl (\e (v,_,d) -> Map.insert v d e) Map.empty penv
+
 -- |Process a list of definitions into the global environment.
 prog :: Exec Globals
 prog = getProg >>= foldM definition Map.empty . progDefinitions
@@ -73,20 +84,20 @@ inferExpr env loc e = runInfer loc ("evaluate" <+> quoted e) $ Infer.expr env lo
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
-  exp (Int i) = return (ValInt i)
-  exp (Char i) = return (ValChar i)
-  exp (Var v) = lookup global env loc v
-  exp (Apply e1 e2) = do
+  exp (ExpInt i) = return (ValInt i)
+  exp (ExpChar i) = return (ValChar i)
+  exp (ExpVar v) = lookup global env loc v
+  exp (ExpApply e1 e2) = do
     t1 <- inferExpr tenv loc e1
     v1 <- exp e1
     applyExpr global tenv env loc t1 v1 e2
-  exp (Let v e body) = do
+  exp (ExpLet v e body) = do
     t <- inferExpr tenv loc e
     d <- exp e
     expr global (Map.insert v t tenv) (Map.insert v d env) loc body
-  exp (Case _ [] Nothing) = execError loc ("pattern match failed: no cases")
-  exp (Case _ [] (Just body)) = exp body
-  exp ce@(Case v pl def) = do
+  exp (ExpCase _ [] Nothing) = execError loc ("pattern match failed: no cases")
+  exp (ExpCase _ [] (Just body)) = exp body
+  exp ce@(ExpCase v pl def) = do
     ct <- inferExpr tenv loc ce
     t <- liftInfer $ Infer.lookup tenv loc v
     conses <- liftInfer $ Infer.lookupDatatype loc t
@@ -105,14 +116,14 @@ expr global tenv env loc = exp where
             Just tl = Infer.lookupCons conses c
         cast ct $ expr global (insertList tenv vl tl) (foldl (\s v -> Map.insert v ValType s) env vl) loc e'
       _ -> execError loc ("expected block, got" <+> quoted v)
-  exp (Cons c el) = ValCons c =.< mapM exp el
-  exp (Prim op el) = Base.prim loc op =<< mapM exp el
-  exp (Bind v e1 e2) = do
+  exp (ExpCons c el) = ValCons c =.< mapM exp el
+  exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
+  exp (ExpBind v e1 e2) = do
     t <- inferExpr tenv loc e1
     d <- exp e1
-    return $ ValBindIO v t d tenv env e2
-  exp (Return e) = ValLiftIO =.< exp e
-  exp se@(Spec e _) = do
+    return $ ValBindIO v t d e2 (packEnv (Map.delete v tenv) env e2)
+  exp (ExpReturn e) = ValLiftIO =.< exp e
+  exp se@(ExpSpec e _) = do
     t <- inferExpr tenv loc se
     cast t $ exp e
   exp (ExpLoc l e) = expr global tenv env l e
@@ -120,7 +131,7 @@ expr global tenv env loc = exp where
 -- |Evaluate an argument acording to the given transform
 transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Maybe Trans -> Exec Value
 transExpr global tenv env loc e Nothing = expr global tenv env loc e
-transExpr _ tenv env _ e (Just Delayed) = return $ ValDelay tenv env e
+transExpr _ tenv env _ e (Just Delayed) = return $ ValDelay e (packEnv tenv env e)
 
 applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> TypeVal -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =
@@ -154,8 +165,9 @@ apply global loc ft (ValClosure f types args) ae at = do
       -- full function call (parallels Infer.cache)
       let tl = map snd tl'
       cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
-apply global loc ft (ValDelay tenv env e) _ at = do
+apply global loc ft (ValDelay e penv) _ at = do
   rt <- runInfer loc ("force" <+> quoted ft) $ Infer.apply loc ft at
+  let (tenv,env) = unpackEnv penv
   cast rt $ expr global tenv env loc e
 apply _ _ _ ValType _ _ = return ValType
 apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1 <+> "::" <+> t1) <+> "to" <+> quoted (v2 <+> "::" <+> t2))
@@ -171,9 +183,10 @@ runIO :: Globals -> Value -> Exec Value
 runIO _ (ValLiftIO d) = return d
 runIO global (ValPrimIO TestAll []) = testAll global
 runIO _ (ValPrimIO p args) = Base.runPrimIO p args
-runIO global (ValBindIO v tm m tenv env e) = do
+runIO global (ValBindIO v tm m e penv) = do
   d <- runIO global m
   t <- liftInfer $ Infer.runIO tm
+  let (tenv,env) = unpackEnv penv
   d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
   runIO global d'
 runIO _ d = execError noLoc ("expected IO computation, got" <+> quoted d)

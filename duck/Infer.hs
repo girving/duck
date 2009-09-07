@@ -134,19 +134,19 @@ definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl)
 
 expr :: Locals -> SrcLoc -> Exp -> Infer TypeVal
 expr env loc = exp where
-  exp (Int _) = return typeInt
-  exp (Char _) = return typeChar
-  exp (Var v) = lookup env loc v
-  exp (Apply e1 e2) = do
+  exp (ExpInt _) = return typeInt
+  exp (ExpChar _) = return typeChar
+  exp (ExpVar v) = lookup env loc v
+  exp (ExpApply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
     apply loc t1 t2
-  exp (Let v e body) = do
+  exp (ExpLet v e body) = do
     t <- exp e
     expr (Map.insert v t env) loc body
-  exp (Case _ [] Nothing) = return TyVoid
-  exp (Case _ [] (Just body)) = exp body
-  exp (Case v pl def) = do
+  exp (ExpCase _ [] Nothing) = return TyVoid
+  exp (ExpCase _ [] (Just body)) = exp body
+  exp (ExpCase v pl def) = do
     t <- lookup env loc v
     case t of
       TyVoid -> return TyVoid
@@ -165,17 +165,17 @@ expr env loc = exp where
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
         joinList loc (caseResults ++ defaultResults)
-  exp (Cons c el) =
+  exp (ExpCons c el) =
     cons loc c =<< mapM exp el
-  exp (Prim op el) =
+  exp (ExpPrim op el) =
     Base.primType loc op =<< mapM exp el
-  exp (Bind v e1 e2) = do
+  exp (ExpBind v e1 e2) = do
     t1 <- runIO =<< exp e1
     t2 <- expr (Map.insert v t1 env) loc e2
     checkIO t2
-  exp (Return e) =
+  exp (ExpReturn e) =
     exp e >.= typeIO
-  exp (Spec e ts) =
+  exp (ExpSpec e ts) =
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr env l e
 

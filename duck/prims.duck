@@ -1,0 +1,21 @@
+-- | Duck primitive operation declarations
+
+data Binop of
+  IntAddOp
+  IntSubOp
+  IntMulOp
+  IntDivOp
+  IntEqOp
+  IntLTOp
+  IntGTOp
+  IntLEOp
+  IntGEOp
+
+data Prim of
+  Binop Binop
+  CharIntOrd
+  IntCharChr
+  -- * IO primitives
+  Exit
+  IOPutChar
+  TestAll
