@@ -34,6 +34,7 @@ duck: Duck.hs $(OTHERS)
 ### Generate Haskell files from Duck
 
 GEN = $(patsubst %,Gen/%.hs, Var Type)
+.PHONY: gen
 gen: $(GEN)
 Gen/Var.hs: var.duck
 Gen/Type.hs: type.duck
