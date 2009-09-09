@@ -67,7 +67,8 @@ import Util
 --- Toplevel stuff ---
 
 prog :: { Prog }
-  : '{' decls '}' { concat $ reverse $2 }
+  : {--} { [] }
+  | '{' decls '}' { concat $ reverse $2 }
 
 decls :: { [[Loc Decl]] }
   : {--} { [] }

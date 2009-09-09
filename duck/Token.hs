@@ -2,12 +2,14 @@
 
 module Token
   ( Token(..)
+  , Fixity(..)
   , showAt
   ) where
 
 import Pretty
 import Var
-import ParseOps
+
+data Fixity = LeftFix | NonFix | RightFix deriving (Eq, Show, Ord)
 
 data Token
   = TokVar { tokVar :: !Var }
@@ -21,11 +23,11 @@ data Token
   | TokRP
   | TokLB
   | TokRB
-    -- In the following, Just t means an implicit token inserted before t
+    -- In the following, Just t means an implicit token inserted before/after t
     -- by layout, and Nothing means a real token that appeared in the source.
-  | TokLC !(Maybe Token)
-  | TokRC !(Maybe Token)
-  | TokSemi !(Maybe Token)
+  | TokLC { tokImplicit :: !(Maybe Token) }
+  | TokRC { tokImplicit :: !(Maybe Token) }
+  | TokSemi { tokImplicit :: !(Maybe Token) }
   | TokDColon
   | TokComma
   | TokDef
@@ -46,8 +48,14 @@ data Token
   | TokInfix { tokFix :: !Fixity }
   | TokComment
   | TokCommentEnd
+  | TokSOF
   | TokEOF
   deriving Eq
+
+instance Pretty Fixity where
+  pretty LeftFix = pretty "infixl"
+  pretty RightFix = pretty "infixr"
+  pretty NonFix = pretty "infix"
 
 instance Pretty Token where
   pretty t = pretty $ case t of
@@ -78,7 +86,7 @@ instance Pretty Token where
     TokLC _ -> "{"
     TokRC _ -> "}"
     TokSemi _ -> ";"
-    TokDColon -> ":"
+    TokDColon -> "::"
     TokComma -> ","
     TokAny -> "_"
     TokLambda -> "\\"
@@ -87,10 +95,11 @@ instance Pretty Token where
     TokMinus -> "-"
     TokComment -> "{-"
     TokCommentEnd -> "-}"
+    TokSOF -> "<sof>"
     TokEOF -> "<eof>"
 
 showAt :: Token -> String
 showAt (TokLC (Just t)) = "before "++qout t
-showAt (TokRC (Just t)) = "before "++qout t
+showAt (TokRC (Just t)) = "after "++qout t
 showAt (TokSemi (Just t)) = "before "++qout t
 showAt t = "at "++qout t

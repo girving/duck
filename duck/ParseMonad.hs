@@ -16,7 +16,7 @@ module ParseMonad
   , ParseState(..)
   , runP
   , parseError , psError
-  , Context(..)
+  , ContextType(..), Context(..)
   ) where
 
 import Prelude hiding (catch)
@@ -25,22 +25,28 @@ import Control.Monad.State
 import Pretty
 import SrcLoc
 import Stage
+import Token
 
 -- |Layout contexts can be either be explicit when started by a literal '{' token
--- or implicit when the '{' is left out.  The full source location is included
--- for error reporting purposes.
-data Context =
-    Explicit SrcLoc
-  | Implicit SrcLoc Int
+-- or implicit when the '{' is left out.
+data ContextType
+  = Outside -- ^ Virtual type for having no context
+  | Explicit
+  | ImplicitBlock -- ^ Inserts delimiters
+  | ImplicitLine -- ^ Only closes
+  | Comment
+data Context = Context 
+  { contextType :: !ContextType
+  , contextLead :: Loc Token -- ^ token which opened this contex
+  , contextCol :: !Int
+  }
 
 data ParseState = ParseState 
   { ps_loc    :: !SrcLoc   -- ^ position at current input location
   , ps_rest   :: String    -- ^ the current input
   , ps_prev   :: !Char     -- ^ the character before the input
   , ps_layout :: [Context] -- ^ stack of layout contexts
-  , ps_start  :: !Bool     -- ^ True if we're at the start of a new layout context (after SOF or 'of')
-  , ps_last   :: SrcLoc    -- ^ the location of the last token processed by layout (in order to detect new lines)
-  , ps_comment :: [SrcLoc] -- ^ start of current multiline comments, so length is nesting level
+  , ps_last   :: Loc Token -- ^ the last token processed by layout (in order to detect new lines)
   }
 
 type P a = State ParseState a
@@ -54,11 +60,9 @@ psError s = parseError (ps_loc s)
 runP :: P a -> String -> String -> a
 runP parse file input = r where
   (r,_) = runState parse $ ParseState
-    { ps_loc = (startLoc file)
+    { ps_loc = loc
     , ps_rest = input
     , ps_prev = '\n'
     , ps_layout = []
-    , ps_start = True
-    , ps_last = noLoc
-    , ps_comment = []
-    }
+    , ps_last = Loc loc TokSOF
+    } where loc = startLoc file

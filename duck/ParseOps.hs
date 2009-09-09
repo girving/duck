@@ -23,9 +23,9 @@ import Var
 import Pretty
 import SrcLoc
 import ParseMonad
+import Token
 
 type Precedence = Int
-data Fixity = LeftFix | NonFix | RightFix deriving (Eq, Show, Ord)
 type PrecFix = (Precedence, Fixity)
 type PrecEnv = Map.Map Var PrecFix
 
@@ -113,11 +113,6 @@ instance Pretty a => Pretty (Ops a) where
   pretty' (OpAtom a) = pretty' a
   pretty' (OpUn o a) = prettyop o [a]
   pretty' (OpBin o l r) = prettyop o [l,r]
-
-instance Pretty Fixity where
-  pretty LeftFix = pretty "infixl"
-  pretty RightFix = pretty "infixr"
-  pretty NonFix = pretty "infix"
 
 instance Pretty PrecFix where
   pretty' (p,d) = d <+> p

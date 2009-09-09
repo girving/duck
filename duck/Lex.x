@@ -127,7 +127,7 @@ alexGetChar s = case ps_rest s of
 lexer :: P (Loc Token)
 lexer = do
   s <- get
-  let mode = if null (ps_comment s) then 0 else comment
+  let mode = case ps_layout s of { Context Comment _ _ : _ -> comment ; _ -> 0 }
   case alexScan s mode of
     AlexEOF -> return $ Loc (ps_loc s) TokEOF
     AlexError _ -> fail "lexical error"

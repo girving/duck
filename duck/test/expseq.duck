@@ -3,15 +3,14 @@ import base
 f :: Int -> Int -> Int
 f x y = { g y = y * y ; x + g y }
 
-fm x = {
-  f [] = 0 ;
-  f [_] = 1 ;
-  f _ = -1 ;
-  g _ = () ;
-  g 4 ;
-  y = x ;
+fm x = if False then 0 else
+  f [] = 0
+  f [_] = 1
+  f _ = -1
+  g _ = ()
+  g 4
+  y = x
   f y
-  }
 
 test_f = assert \ f 3 3 == 12
 test_fm = assert \ fm [()] == 1

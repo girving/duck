@@ -26,88 +26,85 @@ import Token
 import SrcLoc
 import ParseMonad
 
+data Leader
+  = Block
+  | Mandatory
+  | Optional
+
+leaderType :: Token -> Maybe Leader
+leaderType TokSOF = Just Block
+leaderType TokOf = Just Mandatory
+--leaderType TokEq = Just Optional
+leaderType TokThen = Just Optional
+leaderType TokElse = Just Optional
+--leaderType TokArrow = Just Optional
+--leaderType TokIn = Just Optional
+leaderType _ = Nothing
+
+push :: Context -> P ()
+push c = modify $ \s -> s { ps_layout = c : ps_layout s }
+
+pop :: P ()
+pop = modify $ \s -> s { ps_layout = tail (ps_layout s) }
+
+pltok :: Loc Token -> Doc'
+pltok (Loc l t) = quoted t <+> ("at" <&+> l)
+
 layout :: P (Loc Token) -> P (Loc Token)
 layout lex = do
+  state0 <- get
+  tok <- lex -- grab the next token
   state <- get
-  Loc loc token <- lex -- grab the next token
-  case (token, ps_comment state) of
-    (TokComment, c) -> do
-      modify $ \s -> s{ ps_comment = loc : c }
-      layout lex
-    (TokCommentEnd, _:c) -> do
-      modify $ \s -> s{ ps_comment = c }
-      layout lex
-    _ -> do
-      layout' state loc token
 
-  where
-  layout' :: ParseState -> SrcLoc -> Token -> P (Loc Token)
-  layout' s@(ParseState{ ps_comment = c:_ }) _ TokEOF = psError s $ "unterminated comment starting" <+> c
-  layout' s@(ParseState{ ps_comment = _:_ }) _ tok = psError s $ "unexpected token" <+> quoted tok <+> "in comment"
-  layout' state loc token = (if ps_start state then start else normal) token (ps_layout state) where
+  let
+    input :: [Context] -> P (Loc Token)
+    input [] = input [Context Outside (ps_last state) 0] -- fake outer context
+    input (cc:_) = normal cc (fmap leaderType (ps_last state)) tok
 
-    push :: Context -> P ()
-    push m = modify $ \s -> s
-      { ps_layout = m : ps_layout s
-      , ps_start = False }
-
-    -- Slight name abuse, since pop takes the new stack as an argument.
-    -- However, the name 'pop' makes for nice documentation
-    pop :: [Context] -> P ()
-    pop ms = modify $ \s -> s { ps_layout = ms }
-
-    -- Advance ps_last to the current line
-    advance :: P ()
-    advance = modify $ \s -> s { ps_last = loc }
-
-    -- Accept the next explicit token
     accept :: P (Loc Token)
-    accept = do
-      case token of
-        TokOf -> modify $ \s -> s { ps_start = True }
-        TokLC _ -> push (Explicit loc)
-        _ -> nop
-      advance >. Loc loc token
+    accept = modify (\s -> s{ ps_last = tok }) >. tok
 
-    -- Inject an extra token before the next explicit one and rewind
+    -- Inject an extra token over the given one and rewind
     -- the parse state so that the next real token is seen again.
-    inject :: (Maybe Token -> Token) -> P (Loc Token)
-    inject t = do
-      modify $ \s -> s
-        { ps_loc = ps_loc state
-        , ps_rest = ps_rest state
-        , ps_prev = ps_prev state }
-      return $ Loc loc (t $ Just token)
+    inject :: (Maybe Token -> Token) -> Loc Token -> P (Loc Token)
+    inject f t = modify (\s -> s
+      { ps_loc = ps_loc state0
+      , ps_rest = ps_rest state0
+      , ps_prev = ps_prev state0
+      , ps_last = tok
+      }) >. tok
+      where tok = fmap (f . Just) t
 
-    -- |start is called after the beginning of the file or after \'of\', and
-    -- inserts an implicit '{' if an explicit one is not given.
-    start :: Token -> [Context] -> P (Loc Token)
-    start (TokLC _) _ = accept -- found an explicit '{', so push an explicit context
-    start _ ms -- no '{', so we need to insert one
-      | srcCol loc > top ms = push (Implicit (beforeLoc loc) (srcCol loc)) >> advance >> inject TokLC -- we're to the left of the enclosing context, so insert '{' and push implicit context
-      | otherwise = push (Implicit (beforeLoc loc) maxBound) >> inject TokLC -- otherwise insert '{' with a location such that '}' will be inserted immediately after
+    open :: ContextType -> Int -> P (Loc Token)
+    open t c = push (Context t (ps_last state) c) >> inject TokLC tok
 
-    normal :: Token -> [Context] -> P (Loc Token)
-    normal (TokRC _) (Explicit _:ms) = pop ms >> accept -- found '}' in an explicit context, so pop
-    normal (TokRC _) (Implicit _ _:ms) = pop ms >> inject TokRC -- found '}' in implicit, so escape back to enclosing explicit
-    normal TokEOF (Implicit _ _:ms) = pop ms >> inject TokRC -- end of file reached inside implicit context, add a '}'
-    normal TokEOF (Explicit l:_) = layoutError ("unmatched '{' at "++show l)
-    normal _ (m:ms) | sameLine (ps_last state) loc = accept -- another token on the same line
-                      -- otherwise, we're at the first token on a new line
-                    | srcCol loc == col m = advance >> inject TokSemi -- indented equally, add a ';'
-                    | srcCol loc < col m = pop ms >> inject TokRC -- indented less, pop the enclosing context and repeat
-                    | otherwise = accept -- indented more or enclosing context is explicit, so do nothing
-    normal _ [] = accept -- nothing to do
+    break :: P (Loc Token)
+    break = inject TokSemi tok
 
-    -- |Column number corresponding to context.  Explicit contexts are considered to begin at column 0.
-    col :: Context -> Int
-    col (Explicit _) = 0
-    col (Implicit _ c) = c
+    close :: P (Loc Token)
+    close = pop >> inject TokRC (ps_last state)
 
-    -- |Column number of innermost context
-    top :: [Context] -> Int
-    top (m:_) = col m
-    top [] = -1
+    normal :: Context -> Loc (Maybe Leader) -> Loc Token -> P (Loc Token)
+    -- comments
+    normal _ _ (Loc _ TokComment) = push (Context Comment tok 0) >> layout lex
+    normal (Context Comment _ _) _ (Loc _ TokCommentEnd) = pop >> layout lex
+    normal (Context Comment (Loc l _) _) _ tok = psError state $ "unexpected" <+> pltok tok <+> "in comment beginning" <+> l
+    -- ends
+    normal (Context Explicit _ _) _ (Loc _ (TokRC _)) = pop >> accept -- explicit close
+    normal (Context Outside _ _)  _ (Loc _ (TokRC _)) = psError state $ "unmatched" <+> pltok tok
+    normal _                      _ (Loc _ (TokRC _)) = close -- force implicit close
+    normal (Context Explicit open _) _ (Loc _ TokEOF) = psError state $ "unmatched" <+> pltok open
+    normal (Context Outside _ _)     _ (Loc _ TokEOF) = accept
+    normal _                         _ (Loc _ TokEOF) = close -- force implicit close
+    -- beginnings and middles
+    normal _ _ (Loc _ (TokLC _)) = push (Context Explicit tok 0) >> accept -- explicit open
+    normal _ (Loc _ (Just Block)) (Loc l _) = open ImplicitBlock (srcCol l) -- forced implicit open
+    normal (Context _ _ c) (Loc l1 (Just Mandatory)) (Loc l2 _) | sameLine l1 l2 = open ImplicitLine c -- single-line open
+    normal _               (Loc l1 _)                (Loc l2 _) | sameLine l1 l2 = accept -- nothing new here
+    normal (Context ImplicitBlock _ c) _ (Loc l _) | srcCol l == c = break -- next line
+    normal (Context _ _ c)             _ (Loc l _) | srcCol l <= c = close -- shift left
+    normal _ (Loc _ (Just _)) (Loc l _) = open ImplicitBlock (srcCol l) -- multi-line open
+    -- everything else
+    normal _ _ _ = accept
 
-    layoutError :: String -> P a
-    layoutError s = psError state ("layout error: "++s)
+  input (ps_layout state)
