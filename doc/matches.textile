@@ -63,6 +63,22 @@ case { COND1 -> EXP1 ; COND2 -> EXP2 ; ... }
 </code></pre>
 as a nice substitute for @else if@ chains, though I'm not sure how easily this could be parsed (with layout).
 
+Proposed AST:
+
+<pre><code>
+data Exp = ...
+  | Case [Switch] -- case { SWITCH ; ... }
+type Switch = (Exp, Case) -- EXP CASE
+data Case
+  = CaseMatch [(Pattern,CaseTail)] -- of { PAT TAIL ; ... }
+  | CaseGuard CaseTail -- ... (implicitly: of { True -> TAIL })
+data CaseTail
+  = CaseGroup [Switch] -- case { SWITCH ; ... }
+  | CaseBody Exp -- -> EXP
+</code></pre>
+
+This is a strict (syntactic) superset of what we have now, and of what we have now plus guards (using @case@), and a semantic superset of what Haskell has.
+
 h4. Fallthrough
 
 We could allow a special keyword/primitive/function (like @continue@) that would cause the most recently enclosing case statement or function definition to proceed as if the current case failed to match.  It wouldn't (necessarily) transfer control, but rather cause that other thing to happen as well.  This could be used to implement (semantically) any of the above extensions, though somewhat messily, with things like this:
