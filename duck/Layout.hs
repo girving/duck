@@ -34,11 +34,11 @@ data Leader
 leaderType :: Token -> Maybe Leader
 leaderType TokSOF = Just Block
 leaderType TokOf = Just Mandatory
---leaderType TokEq = Just Optional
+leaderType TokEq = Just Optional
 leaderType TokThen = Just Optional
 leaderType TokElse = Just Optional
---leaderType TokArrow = Just Optional
---leaderType TokIn = Just Optional
+leaderType TokArrow = Just Optional
+leaderType TokIn = Just Optional
 leaderType _ = Nothing
 
 push :: Context -> P ()

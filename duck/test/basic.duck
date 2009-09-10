@@ -2,7 +2,7 @@ import base
 
 f :: Int -> Int -> Int
 f x y =
-  let g y = y * y in
+  g y = y * y
   x + g y
 
 h :: (Int -> Int) -> Int
@@ -44,7 +44,7 @@ test_join1 = assert \ join [[]] == []
 test_join2 = assert \ join [[1,2],[3,4]] == [1,2,3,4]
 
 test_monad = assert \ [11,101,22,202] == \
-  [1,2] >>= \a ->
+  [1,2] >>= \a -> \
   [10 * a, 100 * a] >>= \b ->
   b + a
 

@@ -105,7 +105,6 @@ exp_1 :: { Loc Exp }
 
 exp :: { Loc Exp }
   : arrows {% arrows $1 }
-  | '{' stmts '}' { loc $1 $> $ Seq (reverse $2) }
 
 stmts :: { [Loc Stmt] }
   : stmt { [$1] }
@@ -123,6 +122,7 @@ notarrow :: { Loc Exp }
   : let exp '=' exp in exp {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
   | case exp of '{' cases '}' { loc $1 $> $ Case (expLoc $2) (reverse $5) }
   | if exp then exp else exp { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
+  | '{' stmts '}' { loc $1 $> $ Seq (reverse $2) }
   | exp1(atom) { $1 }
 
 arrow :: { Loc (Pattern,Exp) }

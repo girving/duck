@@ -276,7 +276,7 @@ x >= y = not (x < y)
 --   (<) :: (cmp :: a -> b -> Ordering) -> a -> b -> Bool
 -}
 
-cmp x y =
+cmp x y = \
   if x < y then LT
   else if x == y then EQ
   else GT
@@ -340,6 +340,6 @@ returnIO :: a -> IO a
 testAll :: IO Void
 -}
 
-assert x =
-  if x then returnIO ()
+assert x = if x 
+  then returnIO ()
   else exit 1

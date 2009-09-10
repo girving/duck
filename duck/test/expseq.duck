@@ -3,7 +3,7 @@ import base
 f :: Int -> Int -> Int
 f x y = { g y = y * y ; x + g y }
 
-fm x = if False then 0 else
+fm x =
   f [] = 0
   f [_] = 1
   f _ = -1
