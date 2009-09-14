@@ -65,7 +65,20 @@ data Pattern = Pat
   , patCons :: Maybe (CVar, [Pattern])
   } deriving (Show)
 
-type Branch = ([Pattern], Exp)
+data CaseTail
+  = CaseGroup [Switch]
+  | CaseBody Exp
+
+data Case = CaseMatch
+  { casePat :: [Pattern]
+  , _caseLets :: Exp -> Exp
+  , _caseNext :: CaseTail
+  }
+
+data Switch = Switch 
+  { _switchVal :: [Exp]
+  , switchCases :: [Case]
+  }
 
 irError :: Pretty s => SrcLoc -> s -> a
 irError l = fatal . locMsg l
@@ -150,9 +163,13 @@ patNames s 0 _ = (s, [])
 patNames s n [] = freshVars s n
 patNames s n (p:pl) = second (v:) $ patNames s' (pred n) pl where (s',v) = patName s p 
 
-matchNames :: InScopeSet -> Int -> [Branch] -> (InScopeSet, [Var])
-matchNames s n [(p,_)] = patNames s n p
-matchNames s n _ = freshVars s n
+patsNames :: InScopeSet -> Int -> [[Pattern]] -> (InScopeSet, [Var])
+patsNames s n [p] = patNames s n p
+patsNames s n _ = freshVars s n
+
+mapss :: (a -> (InScopeSet, b)) -> [a] -> (InScopeSet, [b])
+--mapss f = first Set.unions . unzipWith f l
+mapss f = mapAccumL (\s -> first (Set.union s) . f) Set.empty
 
 prog :: PrecEnv -> Ast.Prog -> (PrecEnv, [Decl])
 prog pprec p = (precs, decls p) where
@@ -176,7 +193,7 @@ prog pprec p = (precs, decls p) where
       [] -> LetD (Loc l ignored) $ body $ Cons (V "()") []
       [(v,l)] -> LetD (Loc l v) $ body $ Var v
       vl -> LetM (map (\(v,l) -> Loc l v) vl) $ body $ Cons (tupleCons vl) (map (Var . fst) vl)
-    body r = match globals [e] [([p],r)] Nothing
+    body r = match globals [Switch [e] [CaseMatch [p] id (CaseBody r)]] Nothing
     e = expr globals l ae
     (p,vm) = pattern' Map.empty l ap
   decls (Loc _ (Ast.Data t args cons) : rest) = Data t args cons : decls rest
@@ -211,9 +228,9 @@ prog pprec p = (precs, decls p) where
   expr _ _ (Ast.Var v) = Var v
   expr s l (Ast.Lambda pl e) = lambdas s l pl e
   expr s l (Ast.Apply f args) = foldl' Apply (expr s l f) $ map (expr s l) args
-  expr s l (Ast.Let p e c) = case1 s l (expr s l e) [(p,c)]
+  expr s l (Ast.Let p e c) = doMatch letpat s l (p,e,c)
   expr s l (Ast.Def f pl e ac) = Let f (lambdas s l pl e) $ expr (Set.insert f s) l ac
-  expr s l (Ast.Case e cl) = case1 s l (expr s l e) cl
+  expr s l (Ast.Case sl) = doMatch switches s l sl
   expr s l (Ast.Ops o) = expr s l $ Ast.opsExp l $ sortOps precs l o
   expr s l (Ast.Spec e t) = Spec (expr s l e) t
   expr s l (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) $ map (expr s l) el
@@ -226,7 +243,7 @@ prog pprec p = (precs, decls p) where
   seq _ [] = Cons (V "()") [] -- only used when last is assignment; might as well be a warning/error
   seq s [Loc l (Ast.StmtExp e)] = expr s l e
   seq s (Loc l (Ast.StmtExp e):q) = seq s (Loc l (Ast.StmtLet (Ast.PatCons (V "()") []) e):q) -- should we just assign to '_'?
-  seq s (Loc l (Ast.StmtLet p e):q) = case1 s l (expr s l e) [(p,Ast.Seq q)]
+  seq s (Loc l (Ast.StmtLet p e):q) = doMatch letpat s l (p,e,Ast.Seq q)
   seq s q@(Loc _ (Ast.StmtDef f _ _):_) = ExpLoc l $ Let f body $ seq (Set.insert f s) rest where
     (Loc l body, rest) = funcases s f isfcase q -- TODO: local recursion (scope)
     isfcase (Loc l (Ast.StmtDef f' a b)) | f == f' = Just (Loc l (a,b))
@@ -240,7 +257,6 @@ prog pprec p = (precs, decls p) where
     n = case group $ map (length . fst . unLoc) defs of
       [n:_] -> n
       _ -> irError l $ "equations for" <+> quoted f <+> "have different numbers of arguments"
-    
 
   -- |process a multi-argument lambda expression
   lambdas :: InScopeSet -> SrcLoc -> [Ast.Pattern] -> Ast.Exp -> Exp
@@ -249,14 +265,43 @@ prog pprec p = (precs, decls p) where
   -- |process a multi-argument multi-case function set
   lambdacases :: InScopeSet -> SrcLoc -> Int -> [([Ast.Pattern], Ast.Exp)] -> Exp
   lambdacases s loc n arms = foldr Lambda body vl where
-    (s',vl) = matchNames (Set.union s ps) n b
-    ((ps,b),body) = cases s' loc (map Var vl) arms
+    (s',vl) = patsNames (Set.union s ps) n b
+    ((ps,[b]),body) = matcher cases s' loc (vl,arms)
 
-  -- |process a single-argument case expression
-  case1 :: InScopeSet -> SrcLoc -> Exp -> [(Ast.Pattern, Ast.Exp)] -> Exp
-  case1 s loc v = snd . cases s loc [v] . map (first (:[]))
+  letpat :: InScopeSet -> SrcLoc -> (Ast.Pattern, Ast.Exp, Ast.Exp) -> (InScopeSet, [Switch])
+  letpat s0 loc (p,e,c) = (ps, [Switch [e'] [CaseMatch p' id (CaseBody c')]]) where
+    (p',ps) = patterns loc [p]
+    e' = expr s0 loc e
+    c' = expr (Set.union s0 ps) loc c
 
-  -- |cases turns a multilevel pattern match into iterated single level pattern matches by
+  cases :: InScopeSet -> SrcLoc -> ([Var], [([Ast.Pattern], Ast.Exp)]) -> (InScopeSet, [Switch])
+  cases s0 loc (vals,arms) = second (\b -> [Switch (map Var vals) b]) $ mapss arm arms where
+    arm (p,e) = (ps,CaseMatch p' id (CaseBody e')) where
+      (p',ps) = patterns loc p
+      e' = expr (Set.union s0 ps) loc e
+
+  -- Convert all the patterns and expressions in a Case Switch list (but not the switches themselves) and collect all the pattern variables.
+  switches :: InScopeSet -> SrcLoc -> [Ast.Switch] -> (InScopeSet, [Switch])
+  switches s0 loc = switchs Set.empty where
+    switchs s = mapss (switch s)
+    switch s (e,c) = second (Switch [expr s0 loc e]) $ caseline s c
+    caseline s (Ast.CaseGuard r) = second ((:[]) . CaseMatch [consPat (V "True") []] id) $ casetail s r
+    caseline s (Ast.CaseMatch ml) = mapss (casematch s) ml
+    casematch s (p,r) = (s',CaseMatch p' id r') where 
+      (p',ps) = patterns loc [p]
+      (s',r') = casetail (Set.union s ps) r
+    casetail s (Ast.CaseGroup l) = second CaseGroup $ switchs s l
+    casetail s (Ast.CaseBody e) = (s, CaseBody $ expr (Set.union s0 s) loc e)
+
+  doMatch :: (InScopeSet -> SrcLoc -> a -> (InScopeSet, [Switch])) -> InScopeSet -> SrcLoc -> a -> Exp
+  doMatch f s l = snd . matcher f s l
+
+  matcher :: (InScopeSet -> SrcLoc -> a -> (InScopeSet, [Switch])) -> InScopeSet -> SrcLoc -> a -> ((InScopeSet, [[[Pattern]]]), Exp)
+  matcher f s l x = ((s', map (map casePat . switchCases) y), match (Set.union s s') y Nothing) where (s',y) = f s l x
+
+  -- |match takes n unmatched expressions and a list of n-tuples (lists) of patterns, and
+  -- iteratively reduces the list of possibilities by matching each expression in turn.  This is
+  -- used to process the stack of unmatched patterns that build up as we expand constructors.
   --
   --   (1) partitioning the cases by outer element,
   --
@@ -267,51 +312,42 @@ prog pprec p = (precs, decls p) where
   -- Part (3) is handled by building up a stack of unprocessed expressions and an associated
   -- set of pattern stacks, and then iteratively reducing the set of possibilities.
   -- This generally follows Wadler's algorithm in The Implementation of Functional Programming Languages
-  cases :: InScopeSet -> SrcLoc -> [Exp] -> [([Ast.Pattern], Ast.Exp)] -> ((InScopeSet, [Branch]), Exp)
-  cases ss loc vals aarms = (sa, match (Set.union ss s') vals arms Nothing) where 
-    sa@(s',arms) = mapAccumL (\s -> first (Set.union s) . arm) Set.empty aarms
-    arm (ap,ae) = (ps,(p,e)) where
-      (p,ps) = patterns loc ap
-      e = expr (Set.union ss ps) loc ae
-
-  -- |match takes n unmatched expressions and a list of n-tuples (lists) of patterns, and
-  -- iteratively reduces the list of possibilities by matching each expression in turn.  This is
-  -- used to process the stack of unmatched patterns that build up as we expand constructors.
-  match :: InScopeSet -> [Exp] -> [Branch] -> Maybe Exp -> Exp
-  match _ [] (([], e):_) _ = e -- no more patterns to match, so just pick the first possibility
-  match ss ~(val:vals) alts fall = letVarIf var val $ matchGroups s groups fall where
-    -- separate into groups of vars vs. cons
-    groups = groupBy ((==) `on` isJust . patCons . head . fst) alts
-    (s,var) = case unVar val of
-      Just v -> (ss,v)
-      Nothing -> second head $ matchNames ss 1 alts
-
-    matchGroups :: InScopeSet -> [[Branch]] -> Maybe Exp -> Exp
-    matchGroups s [group] fall = matchGroup s group fall
-    matchGroups s ~(group:others) fall = letf $ matchGroup s' group $ Just callf where
+  match :: InScopeSet -> [Switch] -> Maybe Exp -> Exp
+  match = withFall switch where
+    -- process a list of sequental matches
+    withFall :: (InScopeSet -> a -> Maybe Exp -> Exp) -> InScopeSet -> [a] -> Maybe Exp -> Exp
+    withFall _ _ [] _ = error "withFall: empty list"
+    withFall f s [x] fall = f s x fall
+    withFall f s (x:l) fall = letf $ f s' x (Just callf) where
       (s',fv) = freshen s (V "fall")
-      letf = Let fv $ Lambda ignored $ matchGroups s' others fall
+      letf = Let fv $ Lambda ignored $ withFall f s' l fall
       callf = Apply (Var fv) (Cons (V "()") [])
 
-    matchGroup :: InScopeSet -> [Branch] -> Maybe Exp -> Exp
-    matchGroup s [(p@(Pat _ _ c):pats,exp)] fall =
-      patLets var p $ case c of
-        Nothing -> match s vals [(pats,exp)] fall
-        Just (c,cp) -> Case var [cons s (c,length cp) [(cp++pats,exp)] fall] fall
-    matchGroup s group fall =
+    switch :: InScopeSet -> Switch -> Maybe Exp -> Exp
+    switch s (Switch [] alts) fall = withFall (\s (CaseMatch [] f e) -> f . matchTail s e) s alts fall
+    switch s (Switch (val:vals) alts) fall = letVarIf var val $ withFall (matchGroup var vals) s' groups fall where
+      -- separate into groups of vars vs. cons
+      groups = groupBy ((==) `on` isJust . patCons . head . casePat) alts
+      (s',var) = case unVar val of
+        Just v -> (s,v)
+        Nothing -> second head $ patsNames s 1 (map casePat alts)
+
+    matchGroup :: Var -> [Exp] -> InScopeSet -> [Case] -> Maybe Exp -> Exp
+    matchGroup var vals s group fall =
       case fst $ head alts of
-        Nothing -> match s vals (map snd alts) fall
-        Just _ -> Case var (map (\(c,b) -> cons s c b fall) alts') fall
+        Nothing -> switch s (Switch vals (map snd alts)) fall
+        Just _ -> Case var (map cons alts') fall
       where
-        alts = map (\(p@(Pat _ _ c):pl,e) -> (c,(pl,patLets var p e))) group
+        alts = map (\(CaseMatch (p@(Pat _ _ c):pl) f e) -> (c,(CaseMatch pl (patLets var p . f) e))) group
         -- sort alternatives by toplevel tag (along with arity)
         alts' = groupPairs $ sortBy (on compare fst) $
-              map (\(Just (c,cp),(p,e)) -> ((c,length cp), (cp++p,e))) alts
+              map (\(Just (c,cp), CaseMatch p pf pe) -> ((c,length cp), CaseMatch (cp++p) pf pe)) alts
+        cons ((c,arity),alts) = (c,vl, switch s' (Switch (map Var vl ++ vals) alts) fall) where
+          (s',vl) = patsNames s arity (map casePat alts)
 
-    -- |cons processes each case of the toplevel match
-    cons :: InScopeSet -> (CVar,Int) -> [Branch] -> Maybe Exp -> (CVar,[Var],Exp)
-    cons s (c,arity) alts fall = (c,vl, match s' (map Var vl ++ vals) alts fall) where
-      (s',vl) = matchNames s arity alts
+    matchTail :: InScopeSet -> CaseTail -> Maybe Exp -> Exp
+    matchTail _ (CaseBody e) _ = e -- is Just fall a warning?
+    matchTail s (CaseGroup l) fall = match s l fall
 
 -- Pretty printing
 

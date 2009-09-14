@@ -6,6 +6,9 @@ main = testAll
 f ([],_) = 1
 f (_,[]) = 2
 
+fg (_,[]) = 1
+fg ([],_) = 2
+
 g x = case x of
   _, [] -> 1
   [], _ -> 2
@@ -25,6 +28,7 @@ mv (l=[a,(b :: Int),c]) _ = case l of [_,_,a] -> a
 mv _ _ = a
 
 test_f = assert \ f ([],[]) == 1
+test_fg = assert \ fg ([],[]) == 1
 test_g = assert \ g ([],[]) == 1
 test_h = assert \ h ([1], [1]) == 2
 test_mv2 = assert \ mv [4,2] 9 == 2
@@ -38,3 +42,20 @@ r x = case x of
   w -> 3
 
 test_r = assert \ r 4 == 1
+
+-- full case syntax
+
+full x = case
+  x of [y] case y of
+    [z] -> 1
+    [] -> 2
+    _ case False -> 3
+  head x of
+    [y] case
+      y > 0 -> 4
+      True -> 5
+    _ case x of _ -> 6
+
+test_full1 = assert \ full [[]] == 2
+test_full2 = assert \ full [[0],[]] == 5
+test_full3 = assert \ full [[1,2]] == 6

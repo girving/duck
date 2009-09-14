@@ -9,6 +9,7 @@ module Ast
   , Exp(..)
   , Stmt(..)
   , Pattern(..)
+  , Switch, Case(..), CaseTail(..)
   , imports
   , opsExp
   , opsPattern
@@ -38,7 +39,7 @@ data Decl
   | Import !Var                         -- ^ Import directive: @import VAR@
   deriving Show
 
--- |Expression
+-- |Expression.
 -- Patterns and types are also parsed into these before being converted to 'Pattern' or 'TypePat' in "Parse"
 data Exp
   = Def !Var [Pattern] Exp Exp          -- ^ Local function definition with arguments: @let VAR PATs = EXP in EXP@ (equivalent to @DoSeq [StmtDef VAR PATs EXP, EXP]@)
@@ -53,13 +54,29 @@ data Exp
   | Ops !(Ops Exp)
   | Equals !Var Exp                     -- ^ @(VAR = EXP)@, only for PatAs
   | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
-  | Case Exp [(Pattern,Exp)]            -- ^ @case EXP of { PAT -> EXP ; ... }@
+  | Case [Switch]                       -- ^ Case group
   | If Exp Exp Exp                      -- ^ @if EXP then EXP else EXP@
   | Seq [Loc Stmt]                      -- ^ Expression sequence: @{ STMT ; ... }@
   | ExpLoc SrcLoc !Exp                  -- ^ Meta source location information, inserted at almost every level
   deriving Show
 
--- |Statement
+type Switch = (Exp, Case)
+
+-- |Case line.
+-- Case groups can contain pattern matches and guards, in arbitrary combinations.
+data Case
+  = CaseMatch [(Pattern,CaseTail)]      -- ^ succeed if expression matches pattern: @case EXP of { PAT CASE ; ... }@
+  | CaseGuard CaseTail                  -- ^ succeed if expression True, or fail: @case EXP CASE@ (equivalent to @CaseMatch EXP [(True,CASE)]@)
+  deriving Show
+
+-- |Case action.
+-- What to do if everything so far has suceeded.
+data CaseTail
+  = CaseGroup [Switch]                  -- ^ Check cases sequentially, or fail
+  | CaseBody Exp                        -- ^ Succeed and execute
+  deriving Show
+
+-- |Statement.
 -- Statements are thins that can be in a "do" expression block.
 data Stmt
   = StmtExp Exp                         -- ^ Simple expression, either to return (if last) or presumably with effect
@@ -68,7 +85,7 @@ data Stmt
   -- StmtSpec ?
   deriving Show
 
--- |Pattern
+-- |Pattern.
 -- For the most part, each constructor here is converted from its non-Pat equivalent in 'Exp'.
 data Pattern
   = PatAny
@@ -146,9 +163,7 @@ instance Pretty Exp where
   pretty' (Def f args e body) = 1 #>
     nestedPunct '=' ("let" <+> prettyop f args)
       (pretty e <+> "in" $$ pretty body)
-  pretty' (Case e cases) = 1 #>
-    nested ("case" <+> pretty e <+> "of")
-      (vcat (map (\ (p,e) -> p <+> "->" <+> pretty e) cases))
+  pretty' (Case cases) = 1 #> pretty' cases
   pretty' (If c e1 e2) = 1 #>
     "if" <+> pretty c <+> "then" <+> pretty e1 <+> "else" <+> pretty e2
   pretty' (Lambda pl e) = 1 #>
@@ -163,6 +178,17 @@ instance Pretty Exp where
   pretty' (Equals v e) = 0 #> v <+> '=' <+> guard 0 e
   pretty' (Seq q) = nested "do" (pretty $ vcat q) -- XXX not valid syntax (yet)
   pretty' (ExpLoc _ e) = pretty' e
+
+instance Pretty [Switch] where
+  pretty' ecl = nested "case" (vcat $ map (uncurry (<+>)) ecl)
+
+instance Pretty Case where
+  pretty' (CaseMatch pcl) = nested "of" (vcat (map (uncurry (<+>)) pcl))
+  pretty' (CaseGuard g) = pretty' g
+
+instance Pretty CaseTail where
+  pretty' (CaseGroup s) = pretty' s
+  pretty' (CaseBody e) = "->" <+> pretty e
 
 instance Pretty Stmt where
   pretty' (StmtExp e) = pretty' e

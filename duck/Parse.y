@@ -120,17 +120,33 @@ arrows :: { Loc (Stack Exp Exp) }
 
 notarrow :: { Loc Exp }
   : let exp '=' exp in exp {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
-  | case exp of '{' cases '}' { loc $1 $> $ Case (expLoc $2) (reverse $5) }
+  | case caseblock { loc $1 $> $ Case (unLoc $2) }
   | if exp then exp else exp { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
   | '{' stmts '}' { loc $1 $> $ Seq (reverse $2) }
   | exp1(atom) { $1 }
 
-arrow :: { Loc (Pattern,Exp) }
-  : exp1(atom_) '->' exp {% pattern $1 >.= \p -> loc $1 $> (patLoc p,expLoc $3) }
+caseblock :: { Loc [(Exp, Case)] }
+  : switch { fmap (:[]) $1 }
+  | '{' switches '}' { loc $1 $> $ reverse $2 }
 
-cases :: { [(Pattern,Exp)] }
-  : arrow { [unLoc $1] }
-  | cases ';' arrow { unLoc $3 : $1 }
+switches :: { [(Exp, Case)] }
+  : switch { [unLoc $1] }
+  | switches ';' switch { unLoc $3 : $1 }
+
+switch :: { Loc (Exp, Case) }
+  : exp1(atom_) of '{' cases '}' { loc $1 $> $ (expLoc $1, CaseMatch (reverse $4)) }
+  | exp1(atom_) casetail { loc $1 $> $ (expLoc $1, CaseGuard (unLoc $2)) }
+
+cases :: { [(Pattern,CaseTail)] }
+  : casematch { [$1] }
+  | cases ';' casematch { $3 : $1 }
+
+casematch :: { (Pattern,CaseTail) }
+  : exp1(atom_) casetail {% pattern $1 >.= \p -> (patLoc p, unLoc $2) }
+
+casetail :: { Loc CaseTail }
+  : '->' exp { loc $1 $> $ CaseBody (expLoc $2) }
+  | case caseblock { loc $1 $> $ CaseGroup (unLoc $2) }
 
 exp1(a) :: { Loc Exp }
   : exp1(atom_) '::' exp2(a) {% ty $3 >.= \t -> loc $1 $> $ Spec (expLoc $1) (unLoc t) }
