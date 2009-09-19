@@ -94,6 +94,7 @@ startLoc file = SrcLoc file 1 1
 
 incrLoc :: SrcLoc -> Char -> SrcLoc
 incrLoc (SrcLoc f l _) '\n' = SrcLoc f (l+1) 1
+incrLoc (SrcLoc f l c) '\t' = SrcLoc f l (1 + 8 * div (c+7) 8)
 incrLoc (SrcLoc f l c) _    = SrcLoc f l (c+1)
 incrLoc _ _ = error "incrLoc works only on SrcLoc, not SrcNone or SrcRng"
 

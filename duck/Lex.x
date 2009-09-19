@@ -19,7 +19,7 @@ import ParseMonad
 import ParseOps
 }
 
-$white = [\ \n\r] -- No tabs!
+$white = [\ \t\n\r]
 $digit = 0-9
 $lower = [a-z_]
 $upper = [A-Z]
@@ -130,7 +130,7 @@ lexer = do
   let mode = case ps_layout s of { Context Comment _ _ : _ -> comment ; _ -> 0 }
   case alexScan s mode of
     AlexEOF -> return $ Loc (ps_loc s) TokEOF
-    AlexError _ -> fail "lexical error"
+    AlexError s' -> psError s' "lexical error"
     AlexSkip s' _ -> do
       put s'
       lexer

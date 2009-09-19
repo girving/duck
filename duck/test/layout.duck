@@ -15,14 +15,14 @@ f x = case x of
       { A _ -> 17
       ; B -> 23 }
     B -> 2
-      + 3
-      + 4
+        + 3
+	+ 4
   B -> 7
 
 -- implicit contexts should be able to go arbitrarily far left inside explicit contexts
 g x = case x of { A y -> case y of
-    A _ -> 1
-    B -> 2
+	A _ -> 1
+        B -> 2
  ; B -> 3 }
 
 -- verify that f and g work as expected
