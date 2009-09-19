@@ -90,6 +90,8 @@ data Stmt
 data Pattern
   = PatAny
   | PatVar !Var
+  | PatInt !Int
+  -- | PatChar !Char
   | PatCons !CVar [Pattern]
   | PatList [Pattern]
   | PatOps !(Ops Pattern)
@@ -201,6 +203,8 @@ patToExp (PatSpec p t) = Spec (patToExp p) t
 patToExp (PatCons c pl) = Apply (Var c) (map patToExp pl)
 patToExp (PatOps o) = Ops (fmap patToExp o)
 patToExp (PatVar v) = Var v
+patToExp (PatInt i) = Int i
+--patToExp (PatChar c) = Char c
 patToExp (PatList pl) = List (map patToExp pl)
 patToExp (PatLambda pl p) = Lambda pl (patToExp p)
 patToExp PatAny = Any

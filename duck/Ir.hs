@@ -63,7 +63,8 @@ data Pattern = Pat
   { patVars :: [Var]
   , patSpec :: [TypePat]
   , patCons :: Maybe (CVar, [Pattern])
-  } deriving (Show)
+  , patCheck :: Maybe (Var -> Exp) -- :: Bool
+  }
 
 data CaseTail
   = CaseGroup [Switch]
@@ -100,6 +101,7 @@ decl_vars s (Ast.Import _) = s
 pattern_vars :: InScopeSet -> Ast.Pattern -> InScopeSet
 pattern_vars s Ast.PatAny = s
 pattern_vars s (Ast.PatVar v) = Set.insert v s
+pattern_vars s (Ast.PatInt _) = s
 pattern_vars s (Ast.PatCons _ pl) = foldl' pattern_vars s pl
 pattern_vars s (Ast.PatOps o) = Fold.foldl' pattern_vars s o
 pattern_vars s (Ast.PatList pl) = foldl' pattern_vars s pl
@@ -129,15 +131,15 @@ letVarIf var val exp
   | otherwise = Let var val exp
 
 anyPat :: Pattern
-anyPat = Pat [] [] Nothing
+anyPat = Pat [] [] Nothing Nothing
 
 instance HasVar Pattern where
-  var v = Pat [v] [] Nothing
-  unVar (Pat (v:_) _ _) = Just v
+  var v = Pat [v] [] Nothing Nothing
+  unVar (Pat{ patVars = v:_ }) = Just v
   unVar _ = Nothing
 
 consPat :: CVar -> [Pattern] -> Pattern
-consPat c pl = Pat [] [] (Just (c,pl))
+consPat c pl = Pat [] [] (Just (c,pl)) Nothing
 
 addPatVar :: Var -> Pattern -> Pattern
 addPatVar v p = p { patVars = v : patVars p }
@@ -146,7 +148,7 @@ addPatSpec :: TypePat -> Pattern -> Pattern
 addPatSpec t p = p { patSpec = t : patSpec p }
 
 patLets :: Var -> Pattern -> Exp -> Exp
-patLets var (Pat vl tl _) e = case (vl', tl) of
+patLets var (Pat vl tl _ _) e = case (vl', tl) of
   ([],[]) -> e
   ([],_) -> Let ignored spec e
   (v:vl,_) -> letVarIf v spec $ foldr (`Let` Var var) e vl
@@ -155,8 +157,8 @@ patLets var (Pat vl tl _) e = case (vl', tl) of
     (_:vl') = nub (var:vl)
 
 patName :: InScopeSet -> Pattern -> (InScopeSet, Var)
-patName s (Pat (v:_) _ _) = (s, v)
-patName s (Pat [] _ _) = fresh s 
+patName s (Pat{ patVars = v:_ }) = (s, v)
+patName s (Pat{ patVars = [] }) = fresh s 
 
 patNames :: InScopeSet -> Int -> [Pattern] -> (InScopeSet, [Var])
 patNames s 0 _ = (s, [])
@@ -214,6 +216,7 @@ prog pprec p = (precs, decls p) where
   pattern' s l (Ast.PatList apl) = (foldr (\p pl -> consPat (V ":") [p, pl]) (consPat (V "[]") []) pl, s') where
     (pl, s') = patterns' s l apl
   pattern' s l (Ast.PatCons c pl) = first (consPat c) $ patterns' s l pl
+  pattern' s _ (Ast.PatInt i) = (anyPat { patCheck = Just (\v -> Prim (Binop IntEqOp) [Int i, Spec (Var v) typeInt]) }, s)
   pattern' _ l (Ast.PatLambda _ _) = irError l $ quoted "->" <+> "(lambda) patterns not yet implemented"
 
   patterns' :: Map Var SrcLoc -> SrcLoc -> [Ast.Pattern] -> ([Pattern], Map Var SrcLoc)
@@ -338,10 +341,12 @@ prog pprec p = (precs, decls p) where
         Nothing -> switch s (Switch vals (map snd alts)) fall
         Just _ -> Case var (map cons alts') fall
       where
-        alts = map (\(CaseMatch (p@(Pat _ _ c):pl) f e) -> (c,(CaseMatch pl (patLets var p . f) e))) group
+        alts = map (\(CaseMatch (p@(Pat{ patCons = c }):pl) f e) -> (c,(CaseMatch pl (patLets var p . f) (checknext p e)))) group
         -- sort alternatives by toplevel tag (along with arity)
         alts' = groupPairs $ sortBy (on compare fst) $
               map (\(Just (c,cp), CaseMatch p pf pe) -> ((c,length cp), CaseMatch (cp++p) pf pe)) alts
+        checknext (Pat{ patCheck = Just c }) e = CaseGroup [Switch [c var] [CaseMatch [consPat (V "True") []] id e]]
+        checknext _ e = e
         cons ((c,arity),alts) = (c,vl, switch s' (Switch (map Var vl ++ vals) alts) fall) where
           (s',vl) = patsNames s arity (map casePat alts)
 

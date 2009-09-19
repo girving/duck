@@ -296,13 +296,14 @@ patternExp l (Apply e _) = parseError l $ "only constructors can be applied in p
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
 patternExp l Any = return PatAny
+patternExp l (Int i) = return $ PatInt i
+--patternExp l (Char c) = return $ PatChar c
 patternExp l (List el) = PatList =.< mapM (patternExp l) el
 patternExp l (Ops ops) = PatOps =.< patternOps l ops
 patternExp l (Equals v e) = patternExp l e >.= PatAs v
 patternExp l (Spec e t) = patternExp l e >.= \p -> PatSpec p t
 patternExp l (Lambda pl e) = PatLambda pl =.< patternExp l e
 patternExp _ (ExpLoc l e) = PatLoc l =.< patternExp l e
-patternExp l (Int _) = parseError l ("integer patterns aren't implemented yet")
 patternExp l e = parseError l $ expTypeDesc e <+> "expression not allowed in pattern"
 
 patternOps :: SrcLoc -> Ops Exp -> P (Ops Pattern)

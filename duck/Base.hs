@@ -68,7 +68,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   ]
 
 invalidPrim :: Pretty t => Prim -> [t] -> Doc'
-invalidPrim p a = "invalid primitive arguments" <:> quoted (prettyap (primString p) a)
+invalidPrim p a = "invalid primitive arguments" <:> quoted (prettyap (V (primString p)) a)
 
 -- |Actually execute a primitive, called with the specified arguments at run time
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
