@@ -13,8 +13,9 @@ data Binop = IntAddOp
            | IntGTOp
            | IntLEOp
            | IntGEOp
+           | ChrEqOp
  
-{-# LINE 14 "prims.duck" #-}
+{-# LINE 15 "prims.duck" #-}
 data Prim = Binop !Binop
           | CharIntOrd
           | IntCharChr

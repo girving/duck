@@ -297,7 +297,7 @@ patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
 patternExp l Any = return PatAny
 patternExp l (Int i) = return $ PatInt i
---patternExp l (Char c) = return $ PatChar c
+patternExp l (Char c) = return $ PatChar c
 patternExp l (List el) = PatList =.< mapM (patternExp l) el
 patternExp l (Ops ops) = PatOps =.< patternOps l ops
 patternExp l (Equals v e) = patternExp l e >.= PatAs v

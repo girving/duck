@@ -77,6 +77,7 @@ binopString op = case op of
   IntMulOp -> "*"
   IntDivOp -> "/"
   IntEqOp -> "=="
+  ChrEqOp -> "=="
   IntLTOp -> "<"
   IntGTOp -> ">"
   IntLEOp -> "<="

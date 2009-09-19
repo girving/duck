@@ -102,6 +102,7 @@ pattern_vars :: InScopeSet -> Ast.Pattern -> InScopeSet
 pattern_vars s Ast.PatAny = s
 pattern_vars s (Ast.PatVar v) = Set.insert v s
 pattern_vars s (Ast.PatInt _) = s
+pattern_vars s (Ast.PatChar _) = s
 pattern_vars s (Ast.PatCons _ pl) = foldl' pattern_vars s pl
 pattern_vars s (Ast.PatOps o) = Fold.foldl' pattern_vars s o
 pattern_vars s (Ast.PatList pl) = foldl' pattern_vars s pl
@@ -217,6 +218,7 @@ prog pprec p = (precs, decls p) where
     (pl, s') = patterns' s l apl
   pattern' s l (Ast.PatCons c pl) = first (consPat c) $ patterns' s l pl
   pattern' s _ (Ast.PatInt i) = (anyPat { patCheck = Just (\v -> Prim (Binop IntEqOp) [Int i, Spec (Var v) typeInt]) }, s)
+  pattern' s _ (Ast.PatChar c) = (anyPat { patCheck = Just (\v -> Prim (Binop ChrEqOp) [Char c, Spec (Var v) typeChar]) }, s)
   pattern' _ l (Ast.PatLambda _ _) = irError l $ quoted "->" <+> "(lambda) patterns not yet implemented"
 
   patterns' :: Map Var SrcLoc -> SrcLoc -> [Ast.Pattern] -> ([Pattern], Map Var SrcLoc)

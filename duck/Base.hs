@@ -60,6 +60,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
+  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] (TyCons (V "Bool") []) $ \[ValChar i, ValChar j] -> ValCons (V $ if i == j then "True" else "False") []
   , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \[ValChar c] -> ValInt (Char.ord c)
   , PrimOp IntCharChr "chr" [typeInt] typeChar $ \[ValInt c] -> ValChar (Char.chr c)
   , ioOp Exit "exit" [typeInt] typeVoid
