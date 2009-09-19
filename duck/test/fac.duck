@@ -1,0 +1,62 @@
+import base
+
+-- adapted from http://www.willamette.edu/~fruehr/haskell/evolution.html for a nice feature coverage
+
+frosh n = if n == 0
+        then 1
+        else n * frosh (n-1)
+
+
+soph = (\(n) -> \
+        (if ((==) n 0)
+            then 1
+            else ((*) n (soph ((-) n 1)))))
+
+
+junior 0 = 1
+junior n = n * junior (n-1)
+
+
+senior n = fold (*) 1 (range 1 n)
+
+-- XXX type inference loop:
+--senior' n = fold (x -> g -> n -> g (x*n)) id (range 1 n) 1
+
+
+for :: a -> (a -> a) -> (a -> Bool) -> a
+for x f c = case 
+  c x -> x
+  True -> for (f x) f c
+iterative n =
+  init = (0,1)
+  next   (i,m) = (i+1, m * (i+1))
+  done   (i,_) = i==n
+  result (_,m) = m
+  result (for init next done)
+
+iterative1 n = snd (for (1,1) ((i,m) -> (i+1, i*m)) ((<) n . fst))
+
+
+facAcc :: Int -> Int -> Int
+facAcc a 0 = a
+facAcc a n = facAcc (n*a) (n-1)
+
+-- XXX closure error when added to list:
+acc = facAcc 1
+
+
+facCps :: (Int -> Int) -> Int -> Int
+facCps k 0 = k 1
+facCps k n = facCps (k . ((*) n)) (n-1)
+
+cps = facCps id
+
+
+-- to be continued...
+
+
+facs = [frosh, soph, junior, senior, iterative, iterative1, cps]
+
+test_facs = assert \ and \ map (f -> f 5 == 120) facs
+
+main = testAll

@@ -46,7 +46,7 @@ execError l m = Exec $ ReaderT $ \(_,s) ->
 withFrame :: Var -> [TypeVal] -> [Value] -> SrcLoc -> Exec a -> Exec a
 withFrame f types args loc e = Exec $ ReaderT $ \(p,s) -> do
   let r e = runReaderT (unExec e) (p, CallFrame f (zip args types) loc : s)
-  when (length s > 32) $ r $ execError loc "stack overflow"
+  when (length s > 64) $ r $ execError loc "stack overflow"
   handle (\(e :: AsyncException) -> r $ execError loc (show e)) $
     r e
 

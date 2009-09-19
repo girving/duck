@@ -85,6 +85,14 @@ True == y = y
 False < y = y
 True < _ = False
 
+and :: List Bool -> Bool
+and [] = True
+and (x:l) = x && and l
+
+or :: List Bool -> Bool
+or [] = False
+or (x:l) = x || or l
+
 ---- maybe
 
 data Maybe a of Nothing ; Just a
