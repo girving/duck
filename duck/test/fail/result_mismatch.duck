@@ -1,0 +1,8 @@
+import base
+
+main = exit 0
+
+f :: Char -> Int
+f x = x
+
+_ = f 'x'

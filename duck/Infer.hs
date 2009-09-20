@@ -57,7 +57,7 @@ type Locals = TypeEnv
 
 -- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
 insertOver :: Bool -> Var -> [(Maybe Trans, TypeVal)] -> Overload TypeVal -> Infer ()
-insertOver _ f a o = do
+insertOver _final f a o = do
   --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> overRet o
   modify $ Ptrie.mapInsert f a o
 
@@ -97,11 +97,11 @@ lookupDatatype loc (TyCons tv types) = getProg >>= \prog ->
     _ -> inferError loc ("unbound datatype constructor" <+> quoted tv)
 lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 
-lookupFunction :: SrcLoc -> Var -> Infer [Overload TypePat]
-lookupFunction loc f = getProg >>= \prog ->
+lookupFunction :: Var -> Infer [Overload TypePat]
+lookupFunction f = getProg >>= \prog ->
   case Map.lookup f (progFunctions prog) of
     Just o -> return o
-    _ -> inferError loc ("unbound function" <+> quoted f)
+    _ -> inferError noLoc ("unbound function" <+> quoted f)
 
 lookupConstructor :: SrcLoc -> Var -> Infer (CVar, [Var], [TypePat])
 lookupConstructor loc c = getProg >>= lp where
@@ -182,21 +182,18 @@ expr env loc = exp where
 cons :: SrcLoc -> CVar -> [TypeVal] -> Infer TypeVal
 cons loc c args = do
   (tv,vl,tl) <- lookupConstructor loc c
-  r <- typeReError loc (quoted c<+>"expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
+  tenv <- typeReError loc (quoted c<+>"expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
+    checkLeftovers noLoc () $
     subsetList args tl
-  case r of
-    Left leftovers -> inferError loc (quoted c<+>"expected arguments"<+> quoted (hsep tl) <> ", got" <+> quoted (hsep args) <> "; cannot overload on" <+> showVars leftovers)
-    Right tenv -> do
-      let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-      return $ TyCons tv targs where
+  let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
+  return $ TyCons tv targs
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do
-  r <- typeReError loc (quoted e<+>"has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
+  tenv <- checkLeftovers loc ("type specification" <+> quoted ts <+> "is invalid") $
+    typeReError loc (quoted e<+>"has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
     subset t ts
-  case r of
-    Left leftovers -> inferError loc ("type specification" <+> quoted ts <+> "is invalid; cannot overload on" <+> showVars leftovers)
-    Right tenv -> return $ substVoid tenv ts
+  return $ substVoid tenv ts
 
 join :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
 join loc t1 t2 =
@@ -217,7 +214,7 @@ apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
   fun (FunClosure f args) = do
     let atl = args ++ [t2]
     o <- maybe
-      (resolve f atl loc) -- no match, type not yet inferred
+      (withFrame f atl loc $ resolve f atl) -- no match, type not yet inferred
       return =<< lookupOver f atl
     return (overRet o)
 apply loc t1 t2 = do
@@ -260,9 +257,9 @@ overDesc :: Overload TypePat -> Doc'
 overDesc o = pretty (o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
-resolve :: Var -> [TypeVal] -> SrcLoc -> Infer (Overload TypeVal)
-resolve f args loc = do
-  rawOverloads <- lookupFunction loc f -- look up possibilities
+resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
+resolve f args = do
+  rawOverloads <- lookupFunction f -- look up possibilities
   let nargs = length args
       prune o = tryError $ subsetList args (overTypes o) >. o
       isSpecOf :: Overload TypePat -> Overload TypePat -> Bool
@@ -270,22 +267,21 @@ resolve f args loc = do
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
       findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
       options overs = vcat $ map overDesc overs
-      call = quoted $ prettyap f args
   pruned <- mapM prune rawOverloads
   overloads <- case partitionEithers pruned of
-    (errs,[]) -> typeErrors loc (call <+> "does not match any overloads, tried") $ zip (map overDesc rawOverloads) errs
+    (errs,[]) -> typeErrors noLoc ("no matching overload, tried") $ zip (map overDesc rawOverloads) errs
     (_,os) -> return $ findmin os
 
   -- determine applicable argument type transform annotations
   tt <- maybe
-    (inferError loc $ nested (call <+> "has ambiguous type transforms, possibilities are:") (options overloads))
+    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") (options overloads))
     return $ transOvers overloads nargs
   let at = zip tt args
 
   over <- case partition ((nargs ==) . length . overVars) overloads of
     ([o],[]) ->
       -- exactly one fully applied option: evaluate
-      cache f args o loc
+      cache f args o
     ([],_) ->
       -- all overloads are still partially applied, so create a closure overload
       return (Over noLoc at (typeClosure f args) [] Nothing)
@@ -294,38 +290,42 @@ resolve f args loc = do
       return (Over noLoc at TyVoid [] Nothing)
     _ ->
       -- ambiguous
-      inferError loc $ nested (call <+> "is ambiguous, possibilities are:") (options overloads)
+      inferError noLoc $ nested ("ambiguous overloads, possibilities are:") (options overloads)
 
   insertOver True f at over
   return over
 
 -- |Type infer a function call and cache the results
 --
--- * TODO: cache currently infers every nonvoid function call at least twice, regardless of recursion.  Fix this.
+-- * TODO: cache currently infers every nonvoid function call at least thrice, regardless of recursion.  Fix this.
 --
 -- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
-cache :: Var -> [TypeVal] -> Overload TypePat -> SrcLoc -> Infer (Overload TypeVal)
-cache f args (Over oloc atypes rt vl ~(Just e)) loc = do
+cache :: Var -> [TypeVal] -> Overload TypePat -> Infer (Overload TypeVal)
+cache f args (Over oloc atypes rt vl ~(Just e)) = do
   let (tt,types) = unzip atypes
-      call = quoted (prettyap f args)
-  result <- subsetList args types
-  case result of
-    Left leftovers -> inferError loc (call <+> "uses invalid overload" <+> quoted (foldr typeArrow rt types)<>"; cannot overload on"<+>showVars leftovers)
-    Right tenv -> do
-      let al = zip tt args
-          tl = map (argType . fmap (substVoid tenv)) atypes
-          rs = substVoid tenv rt
-          or r = Over oloc (zip tt tl) r vl (Just e)
-          fix prev = do
-            insertOver False f al (or prev)
-            r' <- withFrame f args loc (expr (Map.fromList (zip vl tl)) oloc e)
-            r <- typeReError loc ("in call"<+>call<>", failed to unify result" <+> quoted r' <+>"with return signature" <+> quoted rs) $
-              union r' rs
-            if r == prev
-              then return (or r)
-              else fix r
-      fix TyVoid -- recursive function calls are initially assumed to be void
+  tenv <- checkLeftovers noLoc ("invalid overload" <+> quoted (foldr typeArrow rt types)) $
+    subsetList args types
+  let al = zip tt args
+      tl = map (argType . fmap (substVoid tenv)) atypes
+      rs = substVoid tenv rt
+      or r = Over oloc (zip tt tl) r vl (Just e)
+      eval = do
+        r <- expr (Map.fromList (zip vl tl)) oloc e
+        typeReError noLoc ("failed to unify result" <+> quoted r <+>"with return signature" <+> quoted rs) $
+          union r rs
+      fix final prev = do
+        insertOver final f al (or prev)
+        r <- eval
+        if r == prev
+          then return (or r)
+          else if final
+            then inferError noLoc "internal error: type convergence failed"
+            else fix final r
+  s <- get -- fork state to do speculative fixpoint
+  o <- fix False TyVoid -- recursive function calls are initially assumed to be void
+  put s -- restore state
+  fix True (overRet o) -- and finalize with correct type
 
 -- |Verify that main exists and has type IO ().
 main :: Infer ()
@@ -346,6 +346,7 @@ runIO io = do
 checkIO :: TypeVal -> Infer TypeVal
 checkIO t = typeIO =.< runIO t
 
--- |Convenience function for printing a list of variables nicely
-showVars :: [Var] -> Doc'
-showVars vl = "contravariant variable" <> sPlural vl <+> quoted (hsep vl)
+checkLeftovers :: Pretty m => SrcLoc -> m -> Infer (Either [Var] a) -> Infer a
+checkLeftovers loc m f = f >>= either (\l -> 
+    inferError loc (m <> "; cannot overload on contravariant variable"<>sPlural l <+> quoted (hsep l)))
+  return

@@ -87,10 +87,20 @@ True < _ = False
 
 and :: List Bool -> Bool
 and [] = True
+and (True:l) = and l
+and (False:_) = False
+
+and :: List a -> a
+and [x] = x
 and (x:l) = x && and l
 
 or :: List Bool -> Bool
 or [] = False
+or (True:l) = True
+or (False:l) = or l
+
+or :: List a -> a
+or [x] = x
 or (x:l) = x || or l
 
 ---- maybe
@@ -292,6 +302,10 @@ cmp x y = \
 x < y = cmp x y == LT
 
 -------- arithmetic
+
+bool :: Int -> Bool
+bool 0 = False
+bool _ = True
 
 -- implicitly declared: (+), (-), (*), (/)
 
