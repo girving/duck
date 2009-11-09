@@ -69,6 +69,6 @@ Types, expressions and other code representation data structures are represented
 
 h2. Any: dynamically typed values
 
-In order to mix notions of "compile time" and "runtime", code representation constructs such as Exp must be able to directly include pointers to runtime values.  Since Exp has a fixed static type and values can have any type, we intorduce a modicum of dynamic typing via the @Any@ type.
+In order to mix notions of "compile time" and "runtime", code representation constructs such as Exp must be able to directly include pointers to runtime values.  Since Exp has a fixed static type and values can have any type, we introduce a modicum of dynamic typing via the @Any@ type.
 
-The memory layout of @Any@ is equivalent to @(TypeVal, t)@, with the invariant that the first element exactly describes the type of the second element.  As a consequence, @Any@ has variable size.
+The memory layout of @Any@ is equivalent to @(TypeVal, Box t)@, with the invariant that the first element exactly describes the type @t@.  Note the box around @t@ to ensure a fixed size.
