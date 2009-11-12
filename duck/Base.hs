@@ -41,7 +41,7 @@ intOp :: Binop -> TypeVal -> (Int -> Int -> Value) -> PrimOp
 intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \[ValInt i, ValInt j] -> fun i j
 
 intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
-intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> ValCons (V $ if fun i j then "True" else "False") []
+intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> ValCons (if fun i j then 1 else 0) []
 
 intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
 intBinOp op fun = intOp op typeInt $ \i -> ValInt . fun i
@@ -60,7 +60,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
-  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] (TyCons (V "Bool") []) $ \[ValChar i, ValChar j] -> ValCons (V $ if i == j then "True" else "False") []
+  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] (TyCons (V "Bool") []) $ \[ValChar i, ValChar j] -> ValCons (if i == j then 1 else 0) []
   , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \[ValChar c] -> ValInt (Char.ord c)
   , PrimOp IntCharChr "chr" [typeInt] typeChar $ \[ValInt c] -> ValChar (Char.chr c)
   , ioOp Exit "exit" [typeInt] typeVoid
@@ -68,8 +68,8 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , ioOp TestAll "testAll" [] typeUnit
   ]
 
-invalidPrim :: Pretty t => Prim -> [t] -> Doc'
-invalidPrim p a = "invalid primitive arguments" <:> quoted (prettyap (V (primString p)) a)
+invalidPrim :: Show t => Prim -> [t] -> Doc'
+invalidPrim p a = "invalid primitive arguments" <:> quoted (prettyap (V (primString p)) (map show a))
 
 -- |Actually execute a primitive, called with the specified arguments at run time
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value

@@ -65,8 +65,8 @@ definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc)
   d <- expr env Map.empty Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
-          (_, ValCons c dl) | isTuple c, length vl == length dl -> return dl
-          _ -> execError noLoc ("expected" <+> length vl <> "-tuple, got" <+> quoted d)
+          (_, ValCons 0 dl) | length vl == length dl -> return dl
+          _ -> execError noLoc ("expected" <+> length vl <> "-tuple, got" <+> show d)
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
 
 -- |A placeholder for when implicit casts stop being nops on the data.
@@ -103,20 +103,25 @@ expr global tenv env loc = exp where
     conses <- liftInfer $ Infer.lookupDatatype loc t
     d <- lookup global env loc v
     case d of
-      ValCons c dl ->
+      ValCons i dl ->
+        let c = unLoc $ fst $ conses !! i in
         case find (\ (c',_,_) -> c == c') pl of
           Just (_,vl,e') -> do
             let Just tl = Infer.lookupCons conses c
             cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
           Nothing -> case def of
-            Nothing -> execError loc ("pattern match failed: exp =" <+> quoted d <> ", cases =" <+> show pl) -- XXX data printed
+            Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (d,t)) <> ", cases =" <+> show pl) -- XXX data printed
             Just e' -> cast ct $ expr global tenv env loc e'
       ValType -> do
         let (c,vl,e') = head pl
             Just tl = Infer.lookupCons conses c
         cast ct $ expr global (insertList tenv vl tl) (foldl (\s v -> Map.insert v ValType s) env vl) loc e'
       _ -> execError loc ("expected block, got" <+> quoted v)
-  exp (ExpCons c el) = ValCons c =.< mapM exp el
+  exp ce@(ExpCons c el) = do
+    t <- inferExpr tenv loc ce
+    conses <- liftInfer $ Infer.lookupDatatype loc t
+    let Just i = findIndex (\ (Loc _ c',_) -> c == c') conses
+    ValCons i =.< mapM exp el
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
   exp (ExpBind v e1 e2) = do
     t <- inferExpr tenv loc e1
@@ -170,7 +175,7 @@ apply global loc ft (ValDelay e penv) _ at = do
   let (tenv,env) = unpackEnv penv
   cast rt $ expr global tenv env loc e
 apply _ _ _ ValType _ _ = return ValType
-apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1 <+> "::" <+> t1) <+> "to" <+> quoted (v2 <+> "::" <+> t2))
+apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1,t1) <+> "to" <+> quoted (v2,t2))
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()
@@ -189,7 +194,7 @@ runIO global (ValBindIO v tm m e penv) = do
   let (tenv,env) = unpackEnv penv
   d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
   runIO global d'
-runIO _ d = execError noLoc ("expected IO computation, got" <+> quoted d)
+runIO _ d = execError noLoc ("expected IO computation, got" <+> show d)
 
 testAll :: Globals -> Exec Value
 testAll global = do
@@ -204,5 +209,5 @@ testAll global = do
         runIO global d
         success
     | otherwise = success
-  nop = return $ ValCons (V "()") []
+  nop = return $ ValCons 0 []
 

@@ -14,7 +14,7 @@ import Prims
 {-# LINE 16 "value.duck" #-}
 data Value = ValInt !Int
            | ValChar !Char
-           | ValCons !CVar ![Value]
+           | ValCons !Int ![Value]
            | ValClosure !Var ![TypeVal] ![Value]
            | ValDelay !Exp ![(Var, TypeVal, Value)]
            | ValType
