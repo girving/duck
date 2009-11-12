@@ -42,7 +42,7 @@ lookup global env loc v
   lp prog
     | Just _ <- Map.lookup v (progOverloads prog) = return (ValClosure v [] []) -- if we find overloads, make a new closure
     | Just _ <- Map.lookup v (progFunctions prog) = return (ValClosure v [] []) -- this should never be used
-    | Just _ <- Map.lookup v (progDatatypes prog) = return ValType
+    | Just _ <- Map.lookup v (progDatatypes prog) = return (ValCons 0 [])
     | otherwise = execError loc ("unbound variable" <+> quoted v)
 
 -- | Pack up the free variables of an expression into a packed environment
@@ -108,14 +108,11 @@ expr global tenv env loc = exp where
         case find (\ (c',_,_) -> c == c') pl of
           Just (_,vl,e') -> do
             let Just tl = Infer.lookupCons conses c
-            cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
+                dl' = if null dl then map (const (ValCons 0 [])) vl else dl
+            cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl') loc e'
           Nothing -> case def of
             Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (d,t)) <> ", cases =" <+> show pl) -- XXX data printed
             Just e' -> cast ct $ expr global tenv env loc e'
-      ValType -> do
-        let (c,vl,e') = head pl
-            Just tl = Infer.lookupCons conses c
-        cast ct $ expr global (insertList tenv vl tl) (foldl (\s v -> Map.insert v ValType s) env vl) loc e'
       _ -> execError loc ("expected block, got" <+> quoted v)
   exp ce@(ExpCons c el) = do
     t <- inferExpr tenv loc ce
@@ -174,7 +171,7 @@ apply global loc ft (ValDelay e penv) _ at = do
   rt <- runInfer loc ("force" <+> quoted ft) $ Infer.apply loc ft at
   let (tenv,env) = unpackEnv penv
   cast rt $ expr global tenv env loc e
-apply _ _ _ ValType _ _ = return ValType
+apply _ _ _ (ValCons 0 []) _ _ = return $ ValCons 0 []
 apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1,t1) <+> "to" <+> quoted (v2,t2))
 
 -- |IO and main

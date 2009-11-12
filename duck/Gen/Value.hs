@@ -17,7 +17,6 @@ data Value = ValInt !Int
            | ValCons !Int ![Value]
            | ValClosure !Var ![TypeVal] ![Value]
            | ValDelay !Exp ![(Var, TypeVal, Value)]
-           | ValType
            | ValLiftIO !Value
            | ValPrimIO !Prim ![Value]
            | ValBindIO !Var !TypeVal !Value !Exp ![(Var, TypeVal, Value)]

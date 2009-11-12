@@ -19,7 +19,6 @@ data Value of
   ValCons Int (List Value) -- ^ Constructed data
   ValClosure Var (List TypeVal) (List Value) -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
   ValDelay Exp (List (Var, TypeVal, Value)) -- ^ Delay (lazy) evaluation.
-  ValType
   -- Monadic IO
   ValLiftIO Value -- ^ lifted (returned) value within IO monad
   ValPrimIO Prim (List Value) -- ^ Closure of unexecuted IO call
