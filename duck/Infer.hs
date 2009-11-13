@@ -242,8 +242,8 @@ isTypeC1 c tt = do
 isTypeType :: TypeVal -> Infer (Maybe TypeVal)
 isTypeType = isTypeC1 "Type"
 
-isTypeValO :: TypeVal -> Infer (Maybe TypeVal)
-isTypeValO = isTypeC1 "IO"
+isTypeIO :: TypeVal -> Infer (Maybe TypeVal)
+isTypeIO = isTypeC1 "IO"
 
 instance TypeMonad Infer where
   typeApply = apply noLoc
@@ -337,7 +337,7 @@ main = do
 -- |This is the analog for 'Interp.runIO' for types.  It exists by analogy even though it is very simple.
 runIO :: TypeVal -> Infer TypeVal
 runIO io = do
-  r <- isTypeValO io
+  r <- isTypeIO io
   case r of
     Just t -> return t
     Nothing -> typeError noLoc ("expected IO type, got" <+> quoted io)
