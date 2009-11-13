@@ -15,8 +15,14 @@ import Prims
 data Value = ValInt !Int
            | ValChar !Char
            | ValCons !Int ![Value]
-           | ValClosure !Var ![TypeVal] ![Value]
-           | ValDelay !Exp ![(Var, TypeVal, Value)]
-           | ValLiftIO !Value
-           | ValPrimIO !Prim ![Value]
-           | ValBindIO !Var !TypeVal !Value !Exp ![(Var, TypeVal, Value)]
+           | ValFun !FunValue
+           | ValIO !IOValue
+ 
+{-# LINE 23 "value.duck" #-}
+data FunValue = ValClosure !Var ![TypeVal] ![Value]
+              | ValDelay !Exp ![(Var, TypeVal, Value)]
+ 
+{-# LINE 28 "value.duck" #-}
+data IOValue = ValLiftIO !Value
+             | ValPrimIO !Prim ![Value]
+             | ValBindIO !Var !TypeVal !IOValue !Exp ![(Var, TypeVal, Value)]

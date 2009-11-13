@@ -17,9 +17,15 @@ data Value of
   ValInt Int
   ValChar Char
   ValCons Int (List Value) -- ^ Constructed data
+  ValFun FunValue -- ^ Closure or delayed expression
+  ValIO IOValue -- ^ IO Monad
+
+data FunValue of
   ValClosure Var (List TypeVal) (List Value) -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
   ValDelay Exp (List (Var, TypeVal, Value)) -- ^ Delay (lazy) evaluation.
-  -- Monadic IO
+
+-- Monadic IO
+data IOValue of
   ValLiftIO Value -- ^ lifted (returned) value within IO monad
   ValPrimIO Prim (List Value) -- ^ Closure of unexecuted IO call
-  ValBindIO Var TypeVal Value Exp (List (Var, TypeVal, Value)) -- ^ Unexecuted IO binding
+  ValBindIO Var TypeVal IOValue Exp (List (Var, TypeVal, Value)) -- ^ Unexecuted IO binding

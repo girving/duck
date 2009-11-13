@@ -6,7 +6,7 @@
 
 module Value
   ( Env
-  , Value(..)
+  , Value(..), FunValue(..), IOValue(..)
   , valUnit
   ) where
 
@@ -28,6 +28,8 @@ import Gen.Value
 
 -- Add instance declarations
 deriving instance Show Value
+deriving instance Show FunValue
+deriving instance Show IOValue
 
 type Env = Map Var Value
 
@@ -46,13 +48,15 @@ prettyval (TyCons (V "List") [t]) v | Just v' <- extract v = pretty' $
   extract (ValCons 1 [h,t]) = (h :) =.< extract t
   extract _ = Nothing
 prettyval (TyCons (V "Type") [t]) _ = pretty' t
-prettyval (TyFun _) (ValClosure v types args) = prettyop v (zip args types)
-prettyval (TyFun _) (ValDelay e _) = prettyop "delay" [e]
-prettyval (TyCons (V "IO") [t]) (ValLiftIO v) = prettyval t v
-prettyval (TyCons (V "IO") [_]) (ValPrimIO p []) = pretty' $ primString p
-prettyval (TyCons (V "IO") [_]) (ValPrimIO IOPutChar [c]) = prettyop (V "ioPutChar") [prettyval typeChar c]
-prettyval (TyCons (V "IO") [_]) (ValBindIO v t d e _) = 0 #>
-  v <+> "<-" <+> (d,t) $$ pretty e
+prettyval (TyFun _) (ValFun f) = case f of
+  ValClosure v types args -> prettyop v (zip args types)
+  ValDelay e _ -> prettyop "delay" [e]
+prettyval (TyCons (V "IO") [t]) (ValIO io) = case io of
+  ValLiftIO v -> prettyval t v
+  ValPrimIO p [] -> pretty' $ primString p
+  ValPrimIO IOPutChar [c] -> prettyop (V "ioPutChar") [prettyval typeChar c]
+  ValBindIO v t d e _ -> 0 #> v <+> "<-" <+> (d,t) $$ pretty e
+  _ -> pretty' "<unknown-prim-io>"
 prettyval t v = error ("type mismatch in prettyval "++pout t++" "++show v)
 
 instance Pretty (Value,TypeVal) where

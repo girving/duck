@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
+{-# LANGUAGE PatternGuards, TypeSynonymInstances, ScopedTypeVariables #-}
 -- | Duck interpreter
 
 -- For now, this is dynamically typed
@@ -40,8 +40,8 @@ lookup global env loc v
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
   | otherwise = getProg >>= lp where
   lp prog
-    | Just _ <- Map.lookup v (progOverloads prog) = return (ValClosure v [] []) -- if we find overloads, make a new closure
-    | Just _ <- Map.lookup v (progFunctions prog) = return (ValClosure v [] []) -- this should never be used
+    | Just _ <- Map.lookup v (progOverloads prog) = return (ValFun $ ValClosure v [] []) -- if we find overloads, make a new closure
+    | Just _ <- Map.lookup v (progFunctions prog) = return (ValFun $ ValClosure v [] []) -- this should never be used
     | Just _ <- Map.lookup v (progDatatypes prog) = return (ValCons 0 [])
     | otherwise = execError loc ("unbound variable" <+> quoted v)
 
@@ -122,9 +122,9 @@ expr global tenv env loc = exp where
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
   exp (ExpBind v e1 e2) = do
     t <- inferExpr tenv loc e1
-    d <- exp e1
-    return $ ValBindIO v t d e2 (packEnv (Map.delete v tenv) env e2)
-  exp (ExpReturn e) = ValLiftIO =.< exp e
+    ValIO d <- exp e1
+    return $ ValIO $ ValBindIO v t d e2 (packEnv (Map.delete v tenv) env e2)
+  exp (ExpReturn e) = ValIO . ValLiftIO =.< exp e
   exp se@(ExpSpec e _) = do
     t <- inferExpr tenv loc se
     cast t $ exp e
@@ -133,7 +133,7 @@ expr global tenv env loc = exp where
 -- |Evaluate an argument acording to the given transform
 transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Maybe Trans -> Exec Value
 transExpr global tenv env loc e Nothing = expr global tenv env loc e
-transExpr _ tenv env _ e (Just Delayed) = return $ ValDelay e (packEnv tenv env e)
+transExpr _ tenv env _ e (Just Delayed) = return $ ValFun $ ValDelay e (packEnv tenv env e)
 
 applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> TypeVal -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =
@@ -146,42 +146,46 @@ applyExpr global tenv env loc ft f e =
 -- "at" is the type of the value which was passed in, and is the type used for
 -- type inference/overload resolution.
 apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Maybe Trans -> Exec Value) -> TypeVal -> Exec Value
-apply global loc ft (ValClosure f types args) ae at = do
-  -- infer return type
-  rt <- runInfer loc ("apply" <+> quoted ft <+> "to" <+> quoted at) $ Infer.apply loc ft at
-  -- lookup appropriate overload (parallels Infer.apply/resolve)
-  let tl = types ++ [at]
-  o <- maybe
-    (execError loc ("unresolved overload:" <+> quoted (prettyap f tl)))
-    return =<< liftInfer (Infer.lookupOver f tl)
-  -- determine type transform for this argument, and evaluate
-  let tt = map fst $ overArgs o
-  -- we throw away the type because we can reconstruct it later with argType
-  a <- ae (tt !! length args)
-  let dl = args ++ [a]
-  case o of
-    Over _ _ _ _ Nothing ->
-      -- partially applied
-      return $ ValClosure f tl dl
-    Over oloc tl' _ vl (Just e) -> do
-      -- full function call (parallels Infer.cache)
-      let tl = map snd tl'
-      cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
-apply global loc ft (ValDelay e penv) _ at = do
-  rt <- runInfer loc ("force" <+> quoted ft) $ Infer.apply loc ft at
-  let (tenv,env) = unpackEnv penv
-  cast rt $ expr global tenv env loc e
-apply _ _ _ (ValCons 0 []) _ _ = return $ ValCons 0 []
-apply _ loc t1 v1 e2 t2 = e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1,t1) <+> "to" <+> quoted (v2,t2))
+apply global loc ft@(TyFun _) (ValFun fun) ae at = case fun of
+  ValClosure f types args -> do
+    -- infer return type
+    rt <- runInfer loc ("apply" <+> quoted ft <+> "to" <+> quoted at) $ Infer.apply loc ft at
+    -- lookup appropriate overload (parallels Infer.apply/resolve)
+    let tl = types ++ [at]
+    o <- maybe
+      (execError loc ("unresolved overload:" <+> quoted (prettyap f tl)))
+      return =<< liftInfer (Infer.lookupOver f tl)
+    -- determine type transform for this argument, and evaluate
+    let tt = map fst $ overArgs o
+    -- we throw away the type because we can reconstruct it later with argType
+    a <- ae (tt !! length args)
+    let dl = args ++ [a]
+    case o of
+      Over _ _ _ _ Nothing ->
+        -- partially applied
+        return $ ValFun $ ValClosure f tl dl
+      Over oloc tl' _ vl (Just e) -> do
+        -- full function call (parallels Infer.cache)
+        let tl = map snd tl'
+        cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
+  ValDelay e penv -> do
+    rt <- runInfer loc ("force" <+> quoted ft) $ Infer.apply loc ft at
+    let (tenv,env) = unpackEnv penv
+    cast rt $ expr global tenv env loc e
+apply _ loc t1 v1 e2 t2 = do
+  r <- liftInfer $ Infer.isTypeType t1
+  case r of
+    Just _ -> return $ ValCons 0 []
+    Nothing -> e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1,t1) <+> "to" <+> quoted (v2,t2))
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()
 main prog global = runExec prog $ do
-  main <- lookup global Map.empty noLoc (V "main")
+  ValIO main <- lookup global Map.empty noLoc (V "main")
   _ <- runIO global main
   return ()
 
-runIO :: Globals -> Value -> Exec Value
+runIO :: Globals -> IOValue -> Exec Value
 runIO _ (ValLiftIO d) = return d
 runIO global (ValPrimIO TestAll []) = testAll global
 runIO _ (ValPrimIO p args) = Base.runPrimIO p args
@@ -189,9 +193,8 @@ runIO global (ValBindIO v tm m e penv) = do
   d <- runIO global m
   t <- liftInfer $ Infer.runIO tm
   let (tenv,env) = unpackEnv penv
-  d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
+  ValIO d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
   runIO global d'
-runIO _ d = execError noLoc ("expected IO computation, got" <+> show d)
 
 testAll :: Globals -> Exec Value
 testAll global = do
@@ -203,7 +206,8 @@ testAll global = do
   test (V v,d)
     | isPrefixOf "test_" v = do
         liftIO $ puts ("  "++v)
-        runIO global d
+        let ValIO d' = d
+        runIO global d'
         success
     | otherwise = success
   nop = return $ ValCons 0 []

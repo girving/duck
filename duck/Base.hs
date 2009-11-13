@@ -47,7 +47,7 @@ intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
 intBinOp op fun = intOp op typeInt $ \i -> ValInt . fun i
 
 ioOp :: Prim -> String -> [TypeVal] -> TypeVal -> PrimOp
-ioOp p name tl t = PrimOp p name tl (typeIO t) (ValPrimIO p)
+ioOp p name tl t = PrimOp p name tl (typeIO t) (ValIO . ValPrimIO p)
 
 primOps :: Map.Map Prim PrimOp
 primOps = Map.fromList $ map (\o -> (primPrim o, o)) $

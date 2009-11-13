@@ -20,6 +20,7 @@ module Infer
   , apply
   , runIO
   , main
+  , isTypeType
   -- * Environment access
   , lookup
   , lookupDatatype
