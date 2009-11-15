@@ -20,6 +20,7 @@ import qualified Data.Map as Map
 import Util
 import Var
 import Type
+import Memory
 import Value
 import Prims
 import SrcLoc
@@ -47,7 +48,7 @@ intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
 intBinOp op fun = intOp op typeInt $ \i -> ValInt . fun i
 
 ioOp :: Prim -> String -> [TypeVal] -> TypeVal -> PrimOp
-ioOp p name tl t = PrimOp p name tl (typeIO t) (ValIO . ValPrimIO p)
+ioOp p name tl t = PrimOp p name tl (typeIO t) (value . ValPrimIO p)
 
 primOps :: Map.Map Prim PrimOp
 primOps = Map.fromList $ map (\o -> (primPrim o, o)) $

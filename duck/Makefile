@@ -36,6 +36,7 @@ duck: Duck.hs $(OTHERS)
 GEN = ./duck --haskell
 .PHONY: gen
 gen:
+	$(GEN) memory.duck > Gen/Memory.hs
 	$(GEN) var.duck > Gen/Var.hs
 	$(GEN) type.duck > Gen/Type.hs
 	$(GEN) srcLoc.duck > Gen/SrcLoc.hs

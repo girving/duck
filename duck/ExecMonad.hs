@@ -23,10 +23,11 @@ import Control.Exception
 
 import Util
 import Pretty
+import Memory
 import Var
 import Stage
 import Type
-import Value
+import Value()
 import SrcLoc
 import InferMonad hiding (withFrame)
 import Lir (Prog, ProgMonad)

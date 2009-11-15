@@ -6,7 +6,7 @@
 
 module Value
   ( Env
-  , Value(..), FunValue(..), IOValue(..)
+  , FunValue(..), IOValue(..)
   , valUnit
   ) where
 
@@ -22,12 +22,12 @@ import Prims
 import Pretty
 import ParseOps
 import Pretty
+import Memory
 
--- Pull in definition of Value
+-- Pull in definition of IOValue and FunValue
 import Gen.Value
 
 -- Add instance declarations
-deriving instance Show Value
 deriving instance Show FunValue
 deriving instance Show IOValue
 
@@ -48,19 +48,26 @@ prettyval (TyCons (V "List") [t]) v | Just v' <- extract v = pretty' $
   extract (ValCons 1 [h,t]) = (h :) =.< extract t
   extract _ = Nothing
 prettyval (TyCons (V "Type") [t]) _ = pretty' t
-prettyval (TyFun _) (ValFun f) = case f of
-  ValClosure v types args -> prettyop v (zip args types)
-  ValDelay e _ -> prettyop "delay" [e]
-prettyval (TyCons (V "IO") [t]) (ValIO io) = case io of
-  ValLiftIO v -> prettyval t v
-  ValPrimIO p [] -> pretty' $ primString p
-  ValPrimIO IOPutChar [c] -> prettyop (V "ioPutChar") [prettyval typeChar c]
-  ValBindIO v t d e _ -> 0 #> v <+> "<-" <+> (d,t) $$ pretty e
-  _ -> pretty' "<unknown-prim-io>"
+prettyval (TyFun _) v = pretty' (unvalue v :: FunValue)
+prettyval (TyCons (V "IO") [t]) v = prettyio t (unvalue v :: IOValue)
 prettyval t v = error ("type mismatch in prettyval "++pout t++" "++show v)
+
+instance Pretty FunValue where
+  pretty' (ValClosure v types args) = prettyop v (zip args types)
+  pretty' (ValDelay e _) = prettyop "delay" [e]
+
+prettyio :: TypeVal -> IOValue -> Doc'
+prettyio t (ValLiftIO v) = prettyval t v
+prettyio _ (ValPrimIO p []) = pretty' $ primString p
+prettyio _ (ValPrimIO IOPutChar [c]) = prettyop (V "ioPutChar") [prettyval typeChar c]
+prettyio _ (ValBindIO v t d e _) = 0 #> v <+> "<-" <+> (d,t) $$ pretty e
+prettyio _ _ = pretty' "<unknown-prim-io>"
 
 instance Pretty (Value,TypeVal) where
   pretty' (v,t) = 2 #> prettyval t v <+> "::" <+> t
+
+instance Pretty (IOValue,TypeVal) where
+  pretty' (v,t) = 2 #> prettyio t v <+> "::" <+> t
 
 instance (Ord k, Pretty k) => Pretty (Map k Value, Map k TypeVal) where
   pretty' (v,t) = pretty' $ Map.intersectionWith (,) v t

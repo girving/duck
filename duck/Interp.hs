@@ -19,6 +19,7 @@ import Util
 import Var
 import Type
 import Prims
+import Memory
 import Value
 import SrcLoc
 import Pretty
@@ -40,8 +41,8 @@ lookup global env loc v
   | Just r <- Map.lookup v global = return r -- fall back to global definitions
   | otherwise = getProg >>= lp where
   lp prog
-    | Just _ <- Map.lookup v (progOverloads prog) = return (ValFun $ ValClosure v [] []) -- if we find overloads, make a new closure
-    | Just _ <- Map.lookup v (progFunctions prog) = return (ValFun $ ValClosure v [] []) -- this should never be used
+    | Just _ <- Map.lookup v (progOverloads prog) = return (value $ ValClosure v [] []) -- if we find overloads, make a new closure
+    | Just _ <- Map.lookup v (progFunctions prog) = return (value $ ValClosure v [] []) -- this should never be used
     | Just _ <- Map.lookup v (progDatatypes prog) = return (ValCons 0 [])
     | otherwise = execError loc ("unbound variable" <+> quoted v)
 
@@ -122,9 +123,10 @@ expr global tenv env loc = exp where
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
   exp (ExpBind v e1 e2) = do
     t <- inferExpr tenv loc e1
-    ValIO d <- exp e1
-    return $ ValIO $ ValBindIO v t d e2 (packEnv (Map.delete v tenv) env e2)
-  exp (ExpReturn e) = ValIO . ValLiftIO =.< exp e
+    d <- exp e1
+    let d' = unvalue d :: IOValue
+    return $ value $ ValBindIO v t d' e2 (packEnv (Map.delete v tenv) env e2)
+  exp (ExpReturn e) = value . ValLiftIO =.< exp e
   exp se@(ExpSpec e _) = do
     t <- inferExpr tenv loc se
     cast t $ exp e
@@ -133,7 +135,7 @@ expr global tenv env loc = exp where
 -- |Evaluate an argument acording to the given transform
 transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Maybe Trans -> Exec Value
 transExpr global tenv env loc e Nothing = expr global tenv env loc e
-transExpr _ tenv env _ e (Just Delayed) = return $ ValFun $ ValDelay e (packEnv tenv env e)
+transExpr _ tenv env _ e (Just Delayed) = return $ value $ ValDelay e (packEnv tenv env e)
 
 applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> TypeVal -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =
@@ -146,7 +148,7 @@ applyExpr global tenv env loc ft f e =
 -- "at" is the type of the value which was passed in, and is the type used for
 -- type inference/overload resolution.
 apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Maybe Trans -> Exec Value) -> TypeVal -> Exec Value
-apply global loc ft@(TyFun _) (ValFun fun) ae at = case fun of
+apply global loc ft@(TyFun _) fun ae at = case unvalue fun :: FunValue of
   ValClosure f types args -> do
     -- infer return type
     rt <- runInfer loc ("apply" <+> quoted ft <+> "to" <+> quoted at) $ Infer.apply loc ft at
@@ -163,7 +165,7 @@ apply global loc ft@(TyFun _) (ValFun fun) ae at = case fun of
     case o of
       Over _ _ _ _ Nothing ->
         -- partially applied
-        return $ ValFun $ ValClosure f tl dl
+        return $ value $ ValClosure f tl dl
       Over oloc tl' _ vl (Just e) -> do
         -- full function call (parallels Infer.cache)
         let tl = map snd tl'
@@ -181,8 +183,8 @@ apply _ loc t1 v1 e2 t2 = do
 -- |IO and main
 main :: Prog -> Globals -> IO ()
 main prog global = runExec prog $ do
-  ValIO main <- lookup global Map.empty noLoc (V "main")
-  _ <- runIO global main
+  main <- lookup global Map.empty noLoc (V "main")
+  _ <- runIO global (unvalue main :: IOValue)
   return ()
 
 runIO :: Globals -> IOValue -> Exec Value
@@ -193,8 +195,8 @@ runIO global (ValBindIO v tm m e penv) = do
   d <- runIO global m
   t <- liftInfer $ Infer.runIO tm
   let (tenv,env) = unpackEnv penv
-  ValIO d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
-  runIO global d'
+  d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
+  runIO global (unvalue d' :: IOValue)
 
 testAll :: Globals -> Exec Value
 testAll global = do
@@ -206,8 +208,7 @@ testAll global = do
   test (V v,d)
     | isPrefixOf "test_" v = do
         liftIO $ puts ("  "++v)
-        let ValIO d' = d
-        runIO global d'
+        runIO global (unvalue d :: IOValue)
         success
     | otherwise = success
   nop = return $ ValCons 0 []
