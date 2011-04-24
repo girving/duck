@@ -58,5 +58,5 @@ data TypePat of
 data Variance of Covariant ; Invariant
 
 -- |Possible kinds of type macro transformers.
-data Trans
-  of Delayed -- :: Delay
+data Trans of
+  Delayed -- :: Delay
