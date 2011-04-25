@@ -60,14 +60,15 @@ data Prog = Prog
 
 -- |Datatype definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
 data Datatype = Data
-  { dataLoc :: SrcLoc
+  { dataName :: CVar
+  , dataLoc :: SrcLoc
   , dataTyVars :: [Var] -- ^ Type variable arguments
   , dataConses :: [(Loc CVar, [TypePat])] -- ^ Constructors
   , dataVariances :: [Variance] -- ^ Variances of 'dataTyVars'
   }
 instance HasLoc Datatype where loc = dataLoc
 
--- |Overload definition, parameterized by either 'Type' or 'TypePat', depending on whether it is  a specific resolution, or the original definition
+-- |Overload definition, parameterized by either 'Type' or 'TypePat', depending on whether it is a specific resolution, or the original definition
 data Overload t = Over
   { overLoc :: SrcLoc
   , overArgs :: [TransType t] -- ^ Type of arguments with transform annotations
@@ -209,7 +210,7 @@ decl (Ir.LetM vl e) = do
   e <- expr Set.empty noLocExpr e
   definition vl e
 decl (Ir.Data (Loc l tc) tvl cases) =
-  modify $ \p -> p { progDatatypes = Map.insertWith exists tc (Data l tvl cases undefined) (progDatatypes p) }
+  modify $ \p -> p { progDatatypes = Map.insertWith exists tc (Data tc l tvl cases undefined) (progDatatypes p) }
   where exists _ o = dupError tc l (dataLoc o)
 
 -- |Add a toplevel statement
@@ -353,7 +354,7 @@ union p1 p2 = Prog
 instance Pretty Prog where
   pretty' prog = vcat $
        [pretty "-- datatypes"]
-    ++ [pretty (Ir.Data (Loc l t) vl c) | (t,Data l vl c _) <- Map.toList (progDatatypes prog)]
+    ++ [pretty (Ir.Data (Loc l t) vl c) | Data t l vl c _ <- Map.elems (progDatatypes prog)]
     ++ [pretty "-- functions"]
     ++ [pretty $ function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
     ++ [pretty "-- overloads"]

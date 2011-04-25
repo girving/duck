@@ -94,7 +94,7 @@ lookupDatatype loc (TyCons (V "Type") [t]) = case t of
   TyFun _ -> inferError loc $ "cannot pattern match on" <+> quoted (typeType t) <> "; matching on function types isn't implemented yet"
 lookupDatatype loc (TyCons tv types) = getProg >>= \prog ->
   case Map.lookup tv (progDatatypes prog) of
-    Just (Data _ vl cons _) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
+    Just (Data _ _ vl cons _) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
     _ -> inferError loc ("unbound datatype constructor" <+> quoted tv)
 lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 

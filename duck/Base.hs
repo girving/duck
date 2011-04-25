@@ -111,14 +111,15 @@ base = Lir.union types (Lir.prog "" (decTuples ++ prims ++ io)) where
     vars = take i standardVars
 
   types = (Lir.empty "")
-    { Lir.progDatatypes = Map.fromList
-      [ (V "Int", Lir.Data noLoc [] [] [])
-      , (V "Char", Lir.Data noLoc [] [] [])
-      , (V "IO", Lir.Data noLoc [V "a"] [] [Covariant]) 
-      , (V "Delayed", Lir.Data noLoc [V "a"] [] [Covariant])
-      , (V "Type", Lir.Data noLoc [V "t"] [] [Invariant])
+    { Lir.progDatatypes = Map.fromList $ map expand
+      [ Lir.Data (V "Int") noLoc [] [] []
+      , Lir.Data (V "Char") noLoc [] [] []
+      , Lir.Data (V "IO") noLoc [V "a"] [] [Covariant]
+      , Lir.Data (V "Delayed") noLoc [V "a"] [] [Covariant]
+      , Lir.Data (V "Type") noLoc [V "t"] [] [Invariant]
       ]
     }
+    where expand d@(Lir.Data t _ _ _ _) = (t,d)
 
 io :: [Decl]
 io = [map',join,returnIO] where
