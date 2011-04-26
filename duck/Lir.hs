@@ -147,7 +147,7 @@ prog name decls = flip execState (empty name) $ do
       -- The set of (currently known to be) invariant vars in a typeset
       invVars :: TypePat -> [Var]
       invVars (TsVar _) = []
-      invVars (TsCons c tl) = concat [invVars t | (i,t) <- zip [0..] tl, Set.member (c,i) inv]
+      invVars (TsCons c tl) = concat [if Set.member (c,i) inv then freeVars t else invVars t | (i,t) <- zip [0..] tl]
       invVars (TsFun fl) = concatMap fun fl where
         fun (FunArrow s t) = freeVars s ++ invVars t
         fun (FunClosure _ tl) = concatMap freeVars tl

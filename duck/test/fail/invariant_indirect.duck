@@ -1,0 +1,14 @@
+import base
+main = exit 0
+
+-- Declare an indirectly invariant datatype
+data S a of A a
+data T a of B a (S (a -> Int)) -- 'a' should be invariant
+
+f = B [1] \ A \ ((x -> 1) :: (List Int -> Int))
+g = B [] \ A \ (x -> 1) :: (List Void -> Int)
+
+-- union (T Void) (T Int) should fail
+_ = case True of
+  True -> f
+  False -> g
