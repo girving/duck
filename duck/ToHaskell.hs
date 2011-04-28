@@ -25,11 +25,11 @@ prog name prog = header $+$ PHs.prettyPrintWithMode (PHs.defaultMode { PHs.lineP
   doConvert = name /= "memory"
 
 import_ :: Loc Ast.Decl -> Maybe HsImportDecl
-import_ (Loc l (Ast.Import (V m))) = Just $ HsImportDecl (srcLoc l) (Module $ fstUpper m) False Nothing Nothing
+import_ (L l (Ast.Import (V m))) = Just $ HsImportDecl (srcLoc l) (Module $ fstUpper m) False Nothing Nothing
 import_ _ = Nothing
 
 decl :: Bool -> Loc Ast.Decl -> [HsDecl]
-decl doConvert (Loc l (Ast.Data (Loc _ c) vl conses)) = datatype l' c' vl' conses : convert doConvert l' c' vl' conses where
+decl doConvert (L l (Ast.Data (L _ c) vl conses)) = datatype l' c' vl' conses : convert doConvert l' c' vl' conses where
   l' = srcLoc l
   c' = name c
   vl' = map name vl
@@ -40,7 +40,7 @@ datatype l c vl [cons@(_,[_])] = HsNewTypeDecl l [] c vl (constructor HsUnBanged
 datatype l c vl conses = HsDataDecl l [] c vl (map (constructor HsBangedTy) conses) [] where
 
 constructor :: (HsType -> HsBangType) -> (Loc CVar, [TypePat]) -> HsConDecl
-constructor f (Loc l c,tl) = HsConDecl (srcLoc l) (name c) (map (f . typep) tl)
+constructor f (L l c,tl) = HsConDecl (srcLoc l) (name c) (map (f . typep) tl)
 
 typep :: TypePat -> HsType
 typep (TsVar v) = HsTyVar (name v)
@@ -57,12 +57,12 @@ convert True l c vl conses = [HsInstDecl l context convert' [ty] [value,unvalue]
   ty = foldl HsTyApp (HsTyCon (UnQual c)) (map HsTyVar vl)
   context = map (\v -> (convert', [HsTyVar v])) vl
   value = HsFunBind (map f (zip [0..] conses)) where
-    f (i,(Loc _ c, args)) = HsMatch l value' [HsPApp (UnQual (name c)) (map HsPVar vl)] (HsUnGuardedRhs e) [] where
+    f (i,(L _ c, args)) = HsMatch l value' [HsPApp (UnQual (name c)) (map HsPVar vl)] (HsUnGuardedRhs e) [] where
       e = HsApp (HsApp (HsCon valcons) (HsLit (HsInt i))) (HsList (map (\v -> HsApp (HsVar (UnQual value')) (HsVar (UnQual v))) vl))
       vl = map name (take (length args) standardVars)
     value' = HsIdent "value"
   unvalue = HsFunBind (map f (zip [0..] conses) ++ [fail]) where
-    f (i,(Loc _ c, args)) = HsMatch l unvalue' [HsPApp valcons [HsPLit (HsInt i), HsPList (map HsPVar vl)]] (HsUnGuardedRhs e) [] where
+    f (i,(L _ c, args)) = HsMatch l unvalue' [HsPApp valcons [HsPLit (HsInt i), HsPList (map HsPVar vl)]] (HsUnGuardedRhs e) [] where
       e = foldl HsApp (HsCon (UnQual (name c))) (map (\v -> HsParen $ HsApp (HsVar (UnQual unvalue')) (HsVar (UnQual v))) vl)
       vl = map name (take (length args) standardVars)
     fail = HsMatch l unvalue' [HsPWildCard] (HsUnGuardedRhs (HsVar (UnQual (HsIdent "undefined")))) []

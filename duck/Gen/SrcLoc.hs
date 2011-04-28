@@ -30,3 +30,15 @@ instance Convert SrcLoc where
               (unvalue e)
         {-# LINE 3 "srcLoc.duck" #-}
         unvalue _ = undefined
+ 
+{-# LINE 8 "srcLoc.duck" #-}
+data Loc a = L !SrcLoc !a
+ 
+{-# LINE 8 "srcLoc.duck" #-}
+instance (Convert a) => Convert (Loc a) where
+        {-# LINE 8 "srcLoc.duck" #-}
+        value (L a b) = ValCons 0 [value a, value b]
+        {-# LINE 8 "srcLoc.duck" #-}
+        unvalue (ValCons 0 [a, b]) = L (unvalue a) (unvalue b)
+        {-# LINE 8 "srcLoc.duck" #-}
+        unvalue _ = undefined

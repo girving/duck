@@ -10,7 +10,7 @@ import Lex
 import Token
 import Layout
 import Ast
-import Type hiding (typePat)
+import Type hiding (typePat, Data)
 import Prims
 import SrcLoc hiding (loc)
 import ParseMonad
@@ -26,41 +26,41 @@ import Util
 %tokentype { Loc Token }
 
 %monad { P }
-%lexer { (layout lexer >>=) } { Loc _ TokEOF } -- Happy wants the lexer in continuation form
+%lexer { (layout lexer >>=) } { L _ TokEOF } -- Happy wants the lexer in continuation form
 %error { parserError }
 
 %token
-  var  { Loc _ (TokVar _) }
-  cvar { Loc _ (TokCVar _) }
-  sym  { Loc _ (TokSym _) }
-  csym { Loc _ (TokCSym _) }
-  int  { Loc _ (TokInt _) }
-  chr  { Loc _ (TokChar _) }
-  data { Loc _ (TokData) }
-  let  { Loc _ (TokLet) }
-  in   { Loc _ (TokIn) }
-  case { Loc _ (TokCase) }
-  of   { Loc _ (TokOf) }
-  if   { Loc _ (TokIf) }
-  then { Loc _ (TokThen) }
-  else { Loc _ (TokElse) }
-  '='  { Loc _ (TokEq) }
-  '::' { Loc _ (TokDColon) }
-  ','  { Loc _ (TokComma) }
-  '('  { Loc _ (TokLP) }
-  ')'  { Loc _ (TokRP) }
-  '['  { Loc _ (TokLB) }
-  ']'  { Loc _ (TokRB) }
-  '{'  { Loc _ (TokLC _) }
-  '}'  { Loc _ (TokRC _) }
-  ';'  { Loc _ (TokSemi _) }
-  '_'  { Loc _ (TokAny) }
-  '\\' { Loc _ (TokLambda) }
-  '->' { Loc _ (TokArrow) }
-  -- '|'  { Loc _ (TokOr) }
-  '-'  { Loc _ (TokMinus) }
-  import { Loc _ (TokImport) }
-  infix  { Loc _ (TokInfix _) }
+  var  { L _ (TokVar _) }
+  cvar { L _ (TokCVar _) }
+  sym  { L _ (TokSym _) }
+  csym { L _ (TokCSym _) }
+  int  { L _ (TokInt _) }
+  chr  { L _ (TokChar _) }
+  data { L _ (TokData) }
+  let  { L _ (TokLet) }
+  in   { L _ (TokIn) }
+  case { L _ (TokCase) }
+  of   { L _ (TokOf) }
+  if   { L _ (TokIf) }
+  then { L _ (TokThen) }
+  else { L _ (TokElse) }
+  '='  { L _ (TokEq) }
+  '::' { L _ (TokDColon) }
+  ','  { L _ (TokComma) }
+  '('  { L _ (TokLP) }
+  ')'  { L _ (TokRP) }
+  '['  { L _ (TokLB) }
+  ']'  { L _ (TokRB) }
+  '{'  { L _ (TokLC _) }
+  '}'  { L _ (TokRC _) }
+  ';'  { L _ (TokSemi _) }
+  '_'  { L _ (TokAny) }
+  '\\' { L _ (TokLambda) }
+  '->' { L _ (TokArrow) }
+  -- '|'  { L _ (TokOr) }
+  '-'  { L _ (TokMinus) }
+  import { L _ (TokImport) }
+  infix  { L _ (TokInfix _) }
 
 %%
 
@@ -224,10 +224,10 @@ asyms :: { Loc [Var] }
 parse :: P Prog
 
 parserError :: Loc Token -> P a
-parserError (Loc l t) = parseError l ("syntax error "++showAt t)
+parserError (L l t) = parseError l ("syntax error "++showAt t)
 
 unmatched :: Loc Token -> P a
-unmatched (Loc l t) = parseError l $ "unmatched" <+> quoted t
+unmatched (L l t) = parseError l $ "unmatched" <+> quoted t
 
 tscons :: CVar -> [TypePat] -> TypePat
 tscons (V "Void") [] = TsVoid
@@ -243,26 +243,26 @@ ifix :: Loc Token -> Fixity
 ifix = tokFix . unLoc
 
 loc :: Loc x -> Loc y -> a -> Loc a
-loc (Loc l _) (Loc r _) = Loc (mappend l r)
+loc (L l _) (L r _) = L (mappend l r)
 
 loc1 :: Loc x -> a -> Loc a
-loc1 (Loc l _) = Loc l
+loc1 (L l _) = L l
 
 loc0 :: a -> Loc a
-loc0 = Loc noLoc
+loc0 = L noLoc
 
 locVar :: Loc Token -> Loc Var
 locVar = fmap tokVar
 
 expLoc :: Loc Exp -> Exp
-expLoc (Loc l (ExpLoc _ e)) = expLoc (Loc l e) -- shouldn't happen
-expLoc (Loc l e)
+expLoc (L l (ExpLoc _ e)) = expLoc (L l e) -- shouldn't happen
+expLoc (L l e)
   | hasLoc l = ExpLoc l e
   | otherwise = e
 
 patLoc :: Loc Pattern -> Pattern
-patLoc (Loc l (PatLoc _ e)) = patLoc (Loc l e) -- shouldn't happen
-patLoc (Loc l p)
+patLoc (L l (PatLoc _ e)) = patLoc (L l e) -- shouldn't happen
+patLoc (L l p)
   | hasLoc l = PatLoc l p
   | otherwise = p
 
@@ -280,18 +280,18 @@ ops (OpAtom e) = e
 ops o = Ops o
 
 pattern :: Loc Exp -> P (Loc Pattern)
-pattern (Loc l e) = Loc l =.< patternExp l e
+pattern (L l e) = L l =.< patternExp l e
 
 patterns :: Loc [Exp] -> P (Loc [Pattern])
-patterns (Loc l el) = Loc l =.< mapM (patternExp l) el
+patterns (L l el) = L l =.< mapM (patternExp l) el
 
 arrows :: Loc (Stack Exp Exp) -> P (Loc Exp)
-arrows (Loc l stack) = case splitStack stack of
-  ([],e) -> return $ Loc l e
-  (el,e) -> patterns (Loc l el) >.= fmap (\pl -> Lambda pl e)
+arrows (L l stack) = case splitStack stack of
+  ([],e) -> return $ L l e
+  (el,e) -> patterns (L l el) >.= fmap (\pl -> Lambda pl e)
 
 patternExp :: SrcLoc -> Exp -> P Pattern
-patternExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
+patternExp l (Apply e el) | Just (L _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
 patternExp l (Apply e _) = parseError l $ "only constructors can be applied in patterns, not" <+> quoted e
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
@@ -316,13 +316,13 @@ patternOps l (OpBin v _ _) = parseError l $ "only constructor operators are allo
 patternOps l (OpUn v _) = parseError l $ "unary operator" <+> quoted v <+> "not allowed in pattern"
 
 ty :: Loc Exp -> P (Loc TypePat)
-ty (Loc l e) = Loc l =.< typeExp l e
+ty (L l e) = L l =.< typeExp l e
 
 tys :: Loc [Exp] -> P (Loc [TypePat])
-tys (Loc l el) = Loc l =.< mapM (typeExp l) el
+tys (L l el) = L l =.< mapM (typeExp l) el
 
 typeExp :: SrcLoc -> Exp -> P TypePat
-typeExp l (Apply e el) | Just (Loc _ c) <- unVar l e, isCons c = tscons c =.< mapM (typeExp l) el
+typeExp l (Apply e el) | Just (L _ c) <- unVar l e, isCons c = tscons c =.< mapM (typeExp l) el
 typeExp l (Apply e _) = parseError l ("only constructors can be applied in types, not" <+> quoted e)
 typeExp l (Var c) | isCons c = return $ tscons c []
 typeExp l (Var v) = return $ TsVar v
@@ -349,37 +349,37 @@ typePat l p = parseError l $ patTypeDesc p <+> "expression not allowed in type"
 -- Reparse an expression on the left side of an '=' into either a pattern
 -- (for a let) or a function declaraction (for a def).
 lefthandside :: Loc Exp -> P (Either Pattern (Loc Var, [Pattern]))
-lefthandside (Loc _ (ExpLoc l e)) = lefthandside (Loc l e)
-lefthandside (Loc l (Apply e el)) | Just v <- unVar l e, not (isCons (unLoc v)) = do
+lefthandside (L _ (ExpLoc l e)) = lefthandside (L l e)
+lefthandside (L l (Apply e el)) | Just v <- unVar l e, not (isCons (unLoc v)) = do
   pl <- mapM (patternExp l) el
   return $ Right (v,pl)
-lefthandside (Loc l (Ops (OpBin v o1 o2))) | not (isCons v) = do
+lefthandside (L l (Ops (OpBin v o1 o2))) | not (isCons v) = do
   p1 <- patternOps l o1
   p2 <- patternOps l o2
-  return $ Right (Loc l v, map PatOps [p1,p2])
-lefthandside (Loc l p) = Left . patLoc . Loc l =.< patternExp l p
+  return $ Right (L l v, map PatOps [p1,p2])
+lefthandside (L l p) = Left . patLoc . L l =.< patternExp l p
 
 unVar :: SrcLoc -> Exp -> Maybe (Loc Var)
-unVar l (Var v) = Just (Loc l v)
+unVar l (Var v) = Just (L l v)
 unVar _ (ExpLoc l e) = unVar l e
 unVar _ _ = Nothing
 
 -- Currently, specifications are only allowed to be single lowercase variables
 spec :: Loc Exp -> P (Loc Var)
-spec (Loc l e) | Just v <- unVar l e = return v
-spec (Loc l e) = parseError l ("only variables are allowed in top level type specifications, not" <+> quoted e)
+spec (L l e) | Just v <- unVar l e = return v
+spec (L l e) = parseError l ("only variables are allowed in top level type specifications, not" <+> quoted e)
 
 -- Reparse an expression into a constructor
 constructor :: Loc Exp -> P (Loc CVar,[TypePat])
-constructor (Loc _ (ExpLoc l e)) = constructor (Loc l e)
-constructor (Loc l e) | Just v <- unVar l e, isCons (unLoc v) = return (v,[])
-constructor (Loc l (Apply e el)) | Just v <- unVar l e, isCons (unLoc v) = do
+constructor (L _ (ExpLoc l e)) = constructor (L l e)
+constructor (L l e) | Just v <- unVar l e, isCons (unLoc v) = return (v,[])
+constructor (L l (Apply e el)) | Just v <- unVar l e, isCons (unLoc v) = do
   tl <- mapM (typeExp l) el
   return (v,tl)
-constructor (Loc l (Ops (OpBin v (OpAtom e1) (OpAtom e2)))) | isCons v = do
+constructor (L l (Ops (OpBin v (OpAtom e1) (OpAtom e2)))) | isCons v = do
   t1 <- typeExp l e1
   t2 <- typeExp l e2
-  return (Loc l v,[t1,t2])
-constructor (Loc l e) = parseError l ("invalid constructor expression" <+> quoted e <+> "(must be <constructor> <args>... or equivalent)")
+  return (L l v,[t1,t2])
+constructor (L l e) = parseError l ("invalid constructor expression" <+> quoted e <+> "(must be <constructor> <args>... or equivalent)")
 
 }

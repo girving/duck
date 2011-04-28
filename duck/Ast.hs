@@ -20,7 +20,7 @@ import Data.List
 import Data.Maybe
 
 import Var
-import Type
+import Type hiding (Data)
 import SrcLoc
 import Stage
 import ParseOps
@@ -104,7 +104,7 @@ data Pattern
 -- |List of 'Import' directives
 imports :: Prog -> [String]
 imports = mapMaybe imp where
-  imp (Loc _ (Import (V v))) = Just v
+  imp (L _ (Import (V v))) = Just v
   imp _ = Nothing
 
 -- |Convert an 'Ops' expression into its 'Apply' equivalents, without applying any precedences (see "ParseOps")

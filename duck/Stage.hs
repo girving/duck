@@ -102,11 +102,11 @@ isUnexpected :: SomeException -> Maybe SomeException
 isUnexpected e | Just _ <- fromException e :: Maybe ExitCode = Nothing
              | otherwise = Just e
 
-dieUnexpected :: SomeException -> IO a
-dieUnexpected e = dieWith 7 $ "internal error: "++show e
+dieUnexpected :: Stage -> SomeException -> IO a
+dieUnexpected s e = dieWith 7 $ show (pretty s)++": internal error: "++show e
 
 runStage :: Stage -> IO a -> IO a
-runStage s = handleJust isUnexpected dieUnexpected . handle (dieStageErr s)
+runStage s = handleJust isUnexpected (dieUnexpected s) . handle (dieStageErr s)
 
 -- |Represents a single function call with the given type of arguments.
 data CallFrame a = CallFrame

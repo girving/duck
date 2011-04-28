@@ -12,6 +12,7 @@ module SrcLoc
   , noLoc
   , hasLoc
   , Loc(..)
+  , srcLoc, unLoc
   , HasLoc(..)
   ) where
 
@@ -38,10 +39,13 @@ srcCol (SrcNone _) = error "SrcNone has no column number"
 srcCol (SrcLoc _ _ i) = i
 srcCol (SrcRng _ _ i _ _) = i
 
-data Loc a = Loc { srcLoc :: SrcLoc, unLoc :: !a }
+-- !See definition of Loc in srcLoc.duck
+srcLoc :: Loc a -> SrcLoc
+srcLoc (L l _) = l
+unLoc (L _ x) = x
 
 instance Functor Loc where
-  fmap f (Loc l x) = Loc l (f x)
+  fmap f (L l x) = L l (f x)
 
 showOff :: Int -> String -> String
 showOff 0 = ('$':)
@@ -59,10 +63,10 @@ instance Show SrcLoc where
 
 -- By default, locations drop away when printing
 instance Show t => Show (Loc t) where
-  show (Loc _ x) = show x
+  show (L _ x) = show x
 
 instance Pretty t => Pretty (Loc t) where
-  pretty' (Loc _ x) = pretty' x
+  pretty' (L _ x) = pretty' x
 
 class HasLoc a where
   loc :: a -> SrcLoc
@@ -100,10 +104,10 @@ incrLoc _ _ = error "incrLoc works only on SrcLoc, not SrcNone or SrcRng"
 
 unzipLoc :: [Loc a] -> ([SrcLoc], [a])
 unzipLoc [] = ([],[])
-unzipLoc (Loc l a:la) = (l:ls,a:as) where (ls,as) = unzipLoc la
+unzipLoc (L l a:la) = (l:ls,a:as) where (ls,as) = unzipLoc la
 
 zipLoc :: ([SrcLoc], [a]) -> [Loc a]
-zipLoc (l:ls,a:as) = Loc l a : zipLoc (ls,as)
+zipLoc (l:ls,a:as) = L l a : zipLoc (ls,as)
 zipLoc _ = []
 
 sameLine :: SrcLoc -> SrcLoc -> Bool

@@ -47,6 +47,11 @@ instance Convert a => Convert (Maybe a) where
   unvalue (ValCons 1 [x]) = Just (unvalue x)
   unvalue _ = undefined
 
+instance (Convert a, Convert b) => Convert (a,b) where
+  value (a,b) = ValCons 0 [value a, value b]
+  unvalue (ValCons 0 [a,b]) = (unvalue a, unvalue b)
+  unvalue _ = undefined
+
 instance (Convert a, Convert b, Convert c) => Convert (a,b,c) where
   value (a,b,c) = ValCons 0 [value a, value b, value c]
   unvalue (ValCons 0 [a,b,c]) = (unvalue a, unvalue b, unvalue c)

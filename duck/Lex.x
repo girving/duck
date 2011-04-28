@@ -129,13 +129,13 @@ lexer = do
   s <- get
   let mode = case ps_layout s of { Context Comment _ _ : _ -> comment ; _ -> 0 }
   case alexScan s mode of
-    AlexEOF -> return $ Loc (ps_loc s) TokEOF
+    AlexEOF -> return $ L (ps_loc s) TokEOF
     AlexError s' -> psError s' "lexical error"
     AlexSkip s' _ -> do
       put s'
       lexer
     AlexToken s' len action -> do
       put s'
-      return $ Loc (rangeLoc (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
+      return $ L (rangeLoc (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
 
 }

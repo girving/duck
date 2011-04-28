@@ -64,5 +64,5 @@ runP parse file input = r where
     , ps_rest = input
     , ps_prev = '\n'
     , ps_layout = []
-    , ps_last = Loc loc TokSOF
+    , ps_last = L loc TokSOF
     } where loc = startLoc file

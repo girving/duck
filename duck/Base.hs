@@ -99,15 +99,15 @@ base :: Lir.Prog
 base = Lir.union types (Lir.prog "" (decTuples ++ prims ++ io)) where
   primop p | [] <- primArgs p = Ir.LetD name exp
            | otherwise = Ir.Over name sig exp where
-    name = Loc noLoc $ V (primName p)
+    name = L noLoc $ V (primName p)
     sig = foldr typeArrow (singleton $ primRet p) (map singleton $ primArgs p)
     args = zipWith const standardVars $ primArgs p
     exp = foldr Lambda (Prim (primPrim p) (map Var args)) args
   prims = map primop $ Map.elems primOps
 
   decTuples = map decTuple (0:[2..5])
-  decTuple i = Data c vars [(c, map TsVar vars)] where
-    c = Loc noLoc $ tupleCons vars
+  decTuple i = Ir.Data c vars [(c, map TsVar vars)] where
+    c = L noLoc $ tupleCons vars
     vars = take i standardVars
 
   types = (Lir.empty "")
@@ -125,12 +125,12 @@ io :: [Decl]
 io = [map',join,returnIO] where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TsVar [a,b]
-  map' = Over (Loc noLoc $ V "map") (typeArrow (typeArrow ta tb) (typeArrow (typeIO ta) (typeIO tb)))
+  map' = Over (L noLoc $ V "map") (typeArrow (typeArrow ta tb) (typeArrow (typeIO ta) (typeIO tb)))
     (Lambda f (Lambda c
       (Bind x (Var c)
       (Return (Apply (Var f) (Var x))))))
-  join = Over (Loc noLoc $ V "join") (typeArrow (typeIO (typeIO ta)) (typeIO ta))
+  join = Over (L noLoc $ V "join") (typeArrow (typeIO (typeIO ta)) (typeIO ta))
     (Lambda c
       (Bind x (Var c)
       (Var x)))
-  returnIO = LetD (Loc noLoc $ V "returnIO") (Lambda x (Return (Var x)))
+  returnIO = LetD (L noLoc $ V "returnIO") (Lambda x (Return (Var x)))

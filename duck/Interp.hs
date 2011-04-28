@@ -118,7 +118,7 @@ expr global tenv env loc = exp where
   exp ce@(ExpCons c el) = do
     t <- inferExpr tenv loc ce
     conses <- liftInfer $ Infer.lookupDatatype loc t
-    let Just i = findIndex (\ (Loc _ c',_) -> c == c') conses
+    let Just i = findIndex (\ (L _ c',_) -> c == c') conses
     ValCons i =.< mapM exp el
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
   exp (ExpBind v e1 e2) = do

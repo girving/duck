@@ -113,5 +113,5 @@ instance HasVar String where
   unVar = Just . V
 
 instance HasVar a => HasVar (Loc a) where
-  var = Loc noLoc . var
+  var = L noLoc . var
   unVar = unVar . unLoc 

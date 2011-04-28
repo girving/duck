@@ -26,7 +26,7 @@ import Pretty
 import SrcLoc
 import Stage
 import Var
-import Type
+import Type hiding (Data)
 import Prims
 import qualified Ast
 import ParseOps
@@ -91,8 +91,8 @@ prog_vars :: Ast.Prog -> InScopeSet
 prog_vars = foldl' decl_vars Set.empty . map unLoc
 
 decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
-decl_vars s (Ast.SpecD (Loc _ v) _) = Set.insert v s 
-decl_vars s (Ast.DefD (Loc _ v) _ _) = Set.insert v s 
+decl_vars s (Ast.SpecD (L _ v) _) = Set.insert v s 
+decl_vars s (Ast.DefD (L _ v) _ _) = Set.insert v s 
 decl_vars s (Ast.LetD p _) = pattern_vars s p
 decl_vars s (Ast.Data _ _ _) = s
 decl_vars s (Ast.Infix _ _) = s
@@ -113,7 +113,7 @@ pattern_vars s (Ast.PatLoc _ p) = pattern_vars s p
 
 prog_precs :: PrecEnv -> Ast.Prog -> PrecEnv
 prog_precs = foldl' set_precs where
-  set_precs s (Loc l (Ast.Infix p vl)) = foldl' (\s v -> Map.insertWithKey check v p s) s vl where
+  set_precs s (L l (Ast.Infix p vl)) = foldl' (\s v -> Map.insertWithKey check v p s) s vl where
     check v new old
       | new == old = new
       | otherwise = irError l $ "conflicting fixity declaration for" <+> quoted v <+> "(previously" <+> old <+> ")"
@@ -184,24 +184,24 @@ prog pprec p = (precs, decls p) where
   --   f x = ...
   decls :: [Loc Ast.Decl] -> [Decl]
   decls [] = []
-  decls decs@(Loc _ (Ast.DefD (Loc _ f) _ _):_) = LetD (Loc l f) body : decls rest where
-    (Loc l body, rest) = funcases globals f isfcase decs
-    isfcase (Loc l (Ast.DefD (Loc _ f') a b)) | f == f' = Just (Loc l (a,b))
+  decls decs@(L _ (Ast.DefD (L _ f) _ _):_) = LetD (L l f) body : decls rest where
+    (L l body, rest) = funcases globals f isfcase decs
+    isfcase (L l (Ast.DefD (L _ f') a b)) | f == f' = Just (L l (a,b))
     isfcase _ = Nothing
-  decls (Loc l (Ast.SpecD (Loc _ f) t) : rest) = case decls rest of
-    LetD (Loc l' f') e : rest | f == f' -> Over (Loc (mappend l l') f) t e : rest
+  decls (L l (Ast.SpecD (L _ f) t) : rest) = case decls rest of
+    LetD (L l' f') e : rest | f == f' -> Over (L (mappend l l') f) t e : rest
     _ -> irError l $ "type specification for" <+> quoted f <+> "must be followed by its definition"
-  decls (Loc l (Ast.LetD ap ae) : rest) = d : decls rest where
+  decls (L l (Ast.LetD ap ae) : rest) = d : decls rest where
     d = case Map.toList vm of
-      [] -> LetD (Loc l ignored) $ body $ Cons (V "()") []
-      [(v,l)] -> LetD (Loc l v) $ body $ Var v
-      vl -> LetM (map (\(v,l) -> Loc l v) vl) $ body $ Cons (tupleCons vl) (map (Var . fst) vl)
+      [] -> LetD (L l ignored) $ body $ Cons (V "()") []
+      [(v,l)] -> LetD (L l v) $ body $ Var v
+      vl -> LetM (map (\(v,l) -> L l v) vl) $ body $ Cons (tupleCons vl) (map (Var . fst) vl)
     body r = match globals [Switch [e] [CaseMatch [p] id (CaseBody r)]] Nothing
     e = expr globals l ae
     (p,vm) = pattern' Map.empty l ap
-  decls (Loc _ (Ast.Data t args cons) : rest) = Data t args cons : decls rest
-  decls (Loc _ (Ast.Infix _ _) : rest) = decls rest
-  decls (Loc _ (Ast.Import _) : rest) = decls rest
+  decls (L _ (Ast.Data t args cons) : rest) = Data t args cons : decls rest
+  decls (L _ (Ast.Infix _ _) : rest) = decls rest
+  decls (L _ (Ast.Import _) : rest) = decls rest
 
   pattern' :: Map Var SrcLoc -> SrcLoc -> Ast.Pattern -> (Pattern, Map Var SrcLoc)
   pattern' s _ Ast.PatAny = (anyPat, s)
@@ -246,16 +246,16 @@ prog pprec p = (precs, decls p) where
 
   seq :: InScopeSet -> [Loc Ast.Stmt] -> Exp
   seq _ [] = Cons (V "()") [] -- only used when last is assignment; might as well be a warning/error
-  seq s [Loc l (Ast.StmtExp e)] = expr s l e
-  seq s (Loc l (Ast.StmtExp e):q) = seq s (Loc l (Ast.StmtLet (Ast.PatCons (V "()") []) e):q) -- should we just assign to '_'?
-  seq s (Loc l (Ast.StmtLet p e):q) = doMatch letpat s l (p,e,Ast.Seq q)
-  seq s q@(Loc _ (Ast.StmtDef f _ _):_) = ExpLoc l $ Let f body $ seq (Set.insert f s) rest where
-    (Loc l body, rest) = funcases s f isfcase q -- TODO: local recursion (scope)
-    isfcase (Loc l (Ast.StmtDef f' a b)) | f == f' = Just (Loc l (a,b))
+  seq s [L l (Ast.StmtExp e)] = expr s l e
+  seq s (L l (Ast.StmtExp e):q) = seq s (L l (Ast.StmtLet (Ast.PatCons (V "()") []) e):q) -- should we just assign to '_'?
+  seq s (L l (Ast.StmtLet p e):q) = doMatch letpat s l (p,e,Ast.Seq q)
+  seq s q@(L _ (Ast.StmtDef f _ _):_) = ExpLoc l $ Let f body $ seq (Set.insert f s) rest where
+    (L l body, rest) = funcases s f isfcase q -- TODO: local recursion (scope)
+    isfcase (L l (Ast.StmtDef f' a b)) | f == f' = Just (L l (a,b))
     isfcase _ = Nothing
 
   funcases :: InScopeSet -> Var -> (a -> Maybe (Loc ([Ast.Pattern],Ast.Exp))) -> [a] -> (Loc Exp, [a])
-  funcases s f isfdef dl = (Loc l body, rest) where
+  funcases s f isfdef dl = (L l body, rest) where
     body = lambdacases s l n (map unLoc defs)
     l = loc defs
     (defs,rest) = spanJust isfdef dl

@@ -58,16 +58,6 @@ data Prog = Prog
   , progDefinitions :: [Definition] -- ^ list of top-level definitions
   }
 
--- |Datatype definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
-data Datatype = Data
-  { dataName :: CVar
-  , dataLoc :: SrcLoc
-  , dataTyVars :: [Var] -- ^ Type variable arguments
-  , dataConses :: [(Loc CVar, [TypePat])] -- ^ Constructors
-  , dataVariances :: [Variance] -- ^ Variances of 'dataTyVars'
-  }
-instance HasLoc Datatype where loc = dataLoc
-
 -- |Overload definition, parameterized by either 'Type' or 'TypePat', depending on whether it is a specific resolution, or the original definition
 data Overload t = Over
   { overLoc :: SrcLoc
@@ -153,8 +143,8 @@ prog name decls = flip execState (empty name) $ do
         fun (FunClosure _ tl) = concatMap freeVars tl
       invVars TsVoid = []
     finish inv = Map.mapWithKey f datatypes where
-      f c datatype = datatype{ dataVariances = map variance [0..arity-1] } where
-        arity = length (dataTyVars datatype)
+      f c (Data tc l args cl _) = Data tc l args cl (map variance [0..arity-1]) where
+        arity = length args
         variance i = if Set.member (c,i) inv then Invariant else Covariant
 
 -- |A few consistency checks on Lir programs
@@ -167,8 +157,8 @@ check prog = runSequence $ do
   where
   types = Map.keysSet (progDatatypes prog)
   def s (Def vl body) = do
-    let add s (Loc _ (V "_")) = return s
-        add s (Loc l v) = do
+    let add s (L _ (V "_")) = return s
+        add s (L l v) = do
           maybe nop (dupError v l) $ Map.lookup v s
           return $ Map.insert v l s
     s <- foldM add s vl
@@ -183,15 +173,15 @@ check prog = runSequence $ do
       maybe nop (expr (Set.union s vs)) body
   expr s = mapM_ (\(v,l) -> lirError l $ quoted v <+> "undefined") . free s noLoc
   datatype (_, d) = mapM_ cons (dataConses d) where
-    cons (Loc l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
+    cons (L l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
       [] -> success
       [v] -> lirError l $ "variable" <+> quoted v <+> "is unbound in constructor" <+> quoted (TsCons c tl)
       fv -> lirError l $ "variables" <+> quoted (hsep fv) <+> "are unbound in constructor" <+> quoted (TsCons c tl)
 
 decl_vars :: InScopeSet -> Ir.Decl -> InScopeSet
-decl_vars s (Ir.LetD (Loc _ v) _) = addVar v s
+decl_vars s (Ir.LetD (L _ v) _) = addVar v s
 decl_vars s (Ir.LetM vl _) = foldl (flip addVar) s (map unLoc vl)
-decl_vars s (Ir.Over (Loc _ v) _ _) = Set.insert v s
+decl_vars s (Ir.Over (L _ v) _ _) = Set.insert v s
 decl_vars s (Ir.Data _ _ _) = s
 
 -- |Statements are added in reverse order
@@ -209,8 +199,8 @@ decl (Ir.LetD v e) = do
 decl (Ir.LetM vl e) = do
   e <- expr Set.empty noLocExpr e
   definition vl e
-decl (Ir.Data (Loc l tc) tvl cases) =
-  modify $ \p -> p { progDatatypes = Map.insertWith exists tc (Data tc l tvl cases undefined) (progDatatypes p) }
+decl (Ir.Data (L l tc) tvl cases) =
+  modify $ \p -> p { progDatatypes = Map.insertWith exists tc (Data tc l tvl cases []) (progDatatypes p) }
   where exists _ o = dupError tc l (dataLoc o)
 
 -- |Add a toplevel statement
@@ -219,8 +209,8 @@ definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefiniti
 
 -- |Add a global overload
 overload :: Loc Var -> [TypeSetArg] -> TypePat -> [Var] -> Exp -> State Prog ()
-overload (Loc l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
-overload (Loc l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
+overload (L l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
+overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
 
 -- |Add an unoverloaded global function
 function :: Loc Var -> [Var] -> Exp -> State Prog ()
@@ -297,7 +287,7 @@ lambda locals l@(loc,v) e = do
       localsMinus = foldr Set.delete locals vl
   e <- expr localsPlus l e'
   let vs = freeOf localsMinus e
-  function (Loc loc f) (vs ++ vl) e
+  function (L loc f) (vs ++ vl) e
   return $ foldl ExpApply (ExpVar f) (map ExpVar vs)
 
 -- |Generate a fresh variable
@@ -354,7 +344,7 @@ union p1 p2 = Prog
 instance Pretty Prog where
   pretty' prog = vcat $
        [pretty "-- datatypes"]
-    ++ [pretty (Ir.Data (Loc l t) vl c) | Data t l vl c _ <- Map.elems (progDatatypes prog)]
+    ++ [pretty (Ir.Data (L l t) vl c) | Data t l vl c _ <- Map.elems (progDatatypes prog)]
     ++ [pretty "-- functions"]
     ++ [pretty $ function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
     ++ [pretty "-- overloads"]

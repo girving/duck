@@ -89,8 +89,8 @@ lookup env loc v
 
 lookupDatatype :: SrcLoc -> TypeVal -> Infer [(Loc CVar, [TypeVal])]
 lookupDatatype loc (TyCons (V "Type") [t]) = case t of
-  TyCons c tl -> return [(Loc noLoc c, map typeType tl)]
-  TyVoid -> return [(Loc noLoc (V "Void"), [])]
+  TyCons c tl -> return [(L noLoc c, map typeType tl)]
+  TyVoid -> return [(L noLoc (V "Void"), [])]
   TyFun _ -> inferError loc $ "cannot pattern match on" <+> quoted (typeType t) <> "; matching on function types isn't implemented yet"
 lookupDatatype loc (TyCons tv types) = getProg >>= \prog ->
   case Map.lookup tv (progDatatypes prog) of

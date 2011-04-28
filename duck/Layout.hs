@@ -49,7 +49,7 @@ pop :: P ()
 pop = modify $ \s -> s { ps_layout = tail (ps_layout s) }
 
 pltok :: Loc Token -> Doc'
-pltok (Loc l t) = quoted t <+> ("at" <&+> l)
+pltok (L l t) = quoted t <+> ("at" <&+> l)
 
 layout :: P (Loc Token) -> P (Loc Token)
 layout lex = do
@@ -87,24 +87,24 @@ layout lex = do
 
     normal :: Context -> Loc (Maybe Leader) -> Loc Token -> P (Loc Token)
     -- comments
-    normal _ _ (Loc _ TokComment) = push (Context Comment tok 0) >> layout lex
-    normal (Context Comment _ _) _ (Loc _ TokCommentEnd) = pop >> layout lex
-    normal (Context Comment (Loc l _) _) _ tok = psError state $ "unexpected" <+> pltok tok <+> "in comment beginning" <+> l
+    normal _ _ (L _ TokComment) = push (Context Comment tok 0) >> layout lex
+    normal (Context Comment _ _) _ (L _ TokCommentEnd) = pop >> layout lex
+    normal (Context Comment (L l _) _) _ tok = psError state $ "unexpected" <+> pltok tok <+> "in comment beginning" <+> l
     -- ends
-    normal (Context Explicit _ _) _ (Loc _ (TokRC _)) = pop >> accept -- explicit close
-    normal (Context Outside _ _)  _ (Loc _ (TokRC _)) = psError state $ "unmatched" <+> pltok tok
-    normal _                      _ (Loc _ (TokRC _)) = close -- force implicit close
-    normal (Context Explicit open _) _ (Loc _ TokEOF) = psError state $ "unmatched" <+> pltok open
-    normal (Context Outside _ _)     _ (Loc _ TokEOF) = accept
-    normal _                         _ (Loc _ TokEOF) = close -- force implicit close
+    normal (Context Explicit _ _) _ (L _ (TokRC _)) = pop >> accept -- explicit close
+    normal (Context Outside _ _)  _ (L _ (TokRC _)) = psError state $ "unmatched" <+> pltok tok
+    normal _                      _ (L _ (TokRC _)) = close -- force implicit close
+    normal (Context Explicit open _) _ (L _ TokEOF) = psError state $ "unmatched" <+> pltok open
+    normal (Context Outside _ _)     _ (L _ TokEOF) = accept
+    normal _                         _ (L _ TokEOF) = close -- force implicit close
     -- beginnings and middles
-    normal _ _ (Loc _ (TokLC _)) = push (Context Explicit tok 0) >> accept -- explicit open
-    normal _ (Loc _ (Just Block)) (Loc l _) = open ImplicitBlock (srcCol l) -- forced implicit open
-    normal (Context _ _ c) (Loc l1 (Just Mandatory)) (Loc l2 _) | sameLine l1 l2 = open ImplicitLine c -- single-line open
-    normal _               (Loc l1 _)                (Loc l2 _) | sameLine l1 l2 = accept -- nothing new here
-    normal (Context ImplicitBlock _ c) _ (Loc l _) | srcCol l == c = break -- next line
-    normal (Context _ _ c)             _ (Loc l _) | srcCol l <= c = close -- shift left
-    normal _ (Loc _ (Just _)) (Loc l _) = open ImplicitBlock (srcCol l) -- multi-line open
+    normal _ _ (L _ (TokLC _)) = push (Context Explicit tok 0) >> accept -- explicit open
+    normal _ (L _ (Just Block)) (L l _) = open ImplicitBlock (srcCol l) -- forced implicit open
+    normal (Context _ _ c) (L l1 (Just Mandatory)) (L l2 _) | sameLine l1 l2 = open ImplicitLine c -- single-line open
+    normal _               (L l1 _)                (L l2 _) | sameLine l1 l2 = accept -- nothing new here
+    normal (Context ImplicitBlock _ c) _ (L l _) | srcCol l == c = break -- next line
+    normal (Context _ _ c)             _ (L l _) | srcCol l <= c = close -- shift left
+    normal _ (L _ (Just _)) (L l _) = open ImplicitBlock (srcCol l) -- multi-line open
     -- everything else
     normal _ _ _ = accept
 

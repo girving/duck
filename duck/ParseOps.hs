@@ -5,7 +5,7 @@
 -- involving operators in two passes.  This file contains the second pass.
 -- Partially borrowed from <http://hackage.haskell.org/trac/haskell-prime/attachment/wiki/FixityResolution/resolve.hs>
 
-module ParseOps 
+module ParseOps
   ( Ops(..)
   , Precedence
   , Fixity(..)
@@ -69,7 +69,7 @@ orderPrec (p1,d1) (p2,d2) = case compare p1 p2 of
 sortOps :: Show a => PrecEnv -> SrcLoc -> Ops a -> Ops a
 sortOps precs loc input = out where
   (out, []) = parse minPrec Nothing toks
-  parse p Nothing (Left l : rest) = 
+  parse p Nothing (Left l : rest) =
     parse p (Just (OpAtom l)) rest
   parse p (Just l) mid@(Right (o,p') : rest) =
     case orderPrec p p' of
@@ -91,7 +91,7 @@ sortOps precs loc input = out where
   err o = parseError loc $ "ambiguous operator expression involving" <+> quoted o
 
 prettyop :: (Pretty f, HasVar f, Pretty a) => f -> [a] -> Doc'
-prettyop f a 
+prettyop f a
   | Just v <- unVar f
   , Just (i,d) <- opPrec v = case (v,a,d) of
       (V "-",[x],_)       -> i #> pf <+> x
