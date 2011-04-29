@@ -208,7 +208,7 @@ testAll global = do
   test (V v,d)
     | isPrefixOf "test_" v = do
         liftIO $ puts ("  "++v)
-        runIO global (unvalue d :: IOValue)
+        _ <- runIO global (unvalue d :: IOValue)
         success
     | otherwise = success
   nop = return $ ValCons 0 []

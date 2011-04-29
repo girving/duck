@@ -21,8 +21,6 @@ module Type
   , dataLoc, dataTyVars, dataConses, dataVariances
   ) where
 
-import Data.Maybe
-import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
 

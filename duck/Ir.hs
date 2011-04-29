@@ -17,9 +17,7 @@ import qualified Data.Set as Set
 import qualified Data.Map as Map
 import Data.Map (Map)
 import qualified Data.Foldable as Fold
-import Control.Monad hiding (guard)
 import Data.Monoid
-import GHC.Exts
 
 import Util
 import Pretty

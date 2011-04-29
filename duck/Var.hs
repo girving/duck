@@ -26,7 +26,6 @@ module Var
 
 import Pretty
 import Data.Char
-import Data.List
 import Data.Set (Set)
 import qualified Data.Set as Set
 

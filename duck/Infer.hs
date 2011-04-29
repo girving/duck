@@ -31,7 +31,6 @@ module Infer
   ) where
 
 import Prelude hiding (lookup)
-import Data.Maybe
 import Data.Either
 import qualified Data.Map as Map
 import Data.List hiding (lookup, union)

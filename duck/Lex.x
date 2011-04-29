@@ -2,6 +2,7 @@
 
 {
 {-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches -fno-warn-unused-binds #-}
+{-# LANGUAGE PatternGuards #-}
 
 module Lex 
   ( lexer
@@ -16,7 +17,6 @@ import Var
 import Token
 import SrcLoc
 import ParseMonad
-import ParseOps
 }
 
 $white = [\ \t\n\r]

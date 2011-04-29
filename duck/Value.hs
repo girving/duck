@@ -11,7 +11,6 @@ module Value
   ) where
 
 import Prelude hiding (lookup)
-import Data.List hiding (lookup)
 import Data.Map (Map)
 import qualified Data.Map as Map
 
@@ -21,7 +20,6 @@ import Type
 import Prims
 import Pretty
 import ParseOps
-import Pretty
 import Memory
 
 -- Pull in definition of IOValue and FunValue

@@ -16,7 +16,6 @@ module Ast
   , expTypeDesc, patTypeDesc
   ) where
 
-import Data.List
 import Data.Maybe
 
 import Var
