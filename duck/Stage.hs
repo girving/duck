@@ -86,6 +86,7 @@ instance Show Err where
 instance Exception Err
 
 stageExitval :: Stage -> Int
+stageExitval StageEnv = 3
 stageExitval StageExec = 3
 stageExitval _ = 1
 

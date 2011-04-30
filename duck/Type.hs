@@ -17,7 +17,7 @@ module Type
   , Trans(..), TransType
   , argType
   -- * Datatypes
-  , Datatype(..)
+  , Datatype(..), Datatypes
   , dataLoc, dataTyVars, dataConses, dataVariances
   ) where
 
@@ -98,6 +98,7 @@ dataConses (Data _ _ _ cl _) = cl
 dataVariances :: Datatype -> [Variance]
 dataVariances (Data _ _ _ _ vl) = vl
 instance HasLoc Datatype where loc = dataLoc
+type Datatypes = Map CVar Datatype
 
 -- |Type environment substitution
 subst :: TypeEnv -> TypePat -> TypePat

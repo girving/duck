@@ -11,6 +11,7 @@ OTHERS = Parse.hs Lex.hs
 TESTS = basic layout curry delay match io tyfun success types base-test expseq fac
 TESTS_C = apply base ops null
 TESTS_FAIL := $(patsubst test/fail/%.duck, fail/%, $(wildcard test/fail/*.duck))
+TESTS_FAIL_R := $(patsubst test/fail-r/%.duck, fail-r/%, $(wildcard test/fail-r/*.duck))
 
 default: duck
 
@@ -52,7 +53,7 @@ gen:
 
 ### Test
 
-ALL_TESTS = $(TESTS) $(TESTS_C) $(TESTS_FAIL)
+ALL_TESTS = $(TESTS) $(TESTS_C) $(TESTS_FAIL) $(TESTS_FAIL_R)
 .PHONY: test $(ALL_TESTS)
 test: $(ALL_TESTS)
 	@echo
@@ -64,6 +65,9 @@ $(TESTS_C): duck
 $(TESTS_FAIL): duck
 	@echo "! ./duck -Itest test/$@.duck"
 	@./duck -Itest test/$@.duck; s=$$?; if [ $$s -eq 1 ]; then :; else echo $@ failed: exit status $$s != 1; false; fi
+$(TESTS_FAIL_R): duck
+	@echo "! ./duck -Itest test/$@.duck"
+	@./duck -Itest test/$@.duck; s=$$?; if [ $$s -eq 3 ]; then :; else echo $@ failed: exit status $$s != 3; false; fi
 
 ### Misc
 

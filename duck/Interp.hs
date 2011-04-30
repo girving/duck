@@ -113,7 +113,9 @@ expr global tenv env loc = exp where
                  else unsafeUnvalConsN (length vl) d
         cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
       Nothing -> case def of
-        Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (d,t)) <> ", cases =" <+> show pl) -- XXX data printed
+        Nothing -> do
+          datatypes <- getProg >.= progDatatypes
+          execError loc ("pattern match failed: exp =" <+> quoted (pretty (datatypes,t,d)) <> ", cases =" <+> show pl) -- XXX data printed
         Just e' -> cast ct $ expr global tenv env loc e'
   exp ce@(ExpCons c el) = do
     t <- inferExpr tenv loc ce
@@ -203,7 +205,9 @@ apply _ loc t1 v1 e2 t2 = do
   r <- liftInfer $ Infer.isTypeType t1
   case r of
     Just _ -> return valEmpty
-    Nothing -> e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1,t1) <+> "to" <+> quoted (v2,t2))
+    Nothing -> e2 Nothing >>= \v2 -> do
+      datatypes <- getProg >.= progDatatypes
+      execError loc ("can't apply" <+> quoted (datatypes,t1,v1) <+> "to" <+> quoted (datatypes,t2,v2))
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()

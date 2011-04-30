@@ -118,7 +118,7 @@ main = do
   runStage StageLink $ evaluate $ Lir.check lir
   lir <- phase StageInfer id (runInferProg Infer.prog lir)
   unless (compileOnly flags) $ runStage StageInfer $ rerunInfer (lir,[]) Infer.main
-  env <- phase StageEnv (\v -> (v, Lir.progGlobalTypes lir)) (runExec lir Interp.prog)
+  env <- phase StageEnv (\v -> (Lir.progDatatypes lir, Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
 
   unless (compileOnly flags) $ do
   unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
