@@ -1,13 +1,9 @@
-GHC = ghc
-GHCFLAGS = -O -Wall -Werror -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -prof -auto-all
-HAPPY = happy
-HAPPYFLAGS = -agc
-ALEX = alex
-ALEXFLAGS = -g
-CC = gcc
-CFLAGS = -O2 -Wall -Werror -I/opt/local/include
+TOPDIR=..
+SETUP=cd $(TOPDIR) ; $(if $(wildcard $(TOPDIR)/Setup),./Setup,runhaskell ./Setup.hs)
+CONFIG_DONE=$(TOPDIR)/dist/setup-config
+CONFIGFLAGS=-O --enable-executable-profiling
+DUCK=$(TOPDIR)/dist/build/duck/duck
 
-OTHERS = Parse.hs Lex.hs
 TESTS = basic layout curry delay match io tyfun success types base-test expseq fac
 TESTS_C = apply base ops null
 TESTS_FAIL := $(patsubst test/fail/%.duck, fail/%, $(wildcard test/fail/*.duck))
@@ -19,25 +15,20 @@ info: Parse.info
 
 ### Compile
 
-.PHONY: duck
-duck: Duck.hs runtime.o $(OTHERS)
-	$(GHC) $(GHCFLAGS) --make Duck.hs runtime.o -lgc -o $@
+.PHONY: $(DUCK)
+$(DUCK): $(CONFIG_DONE)
+	$(SETUP) build
 
-%.hs: %.y
-	@rm -f $@
-	umask a-w ; $(HAPPY) $(HAPPYFLAGS) $< -o $@
+$(CONFIG_DONE):
+	$(SETUP) configure $(CONFIGFLAGS)
 
+duck: $(DUCK)
+	ln -sf $< $@
+
+# cabal doesn't have an easy way of generating these
 %.info: %.y
-	$(HAPPY) $(HAPPYFLAGS) $< -i$@
-
-%.hs: %.x
-	@rm -f $@
-	umask a-w ; $(ALEX) $(ALEXFLAGS) $< -o $@
-
-%.o: %.c
-	$(CC) $(CFLAGS) -c $<
-
-runtime.o: runtime.h
+	happy -agc $< -i$@
+	rm -f $*.hs
 
 ### Generate Haskell files from Duck
 
@@ -71,9 +62,9 @@ $(TESTS_FAIL_R): duck
 
 ### Misc
 
-tags: $(filter-out $(OTHERS),$(wildcard *.hs)) Parse.y Lex.x
+tags: $(wildcard *.hs) Parse.y Lex.x
 	hasktags -c $^
 
 .PHONY: clean
 clean:
-	rm -f *.o *.hi *.info duck $(OTHERS)
+	$(SETUP) clean -s

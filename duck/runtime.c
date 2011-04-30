@@ -8,9 +8,8 @@
 #include <stdlib.h>
 
 // Unfortunately, the Boehm GC doesn't seem to like the Haskell runtime,
-// which causes values to be incorrectly freed.  Once this is fixed,
-// the folowing line should be uncommented.
-// #define USE_BOEHM
+// which causes values to be incorrectly freed.  The cabal boehm flag
+// can enable it.
 
 void duck_runtime_init()
 {
