@@ -5,6 +5,7 @@ module ToHaskell
   where
 
 import Data.Maybe 
+import Data.List
 import qualified Data.Char as Char
 import Pretty
 import Stage
@@ -51,22 +52,44 @@ typep (TsFun [FunArrow s t]) = HsTyFun (typep s) (typep t)
 typep t = fatal $ msg $ "Can't convert type" <+> quoted t <+> "to Haskell"
 
 convert :: Bool -> Hs.SrcLoc -> HsName -> [HsName] -> [(Loc CVar, [TypePat])] -> [HsDecl]
-convert True l c vl conses = [HsInstDecl l context convert' [ty] [value,unvalue]] where
+convert True l tc vl conses = [HsInstDecl l context convert' [ty] [value,unsafeUnvalue]] where
   convert' = UnQual (HsIdent "Convert")
-  valcons = UnQual (HsIdent "ValCons")
-  ty = foldl HsTyApp (HsTyCon (UnQual c)) (map HsTyVar vl)
+  valcons = UnQual (HsIdent "valCons")
+  ty = foldl HsTyApp (HsTyCon (UnQual tc)) (map HsTyVar vl)
   context = map (\v -> (convert', [HsTyVar v])) vl
   value = HsFunBind (map f (zip [0..] conses)) where
     f (i,(L _ c, args)) = HsMatch l value' [HsPApp (UnQual (name c)) (map HsPVar vl)] (HsUnGuardedRhs e) [] where
       e = HsApp (HsApp (HsCon valcons) (HsLit (HsInt i))) (HsList (map (\v -> HsApp (HsVar (UnQual value')) (HsVar (UnQual v))) vl))
       vl = map name (take (length args) standardVars)
     value' = HsIdent "value"
-  unvalue = HsFunBind (map f (zip [0..] conses) ++ [fail]) where
-    f (i,(L _ c, args)) = HsMatch l unvalue' [HsPApp valcons [HsPLit (HsInt i), HsPList (map HsPVar vl)]] (HsUnGuardedRhs e) [] where
-      e = foldl HsApp (HsCon (UnQual (name c))) (map (\v -> HsParen $ HsApp (HsVar (UnQual unvalue')) (HsVar (UnQual v))) vl)
-      vl = map name (take (length args) standardVars)
-    fail = HsMatch l unvalue' [HsPWildCard] (HsUnGuardedRhs (HsVar (UnQual (HsIdent "undefined")))) []
-    unvalue' = HsIdent "unvalue"
+  unsafeUnvalue = HsFunBind [HsMatch l unsafeUnvalue' [valpat] (HsUnGuardedRhs e) []] where
+    valpat = case conses of
+      [(_,[])] -> HsPWildCard
+      _ -> HsPVar val
+    e = case conses of
+      [c] -> extract c
+      _ -> HsCase (HsApp unsafeTag (HsVar (UnQual val))) (map cons (zip [0..] conses) ++ [fail])
+    cons :: (Integer,(Loc CVar,[TypePat])) -> HsAlt
+    cons (i,c@(L l _,_)) = HsAlt (srcLoc l) (HsPLit (HsInt i)) (HsUnGuardedAlt (extract c)) [] where
+    extract (L l c,tl) = case vl of
+      [] -> cons []
+      [_] -> cons [HsParen rhs]
+      _ -> HsLet [HsPatBind (srcLoc l) pat (HsUnGuardedRhs rhs) []] (cons $ map (HsVar . UnQual) vl)
+      where
+      cons args = foldl' HsApp (HsCon (UnQual (name c))) (map (HsParen . (HsApp $ HsVar $ UnQual unsafeUnvalue')) args)
+      pat = case map HsPVar vl of
+        [v] -> v
+        vl -> HsPTuple vl
+      rhs = HsApp unsafeUnvalCons (HsVar (UnQual val))
+      vl = map name (take (length tl) standardVars)
+    fail :: HsAlt
+    fail = HsAlt l HsPWildCard (HsUnGuardedAlt (HsApp error' (HsLit $ HsString $ show $ "bad tag in unsafeUnvalue" <+> tc'))) []
+      where HsIdent tc' = tc
+    unsafeUnvalue' = HsIdent "unsafeUnvalue"
+    unsafeUnvalCons = HsVar $ UnQual $ HsIdent "unsafeUnvalCons"
+    unsafeTag = HsVar $ UnQual $ HsIdent "unsafeTag"
+    error' = HsVar $ UnQual $ HsIdent "error"
+    val = HsIdent "val"
 convert False _ _ _ _ = []
 
 srcLoc :: SrcLoc -> Hs.SrcLoc

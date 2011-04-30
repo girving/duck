@@ -4,7 +4,6 @@ import var
 import type
 import lir
 import prims
-import memory
 
 -- In order to simplify the low level representation, the type and variable
 -- environments in ValDelay and ValBindIO are stored lists of (Var,TypeVal,Value)

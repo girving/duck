@@ -12,48 +12,57 @@ import Type
 import Lir
 {-# LINE 6 "value.duck" #-}
 import Prims
-{-# LINE 7 "value.duck" #-}
-import Memory
  
-{-# LINE 14 "value.duck" #-}
+{-# LINE 13 "value.duck" #-}
 data FunValue = ValClosure !Var ![TypeVal] ![Value]
               | ValDelay !Exp ![(Var, TypeVal, Value)]
  
-{-# LINE 14 "value.duck" #-}
+{-# LINE 13 "value.duck" #-}
 instance Convert FunValue where
-        {-# LINE 14 "value.duck" #-}
-        value (ValClosure a b c) = ValCons 0 [value a, value b, value c]
-        {-# LINE 14 "value.duck" #-}
-        value (ValDelay a b) = ValCons 1 [value a, value b]
-        {-# LINE 14 "value.duck" #-}
-        unvalue (ValCons 0 [a, b, c])
-          = ValClosure (unvalue a) (unvalue b) (unvalue c)
-        {-# LINE 14 "value.duck" #-}
-        unvalue (ValCons 1 [a, b]) = ValDelay (unvalue a) (unvalue b)
-        {-# LINE 14 "value.duck" #-}
-        unvalue _ = undefined
+        {-# LINE 13 "value.duck" #-}
+        value (ValClosure a b c) = valCons 0 [value a, value b, value c]
+        {-# LINE 13 "value.duck" #-}
+        value (ValDelay a b) = valCons 1 [value a, value b]
+        {-# LINE 13 "value.duck" #-}
+        unsafeUnvalue val
+          = case unsafeTag val of
+                0
+                  -> let {-# LINE 14 "value.duck" #-}
+                         (a, b, c) = unsafeUnvalCons val
+                       in ValClosure (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                1
+                  -> let {-# LINE 15 "value.duck" #-}
+                         (a, b) = unsafeUnvalCons val
+                       in ValDelay (unsafeUnvalue a) (unsafeUnvalue b)
+                _ -> error "bad tag in unsafeUnvalue FunValue"
  
-{-# LINE 19 "value.duck" #-}
+{-# LINE 18 "value.duck" #-}
 data IOValue = ValLiftIO !Value
              | ValPrimIO !Prim ![Value]
              | ValBindIO !Var !TypeVal !IOValue !Exp ![(Var, TypeVal, Value)]
  
-{-# LINE 19 "value.duck" #-}
+{-# LINE 18 "value.duck" #-}
 instance Convert IOValue where
-        {-# LINE 19 "value.duck" #-}
-        value (ValLiftIO a) = ValCons 0 [value a]
-        {-# LINE 19 "value.duck" #-}
-        value (ValPrimIO a b) = ValCons 1 [value a, value b]
-        {-# LINE 19 "value.duck" #-}
+        {-# LINE 18 "value.duck" #-}
+        value (ValLiftIO a) = valCons 0 [value a]
+        {-# LINE 18 "value.duck" #-}
+        value (ValPrimIO a b) = valCons 1 [value a, value b]
+        {-# LINE 18 "value.duck" #-}
         value (ValBindIO a b c d e)
-          = ValCons 2 [value a, value b, value c, value d, value e]
-        {-# LINE 19 "value.duck" #-}
-        unvalue (ValCons 0 [a]) = ValLiftIO (unvalue a)
-        {-# LINE 19 "value.duck" #-}
-        unvalue (ValCons 1 [a, b]) = ValPrimIO (unvalue a) (unvalue b)
-        {-# LINE 19 "value.duck" #-}
-        unvalue (ValCons 2 [a, b, c, d, e])
-          = ValBindIO (unvalue a) (unvalue b) (unvalue c) (unvalue d)
-              (unvalue e)
-        {-# LINE 19 "value.duck" #-}
-        unvalue _ = undefined
+          = valCons 2 [value a, value b, value c, value d, value e]
+        {-# LINE 18 "value.duck" #-}
+        unsafeUnvalue val
+          = case unsafeTag val of
+                0 -> ValLiftIO (unsafeUnvalue (unsafeUnvalCons val))
+                1
+                  -> let {-# LINE 20 "value.duck" #-}
+                         (a, b) = unsafeUnvalCons val
+                       in ValPrimIO (unsafeUnvalue a) (unsafeUnvalue b)
+                2
+                  -> let {-# LINE 21 "value.duck" #-}
+                         (a, b, c, d, e) = unsafeUnvalCons val
+                       in
+                       ValBindIO (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                         (unsafeUnvalue d)
+                         (unsafeUnvalue e)
+                _ -> error "bad tag in unsafeUnvalue IOValue"

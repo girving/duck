@@ -12,6 +12,7 @@ import Prelude hiding (lookup)
 import Data.List hiding (lookup)
 import Data.Maybe
 import qualified Data.Map as Map
+import qualified Data.Set as Set
 import Control.Monad hiding (guard)
 import Control.Monad.Trans
 
@@ -43,7 +44,7 @@ lookup global env loc v
   lp prog
     | Just _ <- Map.lookup v (progOverloads prog) = return (value $ ValClosure v [] []) -- if we find overloads, make a new closure
     | Just _ <- Map.lookup v (progFunctions prog) = return (value $ ValClosure v [] []) -- this should never be used
-    | Just _ <- Map.lookup v (progDatatypes prog) = return (ValCons 0 [])
+    | Just _ <- Map.lookup v (progDatatypes prog) = return valEmpty
     | otherwise = execError loc ("unbound variable" <+> quoted v)
 
 -- | Pack up the free variables of an expression into a packed environment
@@ -66,8 +67,7 @@ definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc)
   d <- expr env Map.empty Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
-          (_, ValCons 0 dl) | length vl == length dl -> return dl
-          _ -> execError noLoc ("expected" <+> length vl <> "-tuple, got" <+> show d)
+          (_, dl) -> return (unsafeUnvalConsN (length vl) dl)
   return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
 
 -- |A placeholder for when implicit casts stop being nops on the data.
@@ -85,8 +85,8 @@ inferExpr env loc e = runInfer loc ("evaluate" <+> quoted e) $ Infer.expr env lo
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
-  exp (ExpInt i) = return (ValInt i)
-  exp (ExpChar i) = return (ValChar i)
+  exp (ExpInt i) = return $ value i
+  exp (ExpChar i) = return $ value i
   exp (ExpVar v) = lookup global env loc v
   exp (ExpApply e1 e2) = do
     t1 <- inferExpr tenv loc e1
@@ -103,34 +103,59 @@ expr global tenv env loc = exp where
     t <- liftInfer $ Infer.lookup tenv loc v
     conses <- liftInfer $ Infer.lookupDatatype loc t
     d <- lookup global env loc v
-    case d of
-      ValCons i dl ->
-        let c = unLoc $ fst $ conses !! i in
-        case find (\ (c',_,_) -> c == c') pl of
-          Just (_,vl,e') -> do
-            let Just tl = Infer.lookupCons conses c
-                dl' = if null dl then map (const (ValCons 0 [])) vl else dl
-            cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl') loc e'
-          Nothing -> case def of
-            Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (d,t)) <> ", cases =" <+> show pl) -- XXX data printed
-            Just e' -> cast ct $ expr global tenv env loc e'
-      _ -> execError loc ("expected block, got" <+> quoted v)
+    let i = unsafeTag d
+        c = unLoc $ fst $ conses !! i
+    case find (\ (c',_,_) -> c == c') pl of
+      Just (_,vl,e') -> do
+        empty <- emptyType loc t
+        let Just tl = Infer.lookupCons conses c
+            dl = if empty then map (const valEmpty) vl
+                 else unsafeUnvalConsN (length vl) d
+        cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
+      Nothing -> case def of
+        Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (d,t)) <> ", cases =" <+> show pl) -- XXX data printed
+        Just e' -> cast ct $ expr global tenv env loc e'
   exp ce@(ExpCons c el) = do
     t <- inferExpr tenv loc ce
     conses <- liftInfer $ Infer.lookupDatatype loc t
     let Just i = findIndex (\ (L _ c',_) -> c == c') conses
-    ValCons i =.< mapM exp el
+    valCons i =.< mapM exp el
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
   exp (ExpBind v e1 e2) = do
     t <- inferExpr tenv loc e1
     d <- exp e1
-    let d' = unvalue d :: IOValue
+    let d' = unsafeUnvalue d :: IOValue
     return $ value $ ValBindIO v t d' e2 (packEnv (Map.delete v tenv) env e2)
   exp (ExpReturn e) = value . ValLiftIO =.< exp e
   exp se@(ExpSpec e _) = do
     t <- inferExpr tenv loc se
     cast t $ exp e
   exp (ExpLoc l e) = expr global tenv env l e
+
+-- |Check if a type contains no information.
+-- TODO: Move this elsewhere and cache
+-- TODO: Check for infinite loops (e.g., data A a of B (A (A a)))
+emptyType :: SrcLoc -> TypeVal -> Exec Bool
+emptyType loc = empty Set.empty where
+  empty seen t = if Set.member t seen then return True else empty' (Set.insert t seen) t
+  empty' seen (TyCons c@(V v) args) = case v of
+    "Int"     -> return False
+    "Char"    -> return False
+    "IO"      -> return False
+    "Delayed" -> return False
+    "Type"    -> return True
+    _ -> do
+      datatypes <- getProg >.= progDatatypes
+      case Map.lookup c datatypes of
+        Just (Data _ _ _ [] _) -> execError loc ("datatype" <+> quoted c <+> "has no constructors, so we don't know if it's empty or not")
+        Just (Data _ _ vl [(_,tl)] _) -> do
+          let tenv = Map.fromList $ zip vl args
+          empties <- mapM (empty seen . substVoid tenv) tl
+          return $ and empties
+        Just (Data _ _ _ (_:_:_) _) -> return False
+        Nothing -> execError loc ("unbound datatype" <+> quoted c)
+  empty' _ (TyFun _) = return False
+  empty' _ TyVoid = execError loc "Void is neither empty nor nonempty"
 
 -- |Evaluate an argument acording to the given transform
 transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Maybe Trans -> Exec Value
@@ -148,7 +173,7 @@ applyExpr global tenv env loc ft f e =
 -- "at" is the type of the value which was passed in, and is the type used for
 -- type inference/overload resolution.
 apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Maybe Trans -> Exec Value) -> TypeVal -> Exec Value
-apply global loc ft@(TyFun _) fun ae at = case unvalue fun :: FunValue of
+apply global loc ft@(TyFun _) fun ae at = case unsafeUnvalue fun :: FunValue of
   ValClosure f types args -> do
     -- infer return type
     rt <- runInfer loc ("apply" <+> quoted ft <+> "to" <+> quoted at) $ Infer.apply loc ft at
@@ -177,14 +202,14 @@ apply global loc ft@(TyFun _) fun ae at = case unvalue fun :: FunValue of
 apply _ loc t1 v1 e2 t2 = do
   r <- liftInfer $ Infer.isTypeType t1
   case r of
-    Just _ -> return $ ValCons 0 []
+    Just _ -> return valEmpty
     Nothing -> e2 Nothing >>= \v2 -> execError loc ("can't apply" <+> quoted (v1,t1) <+> "to" <+> quoted (v2,t2))
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()
 main prog global = runExec prog $ do
   main <- lookup global Map.empty noLoc (V "main")
-  _ <- runIO global (unvalue main :: IOValue)
+  _ <- runIO global (unsafeUnvalue main :: IOValue)
   return ()
 
 runIO :: Globals -> IOValue -> Exec Value
@@ -196,7 +221,7 @@ runIO global (ValBindIO v tm m e penv) = do
   t <- liftInfer $ Infer.runIO tm
   let (tenv,env) = unpackEnv penv
   d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
-  runIO global (unvalue d' :: IOValue)
+  runIO global (unsafeUnvalue d' :: IOValue)
 
 testAll :: Globals -> Exec Value
 testAll global = do
@@ -208,8 +233,8 @@ testAll global = do
   test (V v,d)
     | isPrefixOf "test_" v = do
         liftIO $ puts ("  "++v)
-        _ <- runIO global (unvalue d :: IOValue)
+        _ <- runIO global (unsafeUnvalue d :: IOValue)
         success
     | otherwise = success
-  nop = return $ ValCons 0 []
+  nop = return valEmpty
 

@@ -28,6 +28,7 @@ import qualified Lir
 import qualified Interp
 import qualified Base
 import qualified Infer
+import qualified Memory
 import ExecMonad
 import InferMonad
 import ToHaskell
@@ -88,6 +89,7 @@ loadModule s l m = do
   return $ concat asts ++ [(f',ast)]
 
 main = do
+  Memory.runtimeInit
   (options, args, errors) <- getOpt Permute options =.< getArgs
   case errors of
     [] -> return ()

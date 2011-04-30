@@ -4,6 +4,8 @@ HAPPY = happy
 HAPPYFLAGS = -agc
 ALEX = alex
 ALEXFLAGS = -g
+CC = gcc
+CFLAGS = -O2 -Wall -Werror -I/opt/local/include
 
 OTHERS = Parse.hs Lex.hs
 TESTS = basic layout curry delay match io tyfun success types base-test expseq fac
@@ -17,8 +19,8 @@ info: Parse.info
 ### Compile
 
 .PHONY: duck
-duck: Duck.hs $(OTHERS)
-	$(GHC) $(GHCFLAGS) --make $< -o $@
+duck: Duck.hs runtime.o $(OTHERS)
+	$(GHC) $(GHCFLAGS) --make Duck.hs runtime.o -lgc -o $@
 
 %.hs: %.y
 	@rm -f $@
@@ -31,12 +33,16 @@ duck: Duck.hs $(OTHERS)
 	@rm -f $@
 	umask a-w ; $(ALEX) $(ALEXFLAGS) $< -o $@
 
+%.o: %.c
+	$(CC) $(CFLAGS) -c $<
+
+runtime.o: runtime.h
+
 ### Generate Haskell files from Duck
 
 GEN = ./duck --haskell
 .PHONY: gen
 gen:
-	$(GEN) memory.duck > Gen/Memory.hs
 	$(GEN) var.duck > Gen/Var.hs
 	$(GEN) type.duck > Gen/Type.hs
 	$(GEN) srcLoc.duck > Gen/SrcLoc.hs

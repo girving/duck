@@ -30,55 +30,66 @@ data Exp = ExpLoc !SrcLoc !Exp
 {-# LINE 9 "lir.duck" #-}
 instance Convert Exp where
         {-# LINE 9 "lir.duck" #-}
-        value (ExpLoc a b) = ValCons 0 [value a, value b]
+        value (ExpLoc a b) = valCons 0 [value a, value b]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpInt a) = ValCons 1 [value a]
+        value (ExpInt a) = valCons 1 [value a]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpChar a) = ValCons 2 [value a]
+        value (ExpChar a) = valCons 2 [value a]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpVar a) = ValCons 3 [value a]
+        value (ExpVar a) = valCons 3 [value a]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpApply a b) = ValCons 4 [value a, value b]
+        value (ExpApply a b) = valCons 4 [value a, value b]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpLet a b c) = ValCons 5 [value a, value b, value c]
+        value (ExpLet a b c) = valCons 5 [value a, value b, value c]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpCons a b) = ValCons 6 [value a, value b]
+        value (ExpCons a b) = valCons 6 [value a, value b]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpCase a b c) = ValCons 7 [value a, value b, value c]
+        value (ExpCase a b c) = valCons 7 [value a, value b, value c]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpPrim a b) = ValCons 8 [value a, value b]
+        value (ExpPrim a b) = valCons 8 [value a, value b]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpSpec a b) = ValCons 9 [value a, value b]
+        value (ExpSpec a b) = valCons 9 [value a, value b]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpBind a b c) = ValCons 10 [value a, value b, value c]
+        value (ExpBind a b c) = valCons 10 [value a, value b, value c]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpReturn a) = ValCons 11 [value a]
+        value (ExpReturn a) = valCons 11 [value a]
         {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 0 [a, b]) = ExpLoc (unvalue a) (unvalue b)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 1 [a]) = ExpInt (unvalue a)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 2 [a]) = ExpChar (unvalue a)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 3 [a]) = ExpVar (unvalue a)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 4 [a, b]) = ExpApply (unvalue a) (unvalue b)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 5 [a, b, c])
-          = ExpLet (unvalue a) (unvalue b) (unvalue c)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 6 [a, b]) = ExpCons (unvalue a) (unvalue b)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 7 [a, b, c])
-          = ExpCase (unvalue a) (unvalue b) (unvalue c)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 8 [a, b]) = ExpPrim (unvalue a) (unvalue b)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 9 [a, b]) = ExpSpec (unvalue a) (unvalue b)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 10 [a, b, c])
-          = ExpBind (unvalue a) (unvalue b) (unvalue c)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue (ValCons 11 [a]) = ExpReturn (unvalue a)
-        {-# LINE 9 "lir.duck" #-}
-        unvalue _ = undefined
+        unsafeUnvalue val
+          = case unsafeTag val of
+                0
+                  -> let {-# LINE 10 "lir.duck" #-}
+                         (a, b) = unsafeUnvalCons val
+                       in ExpLoc (unsafeUnvalue a) (unsafeUnvalue b)
+                1 -> ExpInt (unsafeUnvalue (unsafeUnvalCons val))
+                2 -> ExpChar (unsafeUnvalue (unsafeUnvalCons val))
+                3 -> ExpVar (unsafeUnvalue (unsafeUnvalCons val))
+                4
+                  -> let {-# LINE 14 "lir.duck" #-}
+                         (a, b) = unsafeUnvalCons val
+                       in ExpApply (unsafeUnvalue a) (unsafeUnvalue b)
+                5
+                  -> let {-# LINE 15 "lir.duck" #-}
+                         (a, b, c) = unsafeUnvalCons val
+                       in ExpLet (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                6
+                  -> let {-# LINE 16 "lir.duck" #-}
+                         (a, b) = unsafeUnvalCons val
+                       in ExpCons (unsafeUnvalue a) (unsafeUnvalue b)
+                7
+                  -> let {-# LINE 17 "lir.duck" #-}
+                         (a, b, c) = unsafeUnvalCons val
+                       in ExpCase (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                8
+                  -> let {-# LINE 18 "lir.duck" #-}
+                         (a, b) = unsafeUnvalCons val
+                       in ExpPrim (unsafeUnvalue a) (unsafeUnvalue b)
+                9
+                  -> let {-# LINE 19 "lir.duck" #-}
+                         (a, b) = unsafeUnvalCons val
+                       in ExpSpec (unsafeUnvalue a) (unsafeUnvalue b)
+                10
+                  -> let {-# LINE 21 "lir.duck" #-}
+                         (a, b, c) = unsafeUnvalCons val
+                       in ExpBind (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                11 -> ExpReturn (unsafeUnvalue (unsafeUnvalCons val))
+                _ -> error "bad tag in unsafeUnvalue Exp"

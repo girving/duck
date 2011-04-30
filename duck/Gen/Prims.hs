@@ -20,47 +20,39 @@ data Binop = IntAddOp
 {-# LINE 3 "prims.duck" #-}
 instance Convert Binop where
         {-# LINE 3 "prims.duck" #-}
-        value (IntAddOp) = ValCons 0 []
+        value (IntAddOp) = valCons 0 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntSubOp) = ValCons 1 []
+        value (IntSubOp) = valCons 1 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntMulOp) = ValCons 2 []
+        value (IntMulOp) = valCons 2 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntDivOp) = ValCons 3 []
+        value (IntDivOp) = valCons 3 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntEqOp) = ValCons 4 []
+        value (IntEqOp) = valCons 4 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntLTOp) = ValCons 5 []
+        value (IntLTOp) = valCons 5 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntGTOp) = ValCons 6 []
+        value (IntGTOp) = valCons 6 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntLEOp) = ValCons 7 []
+        value (IntLEOp) = valCons 7 []
         {-# LINE 3 "prims.duck" #-}
-        value (IntGEOp) = ValCons 8 []
+        value (IntGEOp) = valCons 8 []
         {-# LINE 3 "prims.duck" #-}
-        value (ChrEqOp) = ValCons 9 []
+        value (ChrEqOp) = valCons 9 []
         {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 0 []) = IntAddOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 1 []) = IntSubOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 2 []) = IntMulOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 3 []) = IntDivOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 4 []) = IntEqOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 5 []) = IntLTOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 6 []) = IntGTOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 7 []) = IntLEOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 8 []) = IntGEOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue (ValCons 9 []) = ChrEqOp
-        {-# LINE 3 "prims.duck" #-}
-        unvalue _ = undefined
+        unsafeUnvalue val
+          = case unsafeTag val of
+                0 -> IntAddOp
+                1 -> IntSubOp
+                2 -> IntMulOp
+                3 -> IntDivOp
+                4 -> IntEqOp
+                5 -> IntLTOp
+                6 -> IntGTOp
+                7 -> IntLEOp
+                8 -> IntGEOp
+                9 -> ChrEqOp
+                _ -> error "bad tag in unsafeUnvalue Binop"
  
 {-# LINE 15 "prims.duck" #-}
 data Prim = Binop !Binop
@@ -73,28 +65,24 @@ data Prim = Binop !Binop
 {-# LINE 15 "prims.duck" #-}
 instance Convert Prim where
         {-# LINE 15 "prims.duck" #-}
-        value (Binop a) = ValCons 0 [value a]
+        value (Binop a) = valCons 0 [value a]
         {-# LINE 15 "prims.duck" #-}
-        value (CharIntOrd) = ValCons 1 []
+        value (CharIntOrd) = valCons 1 []
         {-# LINE 15 "prims.duck" #-}
-        value (IntCharChr) = ValCons 2 []
+        value (IntCharChr) = valCons 2 []
         {-# LINE 15 "prims.duck" #-}
-        value (Exit) = ValCons 3 []
+        value (Exit) = valCons 3 []
         {-# LINE 15 "prims.duck" #-}
-        value (IOPutChar) = ValCons 4 []
+        value (IOPutChar) = valCons 4 []
         {-# LINE 15 "prims.duck" #-}
-        value (TestAll) = ValCons 5 []
+        value (TestAll) = valCons 5 []
         {-# LINE 15 "prims.duck" #-}
-        unvalue (ValCons 0 [a]) = Binop (unvalue a)
-        {-# LINE 15 "prims.duck" #-}
-        unvalue (ValCons 1 []) = CharIntOrd
-        {-# LINE 15 "prims.duck" #-}
-        unvalue (ValCons 2 []) = IntCharChr
-        {-# LINE 15 "prims.duck" #-}
-        unvalue (ValCons 3 []) = Exit
-        {-# LINE 15 "prims.duck" #-}
-        unvalue (ValCons 4 []) = IOPutChar
-        {-# LINE 15 "prims.duck" #-}
-        unvalue (ValCons 5 []) = TestAll
-        {-# LINE 15 "prims.duck" #-}
-        unvalue _ = undefined
+        unsafeUnvalue val
+          = case unsafeTag val of
+                0 -> Binop (unsafeUnvalue (unsafeUnvalCons val))
+                1 -> CharIntOrd
+                2 -> IntCharChr
+                3 -> Exit
+                4 -> IOPutChar
+                5 -> TestAll
+                _ -> error "bad tag in unsafeUnvalue Prim"

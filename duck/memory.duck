@@ -1,9 +1,0 @@
--- | Duck memory representation
-
--- For now, Value is a dynamic algebraic datatype.  Soon, however, the Value
--- type will vanish in a poof of self-referential smoke.
-
-data Value of
-  ValInt Int
-  ValChar Char
-  ValCons Int (List Value) -- ^ Constructed data

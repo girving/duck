@@ -7,14 +7,13 @@
 module Value
   ( Env
   , FunValue(..), IOValue(..)
-  , valUnit
+  , valEmpty
   ) where
 
 import Prelude hiding (lookup)
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Util
 import Var
 import Type
 import Prims
@@ -31,23 +30,20 @@ deriving instance Show IOValue
 
 type Env = Map Var Value
 
-valUnit :: Value
-valUnit = ValCons 0 []
+valEmpty :: Value
+valEmpty = valCons 0 []
 
 -- Pretty printing
 
 prettyval :: TypeVal -> Value -> Doc'
-prettyval t (ValInt i) | t == typeInt = pretty' i
-prettyval t (ValChar c) | t == typeChar = pretty' (show c)
-prettyval (TyCons (V "List") [t]) v | Just v' <- extract v = pretty' $
+prettyval t v | t == typeInt = pretty' (unsafeUnvalue v :: Int)
+prettyval t v | t == typeChar = pretty' (unsafeUnvalue v :: Char)
+prettyval (TyCons (V "List") [t]) v = pretty' $
   brackets $ 3 #> punctuate ',' (map (prettyval t) v')
-  where
-  extract (ValCons 0 _) = Just []
-  extract (ValCons 1 [h,t]) = (h :) =.< extract t
-  extract _ = Nothing
+  where v' = unsafeUnvalue v :: [Value]
 prettyval (TyCons (V "Type") [t]) _ = pretty' t
-prettyval (TyFun _) v = pretty' (unvalue v :: FunValue)
-prettyval (TyCons (V "IO") [t]) v = prettyio t (unvalue v :: IOValue)
+prettyval (TyFun _) v = pretty' (unsafeUnvalue v :: FunValue)
+prettyval (TyCons (V "IO") [t]) v = prettyio t (unsafeUnvalue v :: IOValue)
 prettyval t v = error ("type mismatch in prettyval "++pout t++" "++show v)
 
 instance Pretty FunValue where

@@ -11,8 +11,6 @@ newtype Var = V [Char]
 {-# LINE 3 "var.duck" #-}
 instance Convert Var where
         {-# LINE 3 "var.duck" #-}
-        value (V a) = ValCons 0 [value a]
+        value (V a) = valCons 0 [value a]
         {-# LINE 3 "var.duck" #-}
-        unvalue (ValCons 0 [a]) = V (unvalue a)
-        {-# LINE 3 "var.duck" #-}
-        unvalue _ = undefined
+        unsafeUnvalue val = V (unsafeUnvalue (unsafeUnvalCons val))

@@ -39,13 +39,13 @@ data PrimOp = PrimOp
   }
 
 intOp :: Binop -> TypeVal -> (Int -> Int -> Value) -> PrimOp
-intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \[ValInt i, ValInt j] -> fun i j
+intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \[i,j] -> fun (unsafeUnvalue i) (unsafeUnvalue j)
 
 intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
-intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> ValCons (if fun i j then 1 else 0) []
+intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> valCons (if fun i j then 1 else 0) []
 
 intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
-intBinOp op fun = intOp op typeInt $ \i -> ValInt . fun i
+intBinOp op fun = intOp op typeInt $ \i -> value . fun i
 
 ioOp :: Prim -> String -> [TypeVal] -> TypeVal -> PrimOp
 ioOp p name tl t = PrimOp p name tl (typeIO t) (value . ValPrimIO p)
@@ -61,9 +61,9 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
-  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] (TyCons (V "Bool") []) $ \[ValChar i, ValChar j] -> ValCons (if i == j then 1 else 0) []
-  , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \[ValChar c] -> ValInt (Char.ord c)
-  , PrimOp IntCharChr "chr" [typeInt] typeChar $ \[ValInt c] -> ValChar (Char.chr c)
+  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] (TyCons (V "Bool") []) $ \[i,j] -> valCons (if (unsafeUnvalue i :: Char) == unsafeUnvalue j then 1 else 0) []
+  , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \[c] -> value (Char.ord $ unsafeUnvalue c)
+  , PrimOp IntCharChr "chr" [typeInt] typeChar $ \[c] -> value (Char.chr $ unsafeUnvalue c)
   , ioOp Exit "exit" [typeInt] typeVoid
   , ioOp IOPutChar "put" [typeChar] typeUnit
   , ioOp TestAll "testAll" [] typeUnit
@@ -89,8 +89,8 @@ primType loc prim args
 
 -- |Execute an IO primitive
 runPrimIO :: Prim -> [Value] -> Exec Value
-runPrimIO Exit [ValInt i] = liftIO (exit i)
-runPrimIO IOPutChar [ValChar c] = liftIO (putChar c) >. valUnit
+runPrimIO Exit [i] = liftIO (exit (unsafeUnvalue i :: Int))
+runPrimIO IOPutChar [c] = liftIO (putChar (unsafeUnvalue c :: Char)) >. valEmpty
 runPrimIO p args = execError noLoc $ invalidPrim p args
 
 -- |The internal, implicit declarations giving names to primitive operations.
