@@ -128,7 +128,7 @@ prog name decls = flip execState (empty name) $ do
     fixpoint f x =
       if x == y then y else fixpoint f y
       where y = f x
-    grow inv = Map.foldrWithKey growCons inv datatypes
+    grow inv = Map.foldWithKey growCons inv datatypes
     growCons c datatype inv = foldl update inv (zip [0..] (dataTyVars datatype)) where
       update :: Set (CVar,Int) -> (Int,Var) -> Set (CVar,Int)
       update inv (i,v) = if Set.member v ivars then Set.insert (c,i) inv else inv
