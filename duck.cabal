@@ -16,10 +16,18 @@ Flag debug
     Description: Enable debug support
     Default:     True
 
+Flag boehm
+    Description: Use the Boehm GC
+    Default:     False
+
 Executable duck
     Main-is:		Duck.hs
     Build-Depends:	base >= 4 && < 5, containers, pretty, array, mtl, filepath, directory, haskell-src
     other-modules:	Util, Pretty, Var, SrcLoc, Token, Ptrie, Stage, Type, ParseOps, Ast, ParseMonad, Lex, Layout, Parse, Ir, Lir, Prims, Base, Value, InferMonad, TypeSet, Infer, ExecMonad, Interp
     hs-source-dirs:	duck
+    c-sources:          duck/runtime.c
     if flag(debug)
         ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing
+    if flag(boehm)
+        cc-options:     -DUSE_BOEHM
+        extra-libraries: gc

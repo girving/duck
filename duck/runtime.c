@@ -1,7 +1,9 @@
 // Duck low-level runtime system
 
 #include "runtime.h"
+#ifdef USE_BOEHM
 #include <gc/gc.h>
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 
