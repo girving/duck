@@ -47,7 +47,7 @@ deriving instance Ord Trans
 deriving instance Show Trans
 
 type TypeEnv = Map Var TypeVal
-type TransType t = (Maybe Trans, t)
+type TransType t = (Trans, t)
 
 instance HasVar TypePat where
   var = TsVar
@@ -196,14 +196,10 @@ freeVars (TsFun fl) = concatMap f fl where
   f (FunClosure _ tl) = concatMap freeVars tl
 freeVars TsVoid = []
 
--- |Apply a macro transformation to a type
-transType :: IsType t => Trans -> t -> t
-transType Delayed t = typeFun [FunArrow (typeCons (V "()") []) t]
-
 -- |Converts an annotation argument type to the effective type of the argument within the function.
 argType :: IsType t => TransType t -> t
-argType (Nothing, t) = t
-argType (Just c, t) = transType c t
+argType (NoTrans, t) = t
+argType (Delayed, t) = typeFun [FunArrow (typeCons (V "()") []) t]
 
 -- Pretty printing
 
@@ -228,5 +224,5 @@ instance Pretty t => Pretty [TypeFun t] where
   pretty' fl = 5 #> punctuate '&' fl
 
 instance (Pretty t, IsType t) => Pretty (TransType t) where
-  pretty' (Nothing, t) = pretty' t
-  pretty' (Just c, t) = prettyap (show c) [t]
+  pretty' (NoTrans, t) = pretty' t
+  pretty' (c, t) = prettyap (show c) [t]

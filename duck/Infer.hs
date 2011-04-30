@@ -56,7 +56,7 @@ type Locals = TypeEnv
 -- Utility functions
 
 -- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
-insertOver :: Bool -> Var -> [(Maybe Trans, TypeVal)] -> Overload TypeVal -> Infer ()
+insertOver :: Bool -> Var -> [(Trans, TypeVal)] -> Overload TypeVal -> Infer ()
 insertOver _final f a o = do
   --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> overRet o
   modify $ Ptrie.mapInsert f a o
@@ -71,7 +71,7 @@ lookupOver f tl = get >.=
     makeover (_, Just (Just o)) = Just o
 
 -- |Given a set of overloads, return the transform annotations for the first @n@ arguments, if they are the same.
-transOvers :: [Overload t] -> Int -> Maybe [Maybe Trans]
+transOvers :: [Overload t] -> Int -> Maybe [Trans]
 transOvers [] _ = Nothing
 transOvers os n = if all (tt ==) tts then Just tt else Nothing
   where tt:tts = map (map fst . (take n) . overArgs) os

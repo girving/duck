@@ -102,27 +102,34 @@ instance Convert Variance where
                 _ -> error "bad tag in unsafeUnvalue Variance"
  
 {-# LINE 62 "type.duck" #-}
-data Trans = Delayed
+data Trans = NoTrans
+           | Delayed
  
 {-# LINE 62 "type.duck" #-}
 instance Convert Trans where
         {-# LINE 62 "type.duck" #-}
-        value (Delayed) = valCons 0 []
+        value (NoTrans) = valCons 0 []
         {-# LINE 62 "type.duck" #-}
-        unsafeUnvalue _ = Delayed
+        value (Delayed) = valCons 1 []
+        {-# LINE 62 "type.duck" #-}
+        unsafeUnvalue val
+          = case unsafeTag val of
+                0 -> NoTrans
+                1 -> Delayed
+                _ -> error "bad tag in unsafeUnvalue Trans"
  
-{-# LINE 66 "type.duck" #-}
+{-# LINE 67 "type.duck" #-}
 data Datatype = Data !CVar !SrcLoc ![Var] ![(Loc CVar, [TypePat])]
                      ![Variance]
  
-{-# LINE 66 "type.duck" #-}
+{-# LINE 67 "type.duck" #-}
 instance Convert Datatype where
-        {-# LINE 66 "type.duck" #-}
+        {-# LINE 67 "type.duck" #-}
         value (Data a b c d e)
           = valCons 0 [value a, value b, value c, value d, value e]
-        {-# LINE 66 "type.duck" #-}
+        {-# LINE 67 "type.duck" #-}
         unsafeUnvalue val
-          = let {-# LINE 66 "type.duck" #-}
+          = let {-# LINE 67 "type.duck" #-}
                 (a, b, c, d, e) = unsafeUnvalCons val
               in
               Data (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)

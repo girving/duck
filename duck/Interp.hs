@@ -160,9 +160,9 @@ emptyType loc = empty Set.empty where
   empty' _ TyVoid = execError loc "Void is neither empty nor nonempty"
 
 -- |Evaluate an argument acording to the given transform
-transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Maybe Trans -> Exec Value
-transExpr global tenv env loc e Nothing = expr global tenv env loc e
-transExpr _ tenv env _ e (Just Delayed) = return $ value $ ValDelay e (packEnv tenv env e)
+transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Trans -> Exec Value
+transExpr global tenv env loc e NoTrans = expr global tenv env loc e
+transExpr _ tenv env _ e Delayed = return $ value $ ValDelay e (packEnv tenv env e)
 
 applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> TypeVal -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =
@@ -174,7 +174,7 @@ applyExpr global tenv env loc ft f e =
 -- be delayed until we know the correct transform to apply.  The second type
 -- "at" is the type of the value which was passed in, and is the type used for
 -- type inference/overload resolution.
-apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Maybe Trans -> Exec Value) -> TypeVal -> Exec Value
+apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Trans -> Exec Value) -> TypeVal -> Exec Value
 apply global loc ft@(TyFun _) fun ae at = case unsafeUnvalue fun :: FunValue of
   ValClosure f types args -> do
     -- infer return type
@@ -205,7 +205,7 @@ apply _ loc t1 v1 e2 t2 = do
   r <- liftInfer $ Infer.isTypeType t1
   case r of
     Just _ -> return valEmpty
-    Nothing -> e2 Nothing >>= \v2 -> do
+    Nothing -> e2 NoTrans >>= \v2 -> do
       datatypes <- getProg >.= progDatatypes
       execError loc ("can't apply" <+> quoted (datatypes,t1,v1) <+> "to" <+> quoted (datatypes,t2,v2))
 

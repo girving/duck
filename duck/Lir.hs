@@ -69,7 +69,7 @@ instance HasLoc (Overload t) where loc = overLoc
 
 -- |The main overload table of specific overload resolutions used by the program.
 -- Note that there may be many more entries than actual overload definitions, since every specific set of argument types creates a new overload.
-type Overloads = Ptrie TypeVal (Maybe Trans) (Overload TypeVal)
+type Overloads = Ptrie TypeVal Trans (Overload TypeVal)
 
 type TypeSetArg = TransType TypePat
 
@@ -213,7 +213,7 @@ overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quot
 
 -- |Add an unoverloaded global function
 function :: Loc Var -> [Var] -> Exp -> State Prog ()
-function v vl e = overload v (map ((,) Nothing) tl) r vl e where
+function v vl e = overload v (map ((,) NoTrans) tl) r vl e where
   (tl,r) = generalType vl
 
 -- |Unwrap a lambda as far as we can
@@ -231,8 +231,8 @@ generalType vl = (tl,r) where
 
 -- |Extracts the annotation from a possibly annotated argument type.
 typeArg :: TypePat -> TypeSetArg
-typeArg (TsCons (V "Delayed") [t]) = (Just Delayed, t)
-typeArg t = (Nothing, t)
+typeArg (TsCons (V "Delayed") [t]) = (Delayed, t)
+typeArg t = (NoTrans, t)
 
 -- |Unwrap a type/lambda combination as far as we can
 unwrapTypeLambda :: TypePat -> Ir.Exp -> ([TypeSetArg], TypePat, [Var], Ir.Exp)
