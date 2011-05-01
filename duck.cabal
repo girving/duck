@@ -27,7 +27,7 @@ Executable duck
     hs-source-dirs:	duck
     c-sources:          duck/runtime.c
     if flag(debug)
-        ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -rtsopts -debug -auto-all
+        ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing
     if flag(boehm)
         cpp-options:     -DUSE_BOEHM
         extra-libraries: gc
