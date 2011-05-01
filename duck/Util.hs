@@ -56,7 +56,6 @@ module Util
 
 import System.IO
 import System.Exit
-import System.IO.Unsafe
 import Data.Function
 import Data.List
 import Data.Maybe
@@ -68,6 +67,7 @@ import Control.Monad.Error
 import Control.Monad.State
 import Control.Monad.Reader
 import Control.Monad.Trans
+import Debug.Trace
 import Foreign.C.String
 
 flp :: (a,b) -> (b,a)
@@ -85,7 +85,7 @@ puts :: String -> IO ()
 puts s = fputs stdout (s++"\n")
 
 debug :: Show a => a -> b -> b
-debug a b = unsafePerformIO (puts (show a)) `seq` b
+debug = traceShow
 
 debugVal :: Show a => a -> a
 debugVal a = debug a a
