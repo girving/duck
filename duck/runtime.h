@@ -8,9 +8,6 @@
 struct _value;
 typedef struct _value *value;
 
-// Initialize the runtime system
-extern void duck_runtime_init();
-
 // Allocate a block of memory
 extern value duck_malloc(size_t n);
 

@@ -29,7 +29,6 @@ import qualified ToLir
 import qualified Interp
 import qualified Base
 import qualified Infer
-import qualified Memory
 import ExecMonad
 import InferMonad
 import ToHaskell
@@ -93,7 +92,6 @@ loadModule s l m = do
   return $ concat asts ++ [(f',ast)]
 
 main = do
-  Memory.runtimeInit
   (options, args, errors) <- getOpt Permute options =.< getArgs
   case errors of
     [] -> return ()
@@ -117,14 +115,13 @@ main = do
   when (toHaskell flags) $ (pout $ uncurry ToHaskell.prog $ head $ reverse $ zip names ast :: IO ()) >> exitSuccess
 
   ir <- phase' StageIr concat (snd $ mapAccumL Ir.prog Map.empty ast)
-  lir <- phase' StageLir vcat (zipWith ToLir.prog names ir)
-  lir <- phase' StageLink id (foldl' Lir.union Base.base lir)
+  lir <- phase' StageLir id (ToLir.progs Base.base (zip names ir))
   runStage StageLink $ evaluate $ Lir.check lir
   lir <- phase StageInfer id (runInferProg Infer.prog lir)
 
   unless (compileOnly flags) $ do
   runStage StageInfer $ rerunInfer (lir,[]) Infer.main
-  env <- phase StageEnv (\v -> (Lir.progDatatypes lir, Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
+  env <- phase StageEnv (\v -> (Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
 
   unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
   runStage StageExec $ Interp.main lir env

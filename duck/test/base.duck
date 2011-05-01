@@ -58,7 +58,7 @@ delay x = x
 
 ---- bool
 
-data Bool of False ; True
+-- data Bool of False ; True
 
 bool :: Bool -> Bool
 bool x = x

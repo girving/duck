@@ -83,18 +83,15 @@ lookup env loc v
   lp prog
     | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
     | Just _ <- Map.lookup v (progFunctions prog) = return $ typeClosure v [] -- if we find overloads, make a new closure
-    | Just _ <- Map.lookup v (progDatatypes prog) = return $ typeType (TyCons v []) -- found a type constructor, return Type v
+    | Just d <- Map.lookup v (progDatatypes prog) = return $ typeType (TyCons d []) -- found a type constructor, return Type v
     | otherwise = inferError loc $ "unbound variable" <+> quoted v
 
 lookupDatatype :: SrcLoc -> TypeVal -> Infer [(Loc CVar, [TypeVal])]
-lookupDatatype loc (TyCons (V "Type") [t]) = case t of
-  TyCons c tl -> return [(L noLoc c, map typeType tl)]
+lookupDatatype loc (TyCons d [t]) | d == datatypeType = case t of
+  TyCons c tl -> return [(L noLoc (dataName c), map typeType tl)]
   TyVoid -> return [(L noLoc (V "Void"), [])]
   TyFun _ -> inferError loc $ "cannot pattern match on" <+> quoted (typeType t) <> "; matching on function types isn't implemented yet"
-lookupDatatype loc (TyCons tv types) = getProg >>= \prog ->
-  case Map.lookup tv (progDatatypes prog) of
-    Just (Data _ _ vl cons _) -> return $ map (second $ map $ substVoid $ Map.fromList $ zip vl types) cons
-    _ -> inferError loc ("unbound datatype constructor" <+> quoted tv)
+lookupDatatype _ (TyCons d types) = return $ map (second $ map $ substVoid $ Map.fromList $ zip (dataTyVars d) types) (dataConses d)
 lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 
 lookupFunction :: Var -> Infer [Overload TypePat]
@@ -103,13 +100,12 @@ lookupFunction f = getProg >>= \prog ->
     Just o -> return o
     _ -> inferError noLoc ("unbound function" <+> quoted f)
 
-lookupConstructor :: SrcLoc -> Var -> Infer (CVar, [Var], [TypePat])
+lookupConstructor :: SrcLoc -> Var -> Infer (Datatype, [Var], [TypePat])
 lookupConstructor loc c = getProg >>= lp where
   lp prog
     | Just tc <- Map.lookup c (progConses prog)
-    , Just td <- Map.lookup tc (progDatatypes prog)
-    , Just tl <- lookupCons (dataConses td) c
-    = return (tc,dataTyVars td,tl)
+    , Just tl <- lookupCons (dataConses tc) c
+    = return (tc,dataTyVars tc,tl)
     | otherwise = inferError loc ("unbound constructor" <+> quoted c)
 
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
@@ -127,7 +123,7 @@ definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl)
   t <- expr Map.empty l e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
-          (_, TyCons c tl) | isTuple c, length vl == length tl -> return tl
+          (_, TyCons c tl) | isDatatypeTuple c, length vl == length tl -> return tl
           _ -> inferError l $ "expected" <+> length vl <> "-tuple, got" <+> quoted t
   return (zip (map unLoc vl) tl)
   where l = loc d
@@ -189,9 +185,8 @@ cons loc c args = do
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do
-  denv <- getProg >.= progDatatypes
   tenv <- checkLeftovers loc ("type specification" <+> quoted ts <+> "is invalid") $
-    typeReError loc (quoted (denv,e) <+> "has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
+    typeReError loc (quoted e <+> "has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
     subset t ts
   return $ substVoid tenv ts
 
@@ -226,9 +221,9 @@ apply loc t1 t2 = (,) NoTrans =.< do
   r <- isTypeType t1
   case r of
     Just (TyCons c tl) -> do
-      vl <- typeVariances c
+      let vl = dataVariances c
       if length tl < length vl
-        then typeType =.< if c == V "Type" then return t2 else do
+        then typeType =.< if c == datatypeType then return t2 else do
           r <- isTypeType t2
           case r of
             Just t -> return $ TyCons c (tl++[t])
@@ -236,35 +231,33 @@ apply loc t1 t2 = (,) NoTrans =.< do
         else typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2 <> "," <+> quoted c <+> "is already fully applied")
     _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2)
 
-isTypeC1 :: String -> TypeVal -> Infer (Maybe TypeVal)
+isTypeC1 :: Datatype -> TypeVal -> Infer (Maybe TypeVal)
 isTypeC1 c tt = do
-  r <- tryError $ subset tt (TsCons (V c) [TsVar x])
+  r <- tryError $ subset tt (TsCons c [TsVar x])
   return $ case r of
     Right (Right env) | Just t <- Map.lookup x env -> Just t
     _ -> Nothing
   where x = V "x"
 
 isTypeType :: TypeVal -> Infer (Maybe TypeVal)
-isTypeType = isTypeC1 "Type"
+isTypeType = isTypeC1 datatypeType
 
 isTypeIO :: TypeVal -> Infer (Maybe TypeVal)
-isTypeIO = isTypeC1 "IO"
+isTypeIO = isTypeC1 datatypeIO
 
 instance TypeMonad Infer where
   typeApply f = snd .=< apply noLoc f
-  typeVariances v = getProg >.= \p -> lookupVariances p v
 
 lookupVariances :: Prog -> Var -> [Variance]
 lookupVariances prog c | Just d <- Map.lookup c (progDatatypes prog) = dataVariances d
 lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization works cleanly
 
-overDesc :: Datatypes -> Overload TypePat -> Doc'
-overDesc denv o = pretty (denv, o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
+overDesc :: Overload TypePat -> Doc'
+overDesc o = pretty (o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
 resolve f args = do
-  denv <- getProg >.= progDatatypes
   rawOverloads <- lookupFunction f -- look up possibilities
   let nargs = length args
       prune o = tryError $ subsetList args (overTypes o) >. o
@@ -272,10 +265,10 @@ resolve f args = do
       isSpecOf a b = specializationList (overTypes a) (overTypes b)
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
       findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
-      options overs = vcat $ map (overDesc denv) overs
+      options overs = vcat $ map overDesc overs
   pruned <- mapM prune rawOverloads
   overloads <- case partitionEithers pruned of
-    (errs,[]) -> typeErrors noLoc ("no matching overload, tried") $ zip (map (overDesc denv) rawOverloads) errs
+    (errs,[]) -> typeErrors noLoc ("no matching overload, tried") $ zip (map overDesc rawOverloads) errs
     (_,os) -> return $ findmin os
 
   -- determine applicable argument type transform annotations

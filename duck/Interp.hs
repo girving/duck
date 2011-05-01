@@ -76,9 +76,8 @@ cast _ x = x
 
 inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec TypeVal
 inferExpr env loc e = do
-  denv <- getProg >.= progDatatypes
   t <- liftInfer $ Infer.expr env loc e
-  when (t == TyVoid) $ execError loc $ "refusing to evaluate" <+> quoted (denv,e) <> ", result is Void"
+  when (t == TyVoid) $ execError loc $ "refusing to evaluate" <+> quoted e <> ", result is Void"
   return t
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
@@ -110,9 +109,7 @@ expr global tenv env loc = exp where
                  else unsafeUnvalConsN (length vl) d
         cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
       Nothing -> case def of
-        Nothing -> do
-          datatypes <- getProg >.= progDatatypes
-          execError loc ("pattern match failed: exp =" <+> quoted (pretty (datatypes,t,d)) <> ", cases =" <+> show pl) -- XXX data printed
+        Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (t,d)) <> ", cases =" <+> show pl) -- XXX data printed
         Just e' -> cast ct $ expr global tenv env loc e'
   exp ce@(ExpCons c el) = do
     t <- inferExpr tenv loc ce
@@ -137,22 +134,18 @@ expr global tenv env loc = exp where
 emptyType :: SrcLoc -> TypeVal -> Exec Bool
 emptyType loc = empty Set.empty where
   empty seen t = if Set.member t seen then return True else empty' (Set.insert t seen) t
-  empty' seen (TyCons c@(V v) args) = case v of
-    "Int"     -> return False
-    "Char"    -> return False
-    "IO"      -> return False
-    "Delayed" -> return False
-    "Type"    -> return True
-    _ -> do
-      datatypes <- getProg >.= progDatatypes
-      case Map.lookup c datatypes of
-        Just (Data _ _ _ [] _) -> execError loc ("datatype" <+> quoted c <+> "has no constructors, so we don't know if it's empty or not")
-        Just (Data _ _ vl [(_,tl)] _) -> do
-          let tenv = Map.fromList $ zip vl args
-          empties <- mapM (empty seen . substVoid tenv) tl
-          return $ and empties
-        Just (Data _ _ _ (_:_:_) _) -> return False
-        Nothing -> execError loc ("unbound datatype" <+> quoted c)
+  empty' _ (TyCons c _) | c == datatypeInt = return False
+                        | c == datatypeChar = return False
+                        | c == datatypeIO = return False
+                        | c == datatypeDelayed = return False
+                        | c == datatypeType = return True
+  empty' seen (TyCons d args) = case dataConses d of
+    [] -> execError loc ("datatype" <+> quoted d <+> "has no constructors, so we don't know if it's empty or not")
+    [(_,tl)] -> do
+      let tenv = Map.fromList $ zip (dataTyVars d) args
+      empties <- mapM (empty seen . substVoid tenv) tl
+      return $ and empties
+    (_:_:_) -> return False
   empty' _ (TyFun _) = return False
   empty' _ TyVoid = execError loc "Void is neither empty nor nonempty"
 
@@ -204,9 +197,7 @@ apply _ loc t1 v1 e2 t2 = do
   r <- liftInfer $ Infer.isTypeType t1
   case r of
     Just _ -> return valEmpty
-    Nothing -> e2 NoTrans >>= \v2 -> do
-      datatypes <- getProg >.= progDatatypes
-      execError loc ("can't apply" <+> quoted (datatypes,t1,v1) <+> "to" <+> quoted (datatypes,t2,v2))
+    Nothing -> e2 NoTrans >>= \v2 -> execError loc ("can't apply" <+> quoted (t1,v1) <+> "to" <+> quoted (t2,v2))
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()

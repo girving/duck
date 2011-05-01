@@ -30,10 +30,10 @@ import Type
 import Value()
 import SrcLoc
 import InferMonad hiding (withFrame)
-import Lir (Prog, ProgMonad, progDatatypes)
+import Lir (Prog, ProgMonad)
 import Prettyval()
 
-type ExecStack = CallStack (Datatypes,TypeVal,Value)
+type ExecStack = CallStack (TypeVal,Value)
 
 newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
   deriving (Monad, MonadIO, MonadReader (Prog, ExecStack), MonadInterrupt)
@@ -47,7 +47,7 @@ execError l m = Exec $ ReaderT $ \(_,s) ->
 
 withFrame :: Var -> [TypeVal] -> [Value] -> SrcLoc -> Exec a -> Exec a
 withFrame f types args loc e = Exec $ ReaderT $ \(p,s) -> do
-  let r e = runReaderT (unExec e) (p, CallFrame f (zipWith (\t v -> (progDatatypes p,t,v)) types args) loc : s)
+  let r e = runReaderT (unExec e) (p, CallFrame f (zipWith (,) types args) loc : s)
   when (length s > 64) $ r $ execError loc "stack overflow"
   handle (\(e :: AsyncException) -> r $ execError loc (show e)) $
     r e
@@ -60,4 +60,4 @@ runExec p e = runReaderT (unExec e) (p,[])
 
 liftInfer :: Infer a -> Exec a
 liftInfer infer = Exec $ ReaderT $ \ps ->
-  rerunInfer (fmap (mapStackArgs (\(_,t,_) -> t)) ps) infer
+  rerunInfer (fmap (mapStackArgs (\(t,_) -> t)) ps) infer

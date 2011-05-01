@@ -42,7 +42,7 @@ intOp :: Binop -> TypeVal -> (Int -> Int -> Value) -> PrimOp
 intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \[i,j] -> fun (unsafeUnvalue i) (unsafeUnvalue j)
 
 intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
-intBoolOp op fun = intOp op (TyCons (V "Bool") []) $ \i j -> valCons (if fun i j then 1 else 0) []
+intBoolOp op fun = intOp op typeBool $ \i j -> valCons (if fun i j then 1 else 0) []
 
 intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
 intBinOp op fun = intOp op typeInt $ \i -> value . fun i
@@ -61,7 +61,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
-  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] (TyCons (V "Bool") []) $ \[i,j] -> valCons (if (unsafeUnvalue i :: Char) == unsafeUnvalue j then 1 else 0) []
+  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] typeBool $ \[i,j] -> valCons (if (unsafeUnvalue i :: Char) == unsafeUnvalue j then 1 else 0) []
   , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \[c] -> value (Char.ord $ unsafeUnvalue c)
   , PrimOp IntCharChr "chr" [typeInt] typeChar $ \[c] -> value (Char.chr $ unsafeUnvalue c)
   , ioOp Exit "exit" [typeInt] typeVoid
@@ -102,7 +102,7 @@ overload prog name tl r args body = prog{ progFunctions = Map.insertWith (++) na
 -- |The internal, implicit declarations giving names to primitive operations.
 -- Note that this is different than base.duck.
 base :: Prog
-base = (complete . types . prims . io) (empty "") where
+base = (complete datatypes . types . prims . io) (empty "") where
   primop prog p | [] <- primArgs p = prog{ progDefinitions = Def [L noLoc name] exp : progDefinitions prog }
                 | otherwise = overload prog name tyargs ret args exp where
     name = V (primName p)
@@ -112,21 +112,10 @@ base = (complete . types . prims . io) (empty "") where
     exp = ExpPrim (primPrim p) (map ExpVar args)
   prims prog = foldl' primop prog $ Map.elems primOps
 
-  decTuples = map decTuple (0:[2..5])
-  decTuple i = Data c noLoc vars [(L noLoc c, map TsVar vars)] (replicate i Covariant) where
-    c = tupleCons vars
-    vars = take i standardVars
-
-  types prog = prog
-    { progDatatypes = Map.fromList $ map expand $ decTuples ++
-      [ Data (V "Int") noLoc [] [] []
-      , Data (V "Char") noLoc [] [] []
-      , Data (V "IO") noLoc [V "a"] [] [Covariant]
-      , Data (V "Delayed") noLoc [V "a"] [] [Covariant]
-      , Data (V "Type") noLoc [V "t"] [] [Invariant]
-      ]
-    }
-    where expand d@(Data t _ _ _ _) = (t,d)
+  types prog = prog { progDatatypes = datatypes }
+  datatypes = Map.fromList $ map expand $ map ((!!) datatypeTuples) (0:[2..5]) ++
+    [ datatypeInt, datatypeChar, datatypeIO, datatypeDelayed, datatypeType, datatypeBool ]
+    where expand d = (dataName d,d)
 
 io :: Prog -> Prog
 io prog = map' $ join $ returnIO prog where

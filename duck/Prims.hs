@@ -7,6 +7,16 @@ module Prims
   , Prim(..)
   , binopString
   , primString
+  -- * Primitive datatypes
+  , datatypeUnit
+  , datatypeTuples
+  , isDatatypeTuple
+  , datatypeInt
+  , datatypeChar
+  , datatypeIO
+  , datatypeDelayed
+  , datatypeType
+  , datatypeBool
   -- * Primitive types
   , typeUnit
   , typeArrow, isTypeArrow
@@ -16,10 +26,12 @@ module Prims
   , typeChar
   , typeIO
   , typeType
+  , typeBool
   ) where
 
 import Type
 import Var
+import SrcLoc
 
 -- Pull in definitions of Binop and Prim
 import Gen.Prims
@@ -32,14 +44,34 @@ deriving instance Eq Prim
 deriving instance Ord Prim
 deriving instance Show Prim
 
-typeC :: IsType t => String -> t
-typeC c = typeCons (V c) []
+-- |Primitive datatypes
 
-typeC1 :: IsType t => String -> t -> t
-typeC1 c t = typeCons (V c) [t]
+datatypeTuples = datatypeUnit : error "no singleton tuples" : map dt [2..] where
+  dt i = makeDatatype c noLoc vars [(L noLoc c, map TsVar vars)] (replicate i Covariant) where
+    c = tupleCons vars
+    vars = take i standardVars
+
+datatypeInt = makeDatatype (V "Int") noLoc [] [] []
+datatypeChar = makeDatatype (V "Char") noLoc [] [] []
+datatypeIO = makeDatatype (V "IO") noLoc [V "a"] [] [Covariant]
+datatypeDelayed = makeDatatype (V "Delayed") noLoc [V "a"] [] [Covariant]
+datatypeType = makeDatatype (V "Type") noLoc [V "t"] [] [Invariant]
+datatypeBool = makeDatatype (V "Bool") noLoc [] [(L noLoc (V "False"),[]),
+                                                 (L noLoc (V "True") ,[])] []
+
+isDatatypeTuple :: Datatype -> Bool
+isDatatypeTuple = isTuple . dataName
+
+-- Type construction convenience functions
+
+typeC :: IsType t => Datatype -> t
+typeC c = typeCons c []
+
+typeC1 :: IsType t => Datatype -> t -> t
+typeC1 c t = typeCons c [t]
 
 typeUnit :: IsType t => t
-typeUnit = typeC "()"
+typeUnit = typeC datatypeUnit
 
 typeArrow :: IsType t => t -> t -> t
 typeArrow s t = typeFun [FunArrow s t]
@@ -53,19 +85,22 @@ typeClosure :: IsType t => Var -> [t] -> t
 typeClosure f tl = typeFun [FunClosure f tl]
 
 typeTuple :: IsType t => [t] -> t
-typeTuple tl = typeCons (tupleCons tl) tl
+typeTuple tl = typeCons (datatypeTuples !! length tl) tl
 
 typeInt :: IsType t => t
-typeInt = typeC "Int"
+typeInt = typeC datatypeInt
 
 typeChar :: IsType t => t
-typeChar = typeC "Char"
+typeChar = typeC datatypeChar
 
 typeIO :: IsType t => t -> t
-typeIO = typeC1 "IO"
+typeIO = typeC1 datatypeIO
 
 typeType :: IsType t => t -> t
-typeType = typeC1 "Type"
+typeType = typeC1 datatypeType
+
+typeBool :: IsType t => t
+typeBool = typeC datatypeBool
 
 -- Pretty printing
 

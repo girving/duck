@@ -1,0 +1,12 @@
+import base
+main = exit 0
+
+-- T a should be invariant since Type a is.  However,
+-- Type is defined in a different module (namely in Base.hs),
+-- so check that we do the right thing
+data T a of A (Type a)
+
+-- union (T Void) (T Int) should fail
+_ = case True of
+  True -> A Void
+  False -> A Int

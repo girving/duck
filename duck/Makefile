@@ -37,6 +37,7 @@ GEN = ./duck --haskell
 gen:
 	$(GEN) var.duck > Gen/Var.hs
 	$(GEN) type.duck > Gen/Type.hs
+	$(GEN) preType.duck > Gen/PreType.hs
 	$(GEN) srcLoc.duck > Gen/SrcLoc.hs
 	$(GEN) prims.duck > Gen/Prims.hs
 	$(GEN) lir.duck > Gen/Lir.hs

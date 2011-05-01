@@ -26,7 +26,7 @@ data TypeFun t of
 --
 -- 
 data TypeVal of
-  TyCons CVar (List TypeVal)
+  TyCons (Box Datatype) (List TypeVal)
   TyFun (List (TypeFun TypeVal))
   TyVoid
 
@@ -34,7 +34,7 @@ data TypeVal of
 -- as 'TypeVal' except that it can contain type variables.
 data TypePat of
   TsVar Var
-  TsCons CVar (List TypePat)
+  TsCons (Box Datatype) (List TypePat)
   TsFun (List (TypeFun TypePat))
   TsVoid
 

@@ -11,12 +11,12 @@
 // which causes values to be incorrectly freed.  The cabal boehm flag
 // can enable it.
 
-void duck_runtime_init()
-{
 #ifdef USE_BOEHM
+static void duck_runtime_init() __attribute__ ((constructor))
+{
 	GC_INIT();
-#endif
 }
+#endif
 
 value duck_malloc(size_t n)
 {

@@ -14,7 +14,9 @@ module Memory
   , Convert(..)
   , valCons
   , unsafeTag, UnsafeUnvalCons(..), unsafeUnvalConsN
-  , runtimeInit
+  , Box, unbox, box, unsafeCastBox
+  , Vol, ToVol(..), readVol
+  , Ref, newRef, readRef, writeRef, unsafeCastRef, unsafeFreeze
   ) where
 
 import Util
@@ -27,7 +29,6 @@ import Data.Char
 type Value = Ptr WordPtr
 
 -- | Runtime system functions
-foreign import ccall "runtime.h duck_runtime_init" runtimeInit :: IO ()
 foreign import ccall "runtime.h duck_malloc" malloc :: WordPtr -> IO Value
 foreign import ccall "runtime.h duck_print_int" debug_int :: WordPtr -> IO ()
 _ignore = debug_int
@@ -128,3 +129,81 @@ instance (Convert a, Convert b) => Convert (a,b) where
 instance (Convert a, Convert b, Convert c) => Convert (a,b,c) where
   value (a,b,c) = valCons 0 [value a, value b, value c]
   unsafeUnvalue p = (unsafeUnvalue a, unsafeUnvalue b, unsafeUnvalue c) where (a,b,c) = unsafeUnvalCons p
+
+-- | Version of Value with a known corresponding Haskell type
+{-
+newtype KnownValue t = KnownValue (Ptr (KnownValue t))
+
+instance Convert (KnownValue t) where
+  value (KnownValue v) = castPtr v
+  unsafeUnvalue = KnownValue . castPtr
+
+unvalue :: Convert t => KnownValue t -> t
+unvalue (KnownValue v) = unsafeUnvalue $ castPtr v
+-}
+
+-- | An immutable boxed cell of known type
+newtype Box t = Box (Ptr (Box t))
+
+instance Convert (Box t) where
+  value (Box v) = castPtr v
+  unsafeUnvalue = Box . castPtr
+
+unbox :: Convert t => Box t -> t
+unbox (Box v) = unsafeUnvalue $ unsafePerformIO $ peek $ castPtr v
+
+box :: Convert t => t -> Box t
+box v = unsafePerformIO $ do
+  p <- malloc $ fromIntegral wordSize
+  poke p $ ptrToWordPtr $ value v
+  return $ Box $ castPtr p
+
+-- |Cast a box to a different type
+unsafeCastBox :: Box s -> Box t
+unsafeCastBox (Box v) = Box $ castPtr v
+
+-- | A mutable boxed cell of known type
+newtype Ref t = Ref (Ptr (Ref t))
+
+instance Convert (Ref t) where
+  value (Ref v) = castPtr v
+  unsafeUnvalue = Ref . castPtr
+
+newRef :: Convert t => t -> IO (Ref t)
+newRef v = do
+  p <- malloc $ fromIntegral wordSize
+  poke p $ ptrToWordPtr $ value v
+  return $ Ref $ castPtr p
+
+readRef :: Convert t => Ref t -> IO t
+readRef (Ref m) = unsafeUnvalue . castPtr =.< peek (castPtr m)
+
+writeRef :: Convert t => Ref t -> t -> IO ()
+writeRef (Ref m) v = poke (castPtr m) (value v)
+
+-- |Cast a mutable cell to a different type
+unsafeCastRef :: Ref s -> IO (Ref t)
+unsafeCastRef (Ref m) = return $ Ref $ castPtr m
+
+-- |Declare a mutable cell forever frozen
+unsafeFreeze :: Ref t -> IO (Box t)
+unsafeFreeze (Ref m) = return $ Box $ castPtr m
+
+-- |"Volatile" boxed cell of indeterminate mutability
+newtype Vol t = Vol (Ptr (Vol t))
+
+instance Convert (Vol t) where
+  value (Vol v) = castPtr v
+  unsafeUnvalue = Vol . castPtr
+
+class ToVol b where
+  toVol :: b t -> Vol t
+
+instance ToVol Box where
+  toVol (Box v) = Vol $ castPtr v
+
+instance ToVol Ref where
+  toVol (Ref m) = Vol $ castPtr m
+
+readVol :: Convert t => Vol t -> IO t
+readVol (Vol v) = unsafeUnvalue . castPtr =.< peek (castPtr v)

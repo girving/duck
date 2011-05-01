@@ -1,0 +1,25 @@
+-- | Duck Type Precursors
+
+-- IMPORTANT: If you modify this file, run 'make gen' to regenerate thm
+-- Haskell version in Gen/PreType.hs.
+
+import var
+import srcLoc
+import type
+
+-- |PreTypePat and PreDatatype are temporarily mutable analogs of TypePat and
+-- Datatype used during Ir to Lir conversion.  They are necessary since Datatype
+-- objects are cyclic.  However, they are also immutable once created, so we
+-- start by creating mutable PreDatatype objects and then cast to Datatype.
+data PreTypePat of
+  TpVar Var
+  TpCons (Vol PreDatatype) (List PreTypePat)
+  TpFun (List (TypeFun PreTypePat))
+  TpVoid
+
+data PreDatatype of PreData
+  CVar -- ^ Name
+  SrcLoc -- ^ Location
+  (List Var) -- ^ Type variable arguments
+  (List (Loc CVar, List PreTypePat)) -- ^ Constructors
+  (List Variance) -- ^ Variances of 'dataTyVars'

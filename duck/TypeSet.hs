@@ -47,19 +47,14 @@ import Pretty
 import Var
 import Type
 import InferMonad
+import Prims
 
 -- |TypeMonad stores type information about programs for use by the various
 -- type manipulation functions.
 --
--- 'typeApply' says how to apply closure types to types, and 'typeVariances'
--- gives variance information for datatype constructor.
---
--- Note: skolemization turns type variables into nullary type constructors.
--- To make this work transparently, 'typeVariances' should return [] for
--- nonexistent type constructors.
+-- 'typeApply' says how to apply closure types to types.
 class MonadError TypeError m => TypeMonad m where
   typeApply :: TypeVal -> TypeVal -> m TypeVal
-  typeVariances :: Var -> m [Variance]
 
 -- |Constraints represent constraints on type variables in a typeset
 -- or list of typesets.  An entry x -> op t means the final type of x must
@@ -71,7 +66,7 @@ typeMismatchList x op y = typeMismatch (hsep x) op (hsep y)
 
 -- |Unify two type constructors, coercing them to be the same and modifying
 -- their arguments if possible.
-unifyCons :: (TypeMonad m, IsType t, Pretty t) => Var -> [TypeVal] -> Var -> [t] -> m (Var,[TypeVal],[t])
+unifyCons :: (TypeMonad m, IsType t, Pretty t) => Datatype -> [TypeVal] -> Datatype -> [t] -> m (Datatype,[TypeVal],[t])
 unifyCons c tl c' tl'
   | c == c' = return (c,tl,tl')
   | otherwise = do
@@ -94,19 +89,19 @@ unifyCons c tl c' tl'
 -- List support.
 --
 -- For now, the set of type constructor coersions is hard coded.
-coerceCons :: (TypeMonad m, IsType t, Pretty t) => Var -> [t] -> Var -> m [t]
+coerceCons :: (TypeMonad m, IsType t, Pretty t) => Datatype -> [t] -> Datatype -> m [t]
 coerceCons c tl c' | c == c' = return tl
-coerceCons (V "Type") [t] c' | isTuple c', Just (c,tl) <- unTypeCons t = do
+coerceCons d [t] c' | d == datatypeType, isDatatypeTuple c', Just (c,tl) <- unTypeCons t = do
   tl <- coerceCons c tl c'
-  return $ map (\t -> typeCons (V "Type") [t]) tl
-coerceCons c tl c'@(V "Type") | isTuple c, Just ctl <- mapM unTypeCons tl = do
+  return $ map typeType tl
+coerceCons c tl c' | c' == datatypeType, isDatatypeTuple c, Just ctl <- mapM unTypeCons tl = do
   tl <- mapM (\ (c,tl) -> coerceCons c tl c' >.= \[t] -> t) ctl
   return [typeCons c tl]
 coerceCons c tl c' = typeError noLoc $ "cannot coerce" <+> quoted (typeCons c tl) <+> "to have type constructor" <+> quoted c'
 
-zipWithVariances :: (TypeMonad m, Pretty a, Pretty b) => (Variance -> a -> b -> m c) -> CVar -> [a] -> [b] -> m [c]
+zipWithVariances :: (TypeMonad m, Pretty a, Pretty b) => (Variance -> a -> b -> m c) -> Datatype -> [a] -> [b] -> m [c]
 zipWithVariances f c tl tl' = do
-  var <- typeVariances c
+  let var = dataVariances c
   zcv var tl tl' where
     zcv _ [] [] = return []
     zcv (v:vl) (t:tl) (t':tl') = f v t t' >>= \z -> zcv vl tl tl' >.= (z:)
@@ -239,7 +234,6 @@ type Env m = EnvM m Leftovers
 
 instance TypeMonad m => TypeMonad (StateT s m) where
   typeApply t = lift . typeApply t
-  typeVariances = lift . typeVariances
 
 runEnv :: Monad m => EnvM m (Either [Var] TypeEnv) -> m (Either [Var] TypeEnv)
 runEnv m = evalStateT m Map.empty
@@ -399,7 +393,7 @@ specialization' t (TsVar v') env =
     Just t2 | t == t2 -> Just env
     Just _ -> Nothing
 specialization' (TsCons c tl) (TsCons c' tl') env | c == c' = specializationList' tl tl' env
-specialization' (TsCons _ _) (TsCons (V "Type") _) env = Just env
+specialization' (TsCons _ _) (TsCons c _) env | c == datatypeType = Just env
 specialization' (TsFun f) (TsFun f') env = specializationFuns' f f' env
 specialization' _ _ _ = Nothing
 

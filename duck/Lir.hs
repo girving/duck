@@ -9,7 +9,7 @@
 module Lir
   ( Prog(..)
   , ProgMonad(..)
-  , Datatype(..), Overload(..), Definition(..)
+  , Overload(..), Definition(..)
   , Overloads
   , Exp(..)
   , freeOf
@@ -17,6 +17,7 @@ module Lir
   , empty
   , union
   , check
+  , globals
   , lirError, dupError
   , complete
   ) where
@@ -46,7 +47,7 @@ data Prog = Prog
   { progName :: ModuleName
   , progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
   , progFunctions :: Map Var [Overload TypePat] -- ^ original overload definitions by function name
-  , progConses :: Map CVar CVar -- ^ map data constructors to datatypes (type inference will make this go away)
+  , progConses :: Map CVar Datatype -- ^ map data constructors to datatypes (type inference will make this go away)
   , progOverloads :: Map Var Overloads -- ^ all overloads inferred to be needed, set after inference
   , progGlobalTypes :: TypeEnv -- ^ set after inference
   , progDefinitions :: [Definition] -- ^ list of top-level definitions
@@ -125,9 +126,16 @@ check prog = runSequence $ do
   datatype (_, d) = mapM_ cons (dataConses d) where
     cons (L l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
       [] -> success
-      [v] -> lirError l $ "variable" <+> quoted v <+> "is unbound in constructor" <+> quoted (TsCons c tl)
-      fv -> lirError l $ "variables" <+> quoted (hsep fv) <+> "are unbound in constructor" <+> quoted (TsCons c tl)
+      [v] -> lirError l $ "variable" <+> quoted v <+> "is unbound in constructor" <+> quoted (prettyap c tl)
+      fv -> lirError l $ "variables" <+> quoted (hsep fv) <+> "are unbound in constructor" <+> quoted (prettyap c tl)
 
+-- |Compute the set of global symbols in a program
+globals :: Prog -> InScopeSet
+globals prog = Set.fromList (concat [Map.keys $ progDatatypes prog,
+                                     Map.keys $ progFunctions prog,
+                                     Map.keys $ progConses prog,
+                                     concatMap (map unLoc . defVars) $ progDefinitions prog])
+ 
 -- |Compute the list of free variables in an expression
 freeOf :: InScopeSet -> Exp -> [Var]
 freeOf locals e = Set.toList (Set.intersection locals (f e)) where
@@ -167,14 +175,14 @@ union p1 p2 = Prog
   conflictLoc v n o = dupError v (loc n) (loc o)
   conflict v _ _ = dupError v noLoc noLoc
 
--- |Fill in progConses and add a creation overload for each datatype constructor
-complete :: Prog -> Prog
-complete prog = flip execState prog $ mapM_ datatype (Map.elems $ progDatatypes prog) where
+-- |Given a set of datatypes, fill in progConses and add a creation overload for each datatype constructor
+complete :: Map CVar Datatype -> Prog -> Prog
+complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datatypes where
   datatype :: Datatype -> State Prog ()
   datatype d = mapM_ f (dataConses d) where
     f :: (Loc CVar, [TypePat]) -> State Prog ()
     f (c,tyl) = do
-      modify $ \p -> p { progConses = Map.insert (unLoc c) (dataName d) (progConses p) }
+      modify $ \p -> p { progConses = Map.insert (unLoc c) d (progConses p) }
       case tyl of
         [] -> modify $ \p -> p { progDefinitions = Def [c] (ExpCons (unLoc c) []) : progDefinitions p }
         _ -> overload c tl r vl (ExpCons (unLoc c) (map ExpVar vl)) where
