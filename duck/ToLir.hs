@@ -29,30 +29,19 @@ import qualified Ir
 import Prims
 import Memory
 
-type TypeSetArg = TransType TypePat
-
 -- Lambda lifting: IR to Lifted IR conversion
 
+type Globals = InScopeSet
+
 prog :: ModuleName -> [Ir.Decl] -> Prog
-prog name decls = flip execState (empty name) $ do
-  modify $ \p -> p { progGlobals = foldl decl_vars Set.empty decls }
+prog name decls = complete $ fst $ flip execState (empty name, globals) $ do
   mapM_ decl decls
-  modify $ \p -> p { progDefinitions = reverse (progDefinitions p) }
-  modify $ \p -> p { progDatatypes = variances (progDatatypes p) }
-  p <- get
-  mapM_ datatype (Map.toList (progDatatypes p))
+  modify $ first $ \p -> p { progDefinitions = reverse (progDefinitions p) }
+  modify $ first $ \p -> p { progDatatypes = variances (progDatatypes p) }
 
   where
 
-  datatype :: (CVar, Datatype) -> State Prog ()
-  datatype (tc, d) = mapM_ f (dataConses d) where
-    f :: (Loc CVar, [TypePat]) -> State Prog ()
-    f (c,tyl) = do
-      modify $ \p -> p { progConses = Map.insert (unLoc c) tc (progConses p) }
-      case tyl of
-        [] -> definition [c] (ExpCons (unLoc c) [])
-        _ -> function c vl (ExpCons (unLoc c) (map ExpVar vl)) where
-          vl = take (length tyl) standardVars
+  globals = foldl decl_vars Set.empty decls
 
   -- Compute datatype argument variances via fixpoint iteration.  We start out
   -- assuming everything is covariant and gradually grow the set of invariant
@@ -88,12 +77,12 @@ decl_vars s (Ir.Over (L _ v) _ _) = Set.insert v s
 decl_vars s (Ir.Data _ _ _) = s
 
 -- |Statements are added in reverse order
-decl :: Ir.Decl -> State Prog ()
+decl :: Ir.Decl -> State (Prog, Globals) ()
 decl (Ir.LetD v e) | (vl@(_:_),e') <- unwrapLambda noLoc e = do
   e <- expr (Set.fromList vl) noLocExpr e'
   function v vl e
 decl (Ir.Over v t e) = do
-  let (tl,r,vl,e') = unwrapTypeLambda t e
+  let (tl,r,vl,e') = unwrapTypeLambda (toType t) e
   e <- expr (Set.fromList vl) noLocExpr e'
   overload v tl r vl e
 decl (Ir.LetD v e) = do
@@ -103,20 +92,30 @@ decl (Ir.LetM vl e) = do
   e <- expr Set.empty noLocExpr e
   definition vl e
 decl (Ir.Data (L l tc) tvl cases) =
-  modify $ \p -> p { progDatatypes = Map.insertWith exists tc (Data tc l tvl cases []) (progDatatypes p) }
+  modify $ first $ \p -> p { progDatatypes = Map.insertWith exists tc (Data tc l tvl cases' []) (progDatatypes p) }
   where exists _ o = dupError tc l (dataLoc o)
+        cases' = map (\(v,t) -> (v,map toType t)) cases
+
+-- |Convert a type
+toType :: Ir.TypePat -> TypePat
+toType (Ir.TsVar v) = TsVar v
+toType (Ir.TsCons c tl) = TsCons c (map toType tl)
+toType (Ir.TsFun fl) = TsFun $ map fun fl where
+  fun (Ir.FunArrow s t) = FunArrow (toType s) (toType t)
+  fun (Ir.FunClosure f tl) = FunClosure f (map toType tl)
+toType Ir.TsVoid = TsVoid
 
 -- |Add a toplevel statement
-definition :: [Loc Var] -> Exp -> State Prog ()
-definition vl e = modify $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
+definition :: [Loc Var] -> Exp -> State (Prog, Globals) ()
+definition vl e = modify $ first $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
 
 -- |Add a global overload
-overload :: Loc Var -> [TypeSetArg] -> TypePat -> [Var] -> Exp -> State Prog ()
-overload (L l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
+overload :: Loc Var -> [TypeSetArg] -> TypePat -> [Var] -> Exp -> State (Prog, Globals) ()
+overload (L l v) tl r vl e | length vl == length tl = modify $ first $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
 overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
 
 -- |Add an unoverloaded global function
-function :: Loc Var -> [Var] -> Exp -> State Prog ()
+function :: Loc Var -> [Var] -> Exp -> State (Prog, Globals) ()
 function v vl e = overload v (map ((,) NoTrans) tl) r vl e where
   (tl,r) = generalType vl
 
@@ -129,9 +128,7 @@ unwrapLambda l e
   | hasLoc l = ([], Ir.ExpLoc l e)
   | otherwise = ([], e)
 
-generalType :: [a] -> ([TypePat], TypePat)
-generalType vl = (tl,r) where
-  r : tl = map TsVar (take (length vl + 1) standardVars)
+type TypeSetArg = TransType TypePat
 
 -- |Extracts the annotation from a possibly annotated argument type.
 typeArg :: TypePat -> TypeSetArg
@@ -150,7 +147,7 @@ noLocExpr :: (SrcLoc, Maybe Var)
 noLocExpr = (noLoc,Nothing)
 
 -- |Lambda lift an expression
-expr :: InScopeSet -> (SrcLoc, Maybe Var) -> Ir.Exp -> State Prog Exp
+expr :: InScopeSet -> (SrcLoc, Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp
 expr _ _ (Ir.Int i) = return $ ExpVal typeInt $ value i
 expr _ _ (Ir.Char c) = return $ ExpVal typeChar $ value c
 expr _ _ (Ir.Var v) = return $ ExpVar v
@@ -178,11 +175,11 @@ expr locals l (Ir.Bind v e rest) = do
   rest <- expr (addVar v locals) l rest
   return $ ExpBind v e rest
 expr locals l (Ir.Return e) = ExpReturn =.< expr locals l e
-expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> ExpSpec e t
+expr locals l (Ir.Spec e t) = expr locals l e >.= \e -> ExpSpec e (toType t)
 expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l =.< expr locals (l,v) e
 
 -- |Lift a single lambda expression
-lambda :: InScopeSet -> (SrcLoc,Maybe Var) -> Ir.Exp -> State Prog Exp
+lambda :: InScopeSet -> (SrcLoc,Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp
 lambda locals l@(loc,v) e = do
   f <- freshenM $ fromMaybe (V "f") v -- use the suggested function name
   let (vl,e') = unwrapLambda loc e
@@ -194,9 +191,9 @@ lambda locals l@(loc,v) e = do
   return $ foldl ExpApply (ExpVar f) (map ExpVar vs)
 
 -- |Generate a fresh variable
-freshenM :: Var -> State Prog Var
+freshenM :: Var -> State (Prog, Globals) Var
 freshenM v = do
-  p <- get
-  let (globals,v') = freshen (progGlobals p) $ moduleVar (progName p) v
-  put $ p { progGlobals = globals }
+  (p,globals) <- get
+  let (globals',v') = freshen globals $ moduleVar (progName p) v
+  put $ (p,globals')
   return v'

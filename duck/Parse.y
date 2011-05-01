@@ -10,8 +10,8 @@ import Lex
 import Token
 import Layout
 import Ast
-import Type hiding (typePat, Data)
-import Prims
+import IrType
+import Prims hiding (typeArrow)
 import SrcLoc hiding (loc)
 import ParseMonad
 import ParseOps

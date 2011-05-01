@@ -13,12 +13,13 @@ module Type
   , singleton
   , unsingleton, unsingleton'
   , freeVars
+  , generalType
   -- * Transformation annotations
   , Trans(..), TransType
   , argType
   -- * Datatypes
   , Datatype(..), Datatypes
-  , dataLoc, dataTyVars, dataConses, dataVariances
+  , dataName, dataLoc, dataTyVars, dataConses, dataVariances
   ) where
 
 import Data.Map (Map)
@@ -89,6 +90,8 @@ instance IsType TypePat where
   typePat = id
 
 -- |See definition of Datatype in type.duck
+dataName :: Datatype -> CVar
+dataName (Data v _ _ _ _) = v
 dataLoc :: Datatype -> SrcLoc
 dataLoc (Data _ l _ _ _) = l
 dataTyVars :: Datatype -> [Var]
@@ -200,6 +203,10 @@ freeVars TsVoid = []
 argType :: IsType t => TransType t -> t
 argType (NoTrans, t) = t
 argType (Delayed, t) = typeFun [FunArrow (typeCons (V "()") []) t]
+
+generalType :: [a] -> ([TypePat], TypePat)
+generalType vl = (tl,r) where
+  r : tl = map TsVar (take (length vl + 1) standardVars)
 
 -- Pretty printing
 

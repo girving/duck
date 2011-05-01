@@ -16,6 +16,7 @@ import Control.Monad.Trans (liftIO)
 import qualified Control.Exception as Exn
 import qualified Data.Char as Char
 import qualified Data.Map as Map
+import Data.List
 
 import Util
 import Var
@@ -25,9 +26,7 @@ import Value
 import Prims
 import SrcLoc
 import Pretty
-import Ir
-import qualified Lir
-import qualified ToLir
+import Lir
 import ExecMonad
 import InferMonad
 
@@ -94,44 +93,50 @@ runPrimIO Exit [i] = liftIO (exit (unsafeUnvalue i :: Int))
 runPrimIO IOPutChar [c] = liftIO (putChar (unsafeUnvalue c :: Char)) >. valEmpty
 runPrimIO p args = execError noLoc $ invalidPrim p args
 
+-- |Add a undelayed, unlocated overload
+overload :: Prog -> Var -> [TypePat] -> TypePat -> [Var] -> Exp -> Prog
+overload prog name tl r args body = prog{ progFunctions = Map.insertWith (++) name [over] $ progFunctions prog } where
+  over = Over noLoc tl' r args (Just body)
+  tl' = map ((,) NoTrans) tl
+
 -- |The internal, implicit declarations giving names to primitive operations.
 -- Note that this is different than base.duck.
-base :: Lir.Prog
-base = Lir.union types (ToLir.prog "" (decTuples ++ prims ++ io)) where
-  primop p | [] <- primArgs p = Ir.LetD name exp
-           | otherwise = Ir.Over name sig exp where
-    name = L noLoc $ V (primName p)
-    sig = foldr typeArrow (singleton $ primRet p) (map singleton $ primArgs p)
+base :: Prog
+base = (complete . types . prims . io) (empty "") where
+  primop prog p | [] <- primArgs p = prog{ progDefinitions = Def [L noLoc name] exp : progDefinitions prog }
+                | otherwise = overload prog name tyargs ret args exp where
+    name = V (primName p)
+    tyargs = map singleton $ primArgs p
+    ret = singleton $ primRet p
     args = zipWith const standardVars $ primArgs p
-    exp = foldr Lambda (Prim (primPrim p) (map Var args)) args
-  prims = map primop $ Map.elems primOps
+    exp = ExpPrim (primPrim p) (map ExpVar args)
+  prims prog = foldl' primop prog $ Map.elems primOps
 
   decTuples = map decTuple (0:[2..5])
-  decTuple i = Ir.Data c vars [(c, map TsVar vars)] where
-    c = L noLoc $ tupleCons vars
+  decTuple i = Data c noLoc vars [(L noLoc c, map TsVar vars)] (replicate i Covariant) where
+    c = tupleCons vars
     vars = take i standardVars
 
-  types = (Lir.empty "")
-    { Lir.progDatatypes = Map.fromList $ map expand
-      [ Lir.Data (V "Int") noLoc [] [] []
-      , Lir.Data (V "Char") noLoc [] [] []
-      , Lir.Data (V "IO") noLoc [V "a"] [] [Covariant]
-      , Lir.Data (V "Delayed") noLoc [V "a"] [] [Covariant]
-      , Lir.Data (V "Type") noLoc [V "t"] [] [Invariant]
+  types prog = prog
+    { progDatatypes = Map.fromList $ map expand $ decTuples ++
+      [ Data (V "Int") noLoc [] [] []
+      , Data (V "Char") noLoc [] [] []
+      , Data (V "IO") noLoc [V "a"] [] [Covariant]
+      , Data (V "Delayed") noLoc [V "a"] [] [Covariant]
+      , Data (V "Type") noLoc [V "t"] [] [Invariant]
       ]
     }
-    where expand d@(Lir.Data t _ _ _ _) = (t,d)
+    where expand d@(Data t _ _ _ _) = (t,d)
 
-io :: [Decl]
-io = [map',join,returnIO] where
+io :: Prog -> Prog
+io prog = map' $ join $ returnIO prog where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TsVar [a,b]
-  map' = Over (L noLoc $ V "map") (typeArrow (typeArrow ta tb) (typeArrow (typeIO ta) (typeIO tb)))
-    (Lambda f (Lambda c
-      (Bind x (Var c)
-      (Return (Apply (Var f) (Var x))))))
-  join = Over (L noLoc $ V "join") (typeArrow (typeIO (typeIO ta)) (typeIO ta))
-    (Lambda c
-      (Bind x (Var c)
-      (Var x)))
-  returnIO = LetD (L noLoc $ V "returnIO") (Lambda x (Return (Var x)))
+  map' p = overload p (V "map") [typeArrow ta tb, typeIO ta] (typeIO tb) [f,c] $
+    (ExpBind x (ExpVar c)
+    (ExpReturn (ExpApply (ExpVar f) (ExpVar x))))
+  join p = overload p (V "join") [typeIO (typeIO ta)] (typeIO ta) [c]
+    (ExpBind x (ExpVar c)
+    (ExpVar x))
+  returnIO p = overload p (V "returnIO") [TsVar a] (typeIO (TsVar a)) [x]
+    (ExpReturn (ExpVar x))

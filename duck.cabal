@@ -38,6 +38,7 @@ Executable duck
         Gen.Type
         Gen.Prims
         Type
+        IrType
         Ast
         ToHaskell
         Prims

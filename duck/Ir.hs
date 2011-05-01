@@ -6,6 +6,7 @@
 module Ir 
   ( Decl(..)
   , Exp(..)
+  , TypePat(..), TypeFun(..)
   , prog
   , dupError
   ) where
@@ -24,8 +25,8 @@ import Pretty
 import SrcLoc
 import Stage
 import Var
-import Type hiding (Data)
-import Prims
+import IrType
+import Prims hiding (typeInt, typeChar)
 import qualified Ast
 import ParseOps
 

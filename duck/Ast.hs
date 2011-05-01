@@ -19,7 +19,7 @@ module Ast
 import Data.Maybe
 
 import Var
-import Type hiding (Data)
+import IrType
 import SrcLoc
 import Stage
 import ParseOps

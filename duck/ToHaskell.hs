@@ -11,7 +11,7 @@ import Pretty
 import Stage
 import Var
 import SrcLoc hiding (srcLoc)
-import Type
+import IrType
 import qualified Ast
 import Language.Haskell.Syntax hiding (SrcLoc, srcLine)
 import qualified Language.Haskell.Syntax as Hs

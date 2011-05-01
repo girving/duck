@@ -18,10 +18,11 @@ module Lir
   , union
   , check
   , lirError, dupError
+  , complete
   ) where
 
 import Prelude hiding (mapM)
-import Data.Set (Set)
+import Data.Maybe
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -45,7 +46,6 @@ data Prog = Prog
   { progName :: ModuleName
   , progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
   , progFunctions :: Map Var [Overload TypePat] -- ^ original overload definitions by function name
-  , progGlobals :: Set Var -- ^ all top-level symbols, used to generate fresh variables
   , progConses :: Map CVar CVar -- ^ map data constructors to datatypes (type inference will make this go away)
   , progOverloads :: Map Var Overloads -- ^ all overloads inferred to be needed, set after inference
   , progGlobalTypes :: TypeEnv -- ^ set after inference
@@ -95,7 +95,7 @@ dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
 dupError v n o = lirError n $ "duplicate definition of" <+> quoted v <> (", previously declared at" <&+> o)
 
 empty :: ModuleName -> Prog
-empty n = Prog n Map.empty Map.empty Set.empty Map.empty Map.empty Map.empty []
+empty n = Prog n Map.empty Map.empty Map.empty Map.empty Map.empty []
 
 -- |A few consistency checks on Lir programs
 check :: Prog -> ()
@@ -159,7 +159,6 @@ union p1 p2 = Prog
   { progName = progName p2 -- use the second module's name
   , progDatatypes = Map.unionWithKey conflictLoc (progDatatypes p2) (progDatatypes p1)
   , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
-  , progGlobals = Set.union (progGlobals p1) (progGlobals p2)
   , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1) -- XXX overloaded constructors?
   , progOverloads = Map.unionWithKey conflict (progOverloads p2) (progOverloads p1) -- XXX cross-module overloads?
   , progGlobalTypes = Map.unionWithKey conflict (progGlobalTypes p2) (progGlobalTypes p1)
@@ -167,3 +166,22 @@ union p1 p2 = Prog
   where
   conflictLoc v n o = dupError v (loc n) (loc o)
   conflict v _ _ = dupError v noLoc noLoc
+
+-- |Fill in progConses and add a creation overload for each datatype constructor
+complete :: Prog -> Prog
+complete prog = flip execState prog $ mapM_ datatype (Map.elems $ progDatatypes prog) where
+  datatype :: Datatype -> State Prog ()
+  datatype d = mapM_ f (dataConses d) where
+    f :: (Loc CVar, [TypePat]) -> State Prog ()
+    f (c,tyl) = do
+      modify $ \p -> p { progConses = Map.insert (unLoc c) (dataName d) (progConses p) }
+      case tyl of
+        [] -> modify $ \p -> p { progDefinitions = Def [c] (ExpCons (unLoc c) []) : progDefinitions p }
+        _ -> overload c tl r vl (ExpCons (unLoc c) (map ExpVar vl)) where
+          vl = take (length tyl) standardVars
+          (tl,r) = generalType vl
+
+-- |Add a global overload
+overload :: Loc Var -> [TypePat] -> TypePat -> [Var] -> Exp -> State Prog ()
+overload (L l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l (map ((,) NoTrans) tl) r vl (Just e)] (progFunctions p) }
+overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
