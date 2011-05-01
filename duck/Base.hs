@@ -27,6 +27,7 @@ import SrcLoc
 import Pretty
 import Ir
 import qualified Lir
+import qualified ToLir
 import ExecMonad
 import InferMonad
 
@@ -96,7 +97,7 @@ runPrimIO p args = execError noLoc $ invalidPrim p args
 -- |The internal, implicit declarations giving names to primitive operations.
 -- Note that this is different than base.duck.
 base :: Lir.Prog
-base = Lir.union types (Lir.prog "" (decTuples ++ prims ++ io)) where
+base = Lir.union types (ToLir.prog "" (decTuples ++ prims ++ io)) where
   primop p | [] <- primArgs p = Ir.LetD name exp
            | otherwise = Ir.Over name sig exp where
     name = L noLoc $ V (primName p)

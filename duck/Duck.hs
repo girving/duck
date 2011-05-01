@@ -25,6 +25,7 @@ import ParseMonad
 import qualified Ast
 import qualified Ir
 import qualified Lir
+import qualified ToLir
 import qualified Interp
 import qualified Base
 import qualified Infer
@@ -113,7 +114,7 @@ main = do
   when (toHaskell flags) $ (pout $ uncurry ToHaskell.prog $ head $ reverse $ zip names ast :: IO ()) >> exitSuccess
 
   ir <- phase' StageIr concat (snd $ mapAccumL Ir.prog Map.empty ast)
-  lir <- phase' StageLir vcat (zipWith Lir.prog names ir)
+  lir <- phase' StageLir vcat (zipWith ToLir.prog names ir)
   lir <- phase' StageLink id (foldl' Lir.union Base.base lir)
   runStage StageLink $ evaluate $ Lir.check lir
   lir <- phase StageInfer id (runInferProg Infer.prog lir)

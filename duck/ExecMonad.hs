@@ -31,6 +31,7 @@ import Value()
 import SrcLoc
 import InferMonad hiding (withFrame)
 import Lir (Prog, ProgMonad, progDatatypes)
+import Prettyval()
 
 type ExecStack = CallStack (Datatypes,TypeVal,Value)
 

@@ -24,7 +24,7 @@ import Memory
 import Value
 import SrcLoc
 import Pretty
-import Lir hiding (prog)
+import Lir
 import ExecMonad
 import qualified Infer
 import qualified Base
@@ -81,12 +81,13 @@ runInfer l action f = do
   return t
 
 inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec TypeVal
-inferExpr env loc e = runInfer loc ("evaluate" <+> quoted e) $ Infer.expr env loc e
+inferExpr env loc e = do
+  denv <- getProg >.= progDatatypes
+  runInfer loc ("evaluate" <+> quoted (denv,e)) $ Infer.expr env loc e
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
-  exp (ExpInt i) = return $ value i
-  exp (ExpChar i) = return $ value i
+  exp (ExpVal _ v) = return v
   exp (ExpVar v) = lookup global env loc v
   exp (ExpApply e1 e2) = do
     t1 <- inferExpr tenv loc e1

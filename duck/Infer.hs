@@ -44,7 +44,7 @@ import SrcLoc
 import Type
 import TypeSet
 import Prims
-import Lir hiding (prog, union)
+import Lir hiding (union)
 import InferMonad
 import qualified Ptrie
 import qualified Base
@@ -134,8 +134,7 @@ definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl)
 
 expr :: Locals -> SrcLoc -> Exp -> Infer TypeVal
 expr env loc = exp where
-  exp (ExpInt _) = return typeInt
-  exp (ExpChar _) = return typeChar
+  exp (ExpVal t _) = return t
   exp (ExpVar v) = lookup env loc v
   exp (ExpApply e1 e2) = do
     t1 <- exp e1
@@ -182,7 +181,7 @@ expr env loc = exp where
 cons :: SrcLoc -> CVar -> [TypeVal] -> Infer TypeVal
 cons loc c args = do
   (tv,vl,tl) <- lookupConstructor loc c
-  tenv <- typeReError loc (quoted c<+>"expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
+  tenv <- typeReError loc (quoted c <+> "expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
     checkLeftovers noLoc () $
     subsetList args tl
   let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
@@ -190,8 +189,9 @@ cons loc c args = do
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do
+  denv <- getProg >.= progDatatypes
   tenv <- checkLeftovers loc ("type specification" <+> quoted ts <+> "is invalid") $
-    typeReError loc (quoted e<+>"has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
+    typeReError loc (quoted (denv,e) <+> "has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
     subset t ts
   return $ substVoid tenv ts
 
@@ -253,12 +253,13 @@ lookupVariances :: Prog -> Var -> [Variance]
 lookupVariances prog c | Just d <- Map.lookup c (progDatatypes prog) = dataVariances d
 lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization works cleanly
 
-overDesc :: Overload TypePat -> Doc'
-overDesc o = pretty (o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
+overDesc :: Datatypes -> Overload TypePat -> Doc'
+overDesc denv o = pretty (denv, o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
 resolve f args = do
+  denv <- getProg >.= progDatatypes
   rawOverloads <- lookupFunction f -- look up possibilities
   let nargs = length args
       prune o = tryError $ subsetList args (overTypes o) >. o
@@ -266,10 +267,10 @@ resolve f args = do
       isSpecOf a b = specializationList (overTypes a) (overTypes b)
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
       findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
-      options overs = vcat $ map overDesc overs
+      options overs = vcat $ map (overDesc denv) overs
   pruned <- mapM prune rawOverloads
   overloads <- case partitionEithers pruned of
-    (errs,[]) -> typeErrors noLoc ("no matching overload, tried") $ zip (map overDesc rawOverloads) errs
+    (errs,[]) -> typeErrors noLoc ("no matching overload, tried") $ zip (map (overDesc denv) rawOverloads) errs
     (_,os) -> return $ findmin os
 
   -- determine applicable argument type transform annotations

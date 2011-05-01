@@ -8,8 +8,7 @@ import prims
 -- |Expression.  Identical to 'Ir.Exp' except without 'Lambda'.
 data Exp of
   ExpLoc SrcLoc Exp
-  ExpInt Int
-  ExpChar Char
+  ExpVal TypeVal Value
   ExpVar Var
   ExpApply Exp Exp
   ExpLet Var Exp Exp

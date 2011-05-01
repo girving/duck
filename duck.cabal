@@ -23,7 +23,7 @@ Flag boehm
 Executable duck
     Main-is:		Duck.hs
     Build-Depends:	base >= 4 && < 5, containers, pretty, array, mtl, filepath, directory, haskell-src
-    other-modules:	Util, Pretty, Var, SrcLoc, Token, Ptrie, Stage, Type, ParseOps, Ast, ParseMonad, Lex, Layout, Parse, Ir, Lir, Prims, Base, Value, InferMonad, TypeSet, Infer, ExecMonad, Interp
+    other-modules:	Util, Pretty, Var, SrcLoc, Token, Ptrie, Stage, Type, ParseOps, Ast, ParseMonad, Lex, Layout, Parse, Ir, Lir, ToLir, Prettyval, Prims, Base, Value, InferMonad, TypeSet, Infer, ExecMonad, Interp
     hs-source-dirs:	duck
     c-sources:          duck/runtime.c
     if flag(debug)
