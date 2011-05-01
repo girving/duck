@@ -74,16 +74,12 @@ definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc)
 cast :: TypeVal -> Exec Value -> Exec Value
 cast _ x = x
 
---runInfer :: SrcLoc -> Infer TypeVal -> Exec TypeVal
-runInfer l action f = do
-  t <- liftInfer f
-  when (t == TyVoid) $ execError l $ "refusing to" <+> action <> ", result is Void"
-  return t
-
 inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec TypeVal
 inferExpr env loc e = do
   denv <- getProg >.= progDatatypes
-  runInfer loc ("evaluate" <+> quoted (denv,e)) $ Infer.expr env loc e
+  t <- liftInfer $ Infer.expr env loc e
+  when (t == TyVoid) $ execError loc $ "refusing to evaluate" <+> quoted (denv,e) <> ", result is Void"
+  return t
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
@@ -179,16 +175,17 @@ apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Trans -> Exec Value) -> TypeV
 apply global loc ft@(TyFun _) fun ae at = case unsafeUnvalue fun :: FunValue of
   ValClosure f types args -> do
     -- infer return type
-    rt <- runInfer loc ("apply" <+> quoted ft <+> "to" <+> quoted at) $ Infer.apply loc ft at
+    (tt, rt) <- liftInfer $ Infer.apply loc ft at
+    when (rt == TyVoid) $ execError loc $ "cannot apply" <+> quoted ft <+> "to" <+> quoted at <> ", result is Void"
     -- lookup appropriate overload (parallels Infer.apply/resolve)
     let tl = types ++ [at]
     o <- maybe
       (execError loc ("unresolved overload:" <+> quoted (prettyap f tl)))
       return =<< liftInfer (Infer.lookupOver f tl)
-    -- determine type transform for this argument, and evaluate
-    let tt = map fst $ overArgs o
     -- we throw away the type because we can reconstruct it later with argType
-    a <- ae (tt !! length args)
+    let tt' = fst $ overArgs o !! length args
+    --when (tt /= tt') $ execError loc "XXX"
+    a <- ae tt'
     let dl = args ++ [a]
     case o of
       Over _ _ _ _ Nothing ->
@@ -199,7 +196,8 @@ apply global loc ft@(TyFun _) fun ae at = case unsafeUnvalue fun :: FunValue of
         let tl = map snd tl'
         cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
   ValDelay e penv -> do
-    rt <- runInfer loc ("force" <+> quoted ft) $ Infer.apply loc ft at
+    (_, rt) <- liftInfer $ Infer.apply loc ft at
+    when (rt == TyVoid) $ execError loc $ "cannot force" <+> quoted ft <> ", result is Void"
     let (tenv,env) = unpackEnv penv
     cast rt $ expr global tenv env loc e
 apply _ loc t1 v1 e2 t2 = do

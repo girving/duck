@@ -56,7 +56,7 @@ type Locals = TypeEnv
 -- Utility functions
 
 -- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
-insertOver :: Bool -> Var -> [(Trans, TypeVal)] -> Overload TypeVal -> Infer ()
+insertOver :: Bool -> Var -> [TransType TypeVal] -> Overload TypeVal -> Infer ()
 insertOver _final f a o = do
   --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> overRet o
   modify $ Ptrie.mapInsert f a o
@@ -139,7 +139,7 @@ expr env loc = exp where
   exp (ExpApply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
-    apply loc t1 t2
+    snd =.< apply loc t1 t2
   exp (ExpLet v e body) = do
     t <- exp e
     expr (Map.insert v t env) loc body
@@ -204,13 +204,13 @@ join loc t1 t2 =
 joinList :: SrcLoc -> [TypeVal] -> Infer TypeVal
 joinList loc = foldM1 (join loc)
 
-apply :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
-apply _ TyVoid _ = return TyVoid
+apply :: SrcLoc -> TypeVal -> TypeVal -> Infer (Trans, TypeVal)
+apply _ TyVoid _ = return (NoTrans, TyVoid)
 apply loc (TyFun fl) t2 = do
-  (t:tt, l) <- mapAndUnzipM fun fl 
-  unless (all (t==) tt) $
+  (t:tt, l) <- mapAndUnzipM fun fl
+  unless (all (t ==) tt) $
     inferError loc ("conflicting transforms applying" <+> quoted fl <+> "to" <+> quoted t2)
-  joinList loc l
+  (,) t =.< joinList loc l
   where
   fun f@(FunArrow a r) = do
     typeReError loc ("cannot apply" <+> quoted f <+> "to" <+> quoted t2) $
@@ -221,8 +221,8 @@ apply loc (TyFun fl) t2 = do
     o <- maybe
       (withFrame f atl loc $ resolve f atl) -- no match, type not yet inferred
       return =<< lookupOver f atl
-    return (last $ map fst $ overArgs o, overRet o)
-apply loc t1 t2 = do
+    return (fst $ overArgs o !! length args, overRet o)
+apply loc t1 t2 = (,) NoTrans =.< do
   r <- isTypeType t1
   case r of
     Just (TyCons c tl) -> do
@@ -251,7 +251,7 @@ isTypeIO :: TypeVal -> Infer (Maybe TypeVal)
 isTypeIO = isTypeC1 "IO"
 
 instance TypeMonad Infer where
-  typeApply = apply noLoc
+  typeApply f = snd .=< apply noLoc f
   typeVariances v = getProg >.= \p -> lookupVariances p v
 
 lookupVariances :: Prog -> Var -> [Variance]
