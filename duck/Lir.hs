@@ -21,7 +21,6 @@ module Lir
   ) where
 
 import Prelude hiding (mapM)
-import Data.Maybe
 import Data.Set (Set)
 import qualified Data.Set as Set
 import Data.Map (Map)
@@ -32,7 +31,6 @@ import Util
 import Var
 import SrcLoc
 import Ptrie (Ptrie)
-import qualified Ptrie
 import Pretty
 import Stage
 import Type

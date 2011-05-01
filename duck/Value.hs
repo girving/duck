@@ -10,7 +10,6 @@ module Value
 
 import Prelude hiding (lookup)
 import Data.Map (Map)
-import qualified Data.Map as Map
 
 import Var
 import Memory
