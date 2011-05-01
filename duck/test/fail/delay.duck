@@ -1,0 +1,11 @@
+import base
+
+delay_id :: Delayed a -> a
+delay_id x = force x
+
+delay_if False = id
+delay_if True = delay_id
+
+test_delay_if = assert \ 0 == delay_if True 0
+
+main = testAll

@@ -206,17 +206,22 @@ joinList loc = foldM1 (join loc)
 
 apply :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
 apply _ TyVoid _ = return TyVoid
-apply loc (TyFun fl) t2 = joinList loc =<< mapM fun fl where
+apply loc (TyFun fl) t2 = do
+  (t:tt, l) <- mapAndUnzipM fun fl 
+  unless (all (t==) tt) $
+    inferError loc ("conflicting transforms applying" <+> quoted fl <+> "to" <+> quoted t2)
+  joinList loc l
+  where
   fun f@(FunArrow a r) = do
     typeReError loc ("cannot apply" <+> quoted f <+> "to" <+> quoted t2) $
       subset'' t2 a
-    return r
+    return (NoTrans, r)
   fun (FunClosure f args) = do
     let atl = args ++ [t2]
     o <- maybe
       (withFrame f atl loc $ resolve f atl) -- no match, type not yet inferred
       return =<< lookupOver f atl
-    return (overRet o)
+    return (last $ map fst $ overArgs o, overRet o)
 apply loc t1 t2 = do
   r <- isTypeType t1
   case r of
