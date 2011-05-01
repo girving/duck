@@ -19,7 +19,7 @@ info: Parse.info
 $(DUCK): $(CONFIG_DONE)
 	$(SETUP) build
 
-$(CONFIG_DONE):
+$(CONFIG_DONE): $(TOPDIR)/duck.cabal
 	$(SETUP) configure $(CONFIGFLAGS)
 
 duck: $(DUCK)
