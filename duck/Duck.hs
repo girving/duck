@@ -54,7 +54,7 @@ options =
   [ enumOption ['d'] ["dump"] "PHASE" (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
   , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main"
   , Option [] ["haskell"] (NoArg $ \f -> return $ f { toHaskell = True }) "generate equivalent Haskell code from AST"
-  , Option ['I'] ["include"] (ReqArg (\p f -> return $ f { path = p : path f }) "DIRECTORY") "add DIRECTORY to module search path"
+  , Option ['I'] ["include"] (ReqArg (\p f -> return $ f { path = path f ++ [p] }) "DIRECTORY") "add DIRECTORY to module search path"
   , Option ['h'] ["help"] (NoArg $ \_ -> putStr usage >> exitSuccess) "show this help" ]
 usage = usageInfo "duck [options] [files...]" options
 
