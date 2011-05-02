@@ -44,14 +44,17 @@ data Flags = Flags
   }
 type Option = OptDescr (Flags -> IO Flags)
 
-enumOption :: forall e . (Read e, Show e, Enum e, Bounded e) => [Char] -> [String] -> String -> (e -> Flags -> Flags) -> String -> Option
-enumOption short long name f help = Option short long (ReqArg process name) help' where
-  help' = help ++ " (one of " ++ intercalate "," (map show (allOf :: [e])) ++ ")"
-  process p = return . f (read p)
+enumOption :: Enum e => [String] -> [Char] -> [String] -> String -> (e -> Flags -> Flags) -> String -> Option
+enumOption choices short long name f help = Option short long (ReqArg process name) help' where
+  help' = help ++ " (one of " ++ intercalate "," choices ++ ")"
+  process p x = case findIndices (isPrefixOf p) choices of
+    [e] -> return $ f (toEnum e) x
+    [] -> die 1 $ "Unknown " ++ name ++ ". Choices are: " ++ intercalate "," choices
+    l -> die 1 $ "Ambiguous " ++ name ++ ". Choices are: " ++ intercalate "," (map (choices !!) l)
 
 options :: [Option]
 options =
-  [ enumOption ['d'] ["dump"] "PHASE" (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
+  [ enumOption stageNames ['d'] ["dump"] "PHASE" (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
   , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main"
   , Option [] ["haskell"] (NoArg $ \f -> return $ f { toHaskell = True }) "generate equivalent Haskell code from AST"
   , Option ['I'] ["include"] (ReqArg (\p f -> return $ f { path = path f ++ [p] }) "DIRECTORY") "add DIRECTORY to module search path"
@@ -70,7 +73,7 @@ findModule l s = do
   let ext = ".duck"
       f | takeExtension s == ext = s
         | otherwise = addExtension s (tail ext)
-  msum $ map (MaybeT . (\p -> doesFileExist p >.= returnIf p) . (</> f)) l
+  msum $ map (MaybeT . (\p -> doesFileExist p >.= \e -> Control.Monad.guard e >. p) . (</> f)) l
 
 loadModule :: Set ModuleName -> [FilePath] -> ModuleName -> IO [(ModuleName, Ast.Prog)]
 loadModule s l m = do
@@ -104,7 +107,7 @@ main = do
 
   let ifv p = when (Set.member p (phases flags))
   let phase p pf io = do
-        ifv p $ putStr ("\n-- "++show p++" --\n")
+        ifv p $ putStr ("\n-- "++show (pretty p)++" --\n")
         r <- runStage p io
         ifv p $ pout $ pf r
         return r
@@ -118,10 +121,11 @@ main = do
   lir <- phase' StageLink id (foldl' Lir.union Base.base lir)
   runStage StageLink $ evaluate $ Lir.check lir
   lir <- phase StageInfer id (runInferProg Infer.prog lir)
-  unless (compileOnly flags) $ runStage StageInfer $ rerunInfer (lir,[]) Infer.main
-  env <- phase StageEnv (\v -> (Lir.progDatatypes lir, Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
 
   unless (compileOnly flags) $ do
+  runStage StageInfer $ rerunInfer (lir,[]) Infer.main
+  env <- phase StageEnv (\v -> (Lir.progDatatypes lir, Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
+
   unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
   runStage StageExec $ Interp.main lir env
 

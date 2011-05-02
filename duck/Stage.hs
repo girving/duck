@@ -2,7 +2,7 @@
 -- | Compilation top-level staging tools
 
 module Stage
-  ( Stage(..)
+  ( Stage(..), stageNames
   -- * Error messages
   , msg, locMsg, stageMsg
   -- ** Raising errors
@@ -36,8 +36,8 @@ data Stage
   | StageExec
   deriving (Eq, Ord, Enum, Bounded)
 
-instance TextEnum Stage where
-  enumTexts = zip allOf
+stageNames :: [String]
+stageNames =
     ["ast"
     ,"ir"
     ,"lir"
@@ -46,9 +46,6 @@ instance TextEnum Stage where
     ,"env"
     ,"exec"
     ]
-
-instance Show Stage where show = showEnum
-instance Read Stage where readsPrec _ = readsEnum
 
 instance Pretty Stage where
   pretty = pretty . s where
@@ -97,14 +94,14 @@ fatalIO :: MonadIO m => Msg -> m a
 fatalIO = liftIO . throwIO . Err
 
 dieStageErr :: Stage -> Err -> IO a
-dieStageErr s e = dieWith (stageExitval s) $ show e
+dieStageErr s e = die (stageExitval s) $ show e
 
 isUnexpected :: SomeException -> Maybe SomeException
 isUnexpected e | Just _ <- fromException e :: Maybe ExitCode = Nothing
              | otherwise = Just e
 
 dieUnexpected :: Stage -> SomeException -> IO a
-dieUnexpected s e = dieWith 7 $ show (pretty s)++": internal error: "++show e
+dieUnexpected s e = die 7 $ show (pretty s)++": internal error: "++show e
 
 runStage :: Stage -> IO a -> IO a
 runStage s = handleJust isUnexpected (dieUnexpected s) . handle (dieStageErr s)
