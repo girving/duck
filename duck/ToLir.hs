@@ -260,10 +260,10 @@ lambda :: InScopeSet -> (SrcLoc,Maybe Var) -> Ir.Exp -> State (Prog, Globals) Ex
 lambda locals l@(loc,v) e = do
   f <- freshenM $ fromMaybe (V "f") v -- use the suggested function name
   let (vl,e') = unwrapLambda loc e
-      localsPlus = foldr addVar locals vl
-      localsMinus = foldr Set.delete locals vl
+      vls = Set.fromList $ filter (/= V "_") vl
+      localsPlus = Set.union locals vls
   e <- expr localsPlus l e'
-  let vs = freeOf localsMinus e
+  let vs = free vls e
   function (L loc f) (vs ++ vl) e
   return $ foldl ExpApply (ExpAtom $ closure f) (map expLocal vs)
 

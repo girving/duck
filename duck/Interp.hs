@@ -42,9 +42,8 @@ lookupGlobal global loc v = case Map.lookup v global of
   Nothing -> execError loc ("unbound global variable" <+> quoted v)
 
 -- | Pack up the free variables of an expression into a packed environment
-packEnv :: LocalTypes -> Locals -> Exp -> [(Var, TypeVal, Value)]
-packEnv tenv env e = map grab vl where
-  vl = freeOf (Map.keysSet tenv) e
+packEnv :: InScopeSet -> LocalTypes -> Locals -> Exp -> [(Var, TypeVal, Value)]
+packEnv s tenv env e = map grab (free s e) where
   grab v = (v, fromJust (Map.lookup v tenv), fromJust (Map.lookup v env))
 
 unpackEnv :: [(Var, TypeVal, Value)] -> (LocalTypes, Locals)
@@ -110,7 +109,7 @@ expr global tenv env loc = exp where
     t <- inferExpr tenv loc e1
     d <- exp e1
     let d' = unsafeUnvalue d :: IOValue
-    return $ value $ ValBindIO v t d' e2 (packEnv (Map.delete v tenv) env e2)
+    return $ value $ ValBindIO v t d' e2 (packEnv (Set.singleton v) tenv env e2)
   exp (ExpReturn e) = value . ValLiftIO =.< exp e
   exp se@(ExpSpec e _) = do
     t <- inferExpr tenv loc se
@@ -148,7 +147,7 @@ emptyType loc = empty Set.empty where
 -- |Evaluate an argument acording to the given transform
 transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Trans -> Exec Value
 transExpr global tenv env loc e NoTrans = expr global tenv env loc e
-transExpr _ tenv env _ e Delayed = return $ value $ ValDelay e (packEnv tenv env e)
+transExpr _ tenv env _ e Delayed = return $ value $ ValDelay e (packEnv Set.empty tenv env e)
 
 applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> TypeVal -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =

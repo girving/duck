@@ -16,7 +16,7 @@ module Lir
   , Atom(..)
   , Kind(..), Globals
   , expLocal, expGlobal, expVal
-  , freeOf
+  , free
   , overTypes
   , empty
   , union
@@ -151,7 +151,7 @@ check prog = runSequence $ do
         when (Set.member v s) $ lirError l $ quoted v <+> "appears more than once in argument list for" <+> quoted f
         return $ addVar v s) Set.empty vl
       maybe nop (expr (Set.union s vs)) body
-  expr s = mapM_ (\(v,l) -> lirError l $ quoted v <+> "undefined") . free s noLoc
+  expr s = mapM_ (\(v,l) -> lirError l $ quoted v <+> "undefined") . free' s noLoc
   datatype (_, d) = mapM_ cons (dataConses d) where
     cons (L l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
       [] -> success
@@ -174,25 +174,24 @@ kindConflict v k k' | k == k' = k
         s FunctionKind = "function"
         s DatatypeKind = "datatype"
  
--- |Compute the list of free variables in an expression
-freeOf :: InScopeSet -> Exp -> [Var]
-freeOf locals e = Set.toList (Set.intersection locals (f e)) where
-  f = Set.fromList . map fst . free Set.empty noLoc
+-- |Compute the list of free variables in an expression given the set of in scope variables
+free :: InScopeSet -> Exp -> [Var]
+free s e = Set.toList $ Set.fromList $ map fst $ (free' s (noLoc :: SrcLoc) e :: [(Var,SrcLoc)])
 
-free :: InScopeSet -> SrcLoc -> Exp -> [(Var,SrcLoc)]
-free s l (ExpAtom a) = freeAtom s l a
-free s l (ExpApply e1 e2) = free s l e1 ++ free s l e2
-free s l (ExpLet v e c) = free s l e ++ free (addVar v s) l c
-free s l (ExpCons _ _ el) = concatMap (free s l) el
-free s l (ExpCase a al d) =
+free' :: InScopeSet -> SrcLoc -> Exp -> [(Var,SrcLoc)]
+free' s l (ExpAtom a) = freeAtom s l a
+free' s l (ExpApply e1 e2) = free' s l e1 ++ free' s l e2
+free' s l (ExpLet v e c) = free' s l e ++ free' (addVar v s) l c
+free' s l (ExpCons _ _ el) = concatMap (free' s l) el
+free' s l (ExpCase a al d) =
   freeAtom s l a
-  ++ concatMap (\(_,vl,e) -> free (foldr addVar s vl) l e) al
-  ++ maybe [] (free s l) d
-free s l (ExpPrim _ el) = concatMap (free s l) el
-free s l (ExpBind v e c) = free s l e ++ free (addVar v s) l c
-free s l (ExpReturn e) = free s l e
-free s l (ExpSpec e _) = free s l e
-free s _ (ExpLoc l e) = free s l e
+  ++ concatMap (\(_,vl,e) -> free' (foldr addVar s vl) l e) al
+  ++ maybe [] (free' s l) d
+free' s l (ExpPrim _ el) = concatMap (free' s l) el
+free' s l (ExpBind v e c) = free' s l e ++ free' (addVar v s) l c
+free' s l (ExpReturn e) = free' s l e
+free' s l (ExpSpec e _) = free' s l e
+free' s _ (ExpLoc l e) = free' s l e
 
 freeAtom :: InScopeSet -> SrcLoc -> Atom -> [(Var,SrcLoc)]
 freeAtom s l (AtomLocal v)
