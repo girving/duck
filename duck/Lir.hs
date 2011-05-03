@@ -47,7 +47,6 @@ data Prog = Prog
   { progName :: ModuleName
   , progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
   , progFunctions :: Map Var [Overload TypePat] -- ^ original overload definitions by function name
-  , progConses :: Map CVar Datatype -- ^ map data constructors to datatypes (type inference will make this go away)
   , progOverloads :: Map Var Overloads -- ^ all overloads inferred to be needed, set after inference
   , progGlobalTypes :: TypeEnv -- ^ set after inference
   , progDefinitions :: [Definition] -- ^ list of top-level definitions
@@ -96,7 +95,7 @@ dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
 dupError v n o = lirError n $ "duplicate definition of" <+> quoted v <> (", previously declared at" <&+> o)
 
 empty :: ModuleName -> Prog
-empty n = Prog n Map.empty Map.empty Map.empty Map.empty Map.empty []
+empty n = Prog n Map.empty Map.empty Map.empty Map.empty []
 
 -- |A few consistency checks on Lir programs
 check :: Prog -> ()
@@ -133,7 +132,6 @@ check prog = runSequence $ do
 globals :: Prog -> InScopeSet
 globals prog = Set.fromList (concat [Map.keys $ progDatatypes prog,
                                      Map.keys $ progFunctions prog,
-                                     Map.keys $ progConses prog,
                                      concatMap (map unLoc . defVars) $ progDefinitions prog])
  
 -- |Compute the list of free variables in an expression
@@ -149,7 +147,7 @@ free s l (ExpVar v)
 free _ _ (ExpVal _ _) = []
 free s l (ExpApply e1 e2) = free s l e1 ++ free s l e2
 free s l (ExpLet v e c) = free s l e ++ free (addVar v s) l c
-free s l (ExpCons _ el) = concatMap (free s l) el
+free s l (ExpCons _ _ el) = concatMap (free s l) el
 free s l (ExpCase v al d) =
   free s l (ExpVar v)
   ++ concatMap (\(_,vl,e) -> free (foldr addVar s vl) l e) al
@@ -167,7 +165,6 @@ union p1 p2 = Prog
   { progName = progName p2 -- use the second module's name
   , progDatatypes = Map.unionWithKey conflictLoc (progDatatypes p2) (progDatatypes p1)
   , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
-  , progConses = Map.unionWithKey conflict (progConses p2) (progConses p1) -- XXX overloaded constructors?
   , progOverloads = Map.unionWithKey conflict (progOverloads p2) (progOverloads p1) -- XXX cross-module overloads?
   , progGlobalTypes = Map.unionWithKey conflict (progGlobalTypes p2) (progGlobalTypes p1)
   , progDefinitions = progDefinitions p1 ++ progDefinitions p2 }
@@ -175,17 +172,16 @@ union p1 p2 = Prog
   conflictLoc v n o = dupError v (loc n) (loc o)
   conflict v _ _ = dupError v noLoc noLoc
 
--- |Given a set of datatypes, fill in progConses and add a creation overload for each datatype constructor
+-- |Given a set of datatypes, add a creation overload for each datatype constructor
 complete :: Map CVar Datatype -> Prog -> Prog
 complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datatypes where
   datatype :: Datatype -> State Prog ()
-  datatype d = mapM_ f (dataConses d) where
-    f :: (Loc CVar, [TypePat]) -> State Prog ()
-    f (c,tyl) = do
-      modify $ \p -> p { progConses = Map.insert (unLoc c) d (progConses p) }
+  datatype d = mapM_ f (zip [0..] $ dataConses d) where
+    f :: (Int, (Loc CVar, [TypePat])) -> State Prog ()
+    f (i,(c,tyl)) = do
       case tyl of
-        [] -> modify $ \p -> p { progDefinitions = Def [c] (ExpCons (unLoc c) []) : progDefinitions p }
-        _ -> overload c tl r vl (ExpCons (unLoc c) (map ExpVar vl)) where
+        [] -> modify $ \p -> p { progDefinitions = Def [c] (ExpCons d i []) : progDefinitions p }
+        _ -> overload c tl r vl (ExpCons d i (map ExpVar vl)) where
           vl = take (length tyl) standardVars
           (tl,r) = generalType vl
 

@@ -219,9 +219,6 @@ expr locals l@(loc,_) (Ir.Let v e rest) = do
   rest <- expr (addVar v locals) l rest
   return $ ExpLet v e rest
 expr locals l e@(Ir.Lambda _ _) = lambda locals l e
-expr locals l (Ir.Cons c el) = do
-  el <- mapM (expr locals l) el
-  return $ ExpCons c el
 expr locals l (Ir.Case v pl def) = do
   pl <- mapM (\ (c,vl,e) -> expr (foldl (flip addVar) locals vl) l e >.= \e -> (c,vl,e)) pl
   def <- mapM (expr locals l) def

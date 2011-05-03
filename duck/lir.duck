@@ -12,7 +12,7 @@ data Exp of
   ExpVar Var
   ExpApply Exp Exp
   ExpLet Var Exp Exp
-  ExpCons CVar (List Exp)
+  ExpCons Datatype Int (List Exp)
   ExpCase Var (List (Var, List Var, Exp)) (Maybe Exp)
   ExpPrim Prim (List Exp)
   ExpSpec Exp TypePat

@@ -111,11 +111,7 @@ expr global tenv env loc = exp where
       Nothing -> case def of
         Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (t,d)) <> ", cases =" <+> show pl) -- XXX data printed
         Just e' -> cast ct $ expr global tenv env loc e'
-  exp ce@(ExpCons c el) = do
-    t <- inferExpr tenv loc ce
-    conses <- liftInfer $ Infer.lookupDatatype loc t
-    let Just i = findIndex (\ (L _ c',_) -> c == c') conses
-    valCons i =.< mapM exp el
+  exp (ExpCons _ c el) = valCons c =.< mapM exp el
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
   exp (ExpBind v e1 e2) = do
     t <- inferExpr tenv loc e1

@@ -19,7 +19,7 @@ data Exp = ExpLoc !SrcLoc !Exp
          | ExpVar !Var
          | ExpApply !Exp !Exp
          | ExpLet !Var !Exp !Exp
-         | ExpCons !CVar ![Exp]
+         | ExpCons !Datatype !Int ![Exp]
          | ExpCase !Var ![(Var, [Var], Exp)] !(Maybe Exp)
          | ExpPrim !Prim ![Exp]
          | ExpSpec !Exp !TypePat
@@ -39,7 +39,7 @@ instance Convert Exp where
         {-# LINE 9 "lir.duck" #-}
         value (ExpLet a b c) = valCons 4 [value a, value b, value c]
         {-# LINE 9 "lir.duck" #-}
-        value (ExpCons a b) = valCons 5 [value a, value b]
+        value (ExpCons a b c) = valCons 5 [value a, value b, value c]
         {-# LINE 9 "lir.duck" #-}
         value (ExpCase a b c) = valCons 6 [value a, value b, value c]
         {-# LINE 9 "lir.duck" #-}
@@ -72,8 +72,8 @@ instance Convert Exp where
                        in ExpLet (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
                 5
                   -> let {-# LINE 15 "lir.duck" #-}
-                         (a, b) = unsafeUnvalCons val
-                       in ExpCons (unsafeUnvalue a) (unsafeUnvalue b)
+                         (a, b, c) = unsafeUnvalCons val
+                       in ExpCons (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
                 6
                   -> let {-# LINE 16 "lir.duck" #-}
                          (a, b, c) = unsafeUnvalCons val

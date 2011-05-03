@@ -25,7 +25,6 @@ module Infer
   , lookup
   , lookupDatatype
   , lookupCons
-  , lookupConstructor
   , lookupVariances
   , lookupOver
   ) where
@@ -100,14 +99,6 @@ lookupFunction f = getProg >>= \prog ->
     Just o -> return o
     _ -> inferError noLoc ("unbound function" <+> quoted f)
 
-lookupConstructor :: SrcLoc -> Var -> Infer (Datatype, [Var], [TypePat])
-lookupConstructor loc c = getProg >>= lp where
-  lp prog
-    | Just tc <- Map.lookup c (progConses prog)
-    , Just tl <- lookupCons (dataConses tc) c
-    = return (tc,dataTyVars tc,tl)
-    | otherwise = inferError loc ("unbound constructor" <+> quoted c)
-
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 
@@ -160,8 +151,8 @@ expr env loc = exp where
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
         joinList loc (caseResults ++ defaultResults)
-  exp (ExpCons c el) =
-    cons loc c =<< mapM exp el
+  exp (ExpCons d c el) =
+    cons loc d c =<< mapM exp el
   exp (ExpPrim op el) =
     Base.primType loc op =<< mapM exp el
   exp (ExpBind v e1 e2) = do
@@ -174,14 +165,14 @@ expr env loc = exp where
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr env l e
 
-cons :: SrcLoc -> CVar -> [TypeVal] -> Infer TypeVal
-cons loc c args = do
-  (tv,vl,tl) <- lookupConstructor loc c
-  tenv <- typeReError loc (quoted c <+> "expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
+cons :: SrcLoc -> Datatype -> Int -> [TypeVal] -> Infer TypeVal
+cons loc d c args = do
+  let (cv,tl) = dataConses d !! c
+  tenv <- typeReError loc (quoted cv <+> "expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
     checkLeftovers noLoc () $
     subsetList args tl
-  let targs = map (\v -> Map.findWithDefault TyVoid v tenv) vl
-  return $ TyCons tv targs
+  let targs = map (\v -> Map.findWithDefault TyVoid v tenv) (dataTyVars d)
+  return $ TyCons d targs
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do

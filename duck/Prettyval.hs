@@ -99,15 +99,15 @@ instance Pretty Exp where
     def (Just e) = ["_ ->" <+> pretty e]
   pretty' (ExpVal t v) = prettyval t v
   pretty' (ExpVar v) = pretty' v
+  pretty' (ExpApply (ExpApply (ExpVar (V ":")) h) t) | Just t' <- extract t =
+    pretty' $ brackets $ 3 #> punctuate ',' (h : t') where
+    extract (ExpVar (V "[]")) = Just []
+    extract (ExpApply (ExpApply (ExpVar (V ":")) h) t) = (h :) =.< extract t
+    extract _ = Nothing
   pretty' (ExpApply e1 e2) = uncurry prettyop (apply e1 [e2])
     where apply (ExpApply e a) al = apply e (a:al)
           apply e al = (e,al)
-  pretty' (ExpCons (V ":") [h,t]) | Just t' <- extract t = pretty' $
-    brackets $ 3 #> punctuate ',' (h : t') where
-    extract (ExpCons (V "[]") []) = Just []
-    extract (ExpCons (V ":") [h,t]) = (h :) =.< extract t
-    extract _ = Nothing
-  pretty' (ExpCons c args) = prettyop c args
+  pretty' (ExpCons d c args) = prettyop (fst $ dataConses d !! c) args
   pretty' (ExpPrim p el) = prettyop (V (primString p)) el
   pretty' (ExpBind v e1 e2) = 0 #>
     v <+> "<-" <+> e1 $$ e2

@@ -47,7 +47,6 @@ data Exp
   | Lambda !Var Exp                     -- ^ Simple lambda expression: @VAR -> EXP@
   | Apply Exp Exp                       -- ^ Application: @EXP EXP@
   | Let !Var Exp Exp                    -- ^ Simple variable assignment: @let VAR = EXP in EXP@
-  | Cons !CVar [Exp]                    -- ^ Constructor application: @CVAR EXPs@
   | Case Var [(CVar, [Var], Exp)] (Maybe Exp) -- ^ @case VAR of { CVAR VARs -> EXP ; ... [ ; _ -> EXP ] }@
   | Prim !Prim [Exp]                    -- ^ Primitive function call: @PRIM EXPs@
   | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
@@ -192,9 +191,9 @@ prog pprec p = (precs, decls p) where
     _ -> irError l $ "type specification for" <+> quoted f <+> "must be followed by its definition"
   decls (L l (Ast.LetD ap ae) : rest) = d : decls rest where
     d = case Map.toList vm of
-      [] -> LetD (L l ignored) $ body $ Cons (V "()") []
+      [] -> LetD (L l ignored) $ body $ Var (V "()")
       [(v,l)] -> LetD (L l v) $ body $ Var v
-      vl -> LetM (map (\(v,l) -> L l v) vl) $ body $ Cons (tupleCons vl) (map (Var . fst) vl)
+      vl -> LetM (map (\(v,l) -> L l v) vl) $ body $ foldl' Apply (Var $ tupleCons vl) (map (Var . fst) vl)
     body r = match globals [Switch [e] [CaseMatch [p] id (CaseBody r)]] Nothing
     e = expr globals l ae
     (p,vm) = pattern' Map.empty l ap
@@ -237,14 +236,14 @@ prog pprec p = (precs, decls p) where
   expr s l (Ast.Case sl) = doMatch switches s l sl
   expr s l (Ast.Ops o) = expr s l $ Ast.opsExp l $ sortOps precs l o
   expr s l (Ast.Spec e t) = Spec (expr s l e) t
-  expr s l (Ast.List el) = foldr (\a b -> Cons (V ":") [a,b]) (Cons (V "[]") []) $ map (expr s l) el
+  expr s l (Ast.List el) = foldr (\a -> Apply (Apply (Var $ V ":") a)) (Var $ V "[]") $ map (expr s l) el
   expr s l (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) $ e c) $ e e1) $ e e2 where e = expr s l
   expr s _ (Ast.Seq q) = seq s q
   expr s _ (Ast.ExpLoc l e) = ExpLoc l $ expr s l e
   expr _ l a = irError l $ quoted a <+> "not allowed in expressions"
 
   seq :: InScopeSet -> [Loc Ast.Stmt] -> Exp
-  seq _ [] = Cons (V "()") [] -- only used when last is assignment; might as well be a warning/error
+  seq _ [] = Var (V "()") -- only used when last is assignment; might as well be a warning/error
   seq s [L l (Ast.StmtExp e)] = expr s l e
   seq s (L l (Ast.StmtExp e):q) = seq s (L l (Ast.StmtLet (Ast.PatCons (V "()") []) e):q) -- should we just assign to '_'?
   seq s (L l (Ast.StmtLet p e):q) = doMatch letpat s l (p,e,Ast.Seq q)
@@ -325,7 +324,7 @@ prog pprec p = (precs, decls p) where
     withFall f s (x:l) fall = letf $ f s' x (Just callf) where
       (s',fv) = freshen s (V "fall")
       letf = Let fv $ Lambda ignored $ withFall f s' l fall
-      callf = Apply (Var fv) (Cons (V "()") [])
+      callf = Apply (Var fv) (Var $ V "()")
 
     switch :: InScopeSet -> Switch -> Maybe Exp -> Exp
     switch s (Switch [] alts) fall = withFall (\s (CaseMatch [] f e) -> f . matchTail s e) s alts fall
@@ -386,15 +385,14 @@ instance Pretty Exp where
   pretty' (Var v) = pretty' v
   pretty' (Lambda v e) = 1 #>
     v <+> "->" <+> guard 1 e
+  pretty' (Apply (Apply (Var (V ":")) h) t) | Just t' <- extract t =
+    pretty' $ brackets $ 3 #> punctuate ',' (h : t') where
+    extract (Var (V "[]")) = Just []
+    extract (Apply (Apply (Var (V ":")) h) t) = (h :) =.< extract t
+    extract _ = Nothing
   pretty' (Apply e1 e2) = uncurry prettyop (apply e1 [e2])
     where apply (Apply e a) al = apply e (a:al) 
           apply e al = (e,al)
-  pretty' (Cons (V ":") [h,t]) | Just t' <- extract t = pretty' $
-    brackets $ 3 #> punctuate ',' (h : t') where
-    extract (Cons (V "[]") []) = Just []
-    extract (Cons (V ":") [h,t]) = (h :) =.< extract t
-    extract _ = Nothing
-  pretty' (Cons c args) = prettyop c args
   pretty' (Prim p el) = prettyop (V (primString p)) el
   pretty' (Bind v e1 e2) = 0 #>
     v <+> "<-" <+> e1 $$ pretty e2
