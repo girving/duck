@@ -3,8 +3,9 @@
 -- | Duck Lifted Intermediate Representation
 --
 -- "Lir" is the same as "Ir" except that:
--- 'Exp' is unchanged except that 'Lambdas' have all been lifted to top-level functions.
--- Top-level declarations have been organized and mapped.
+-- 1. 'Exp' is unchanged except that 'Lambdas' have all been lifted to top-level functions.
+-- 2. Top-level declarations have been organized and mapped.
+-- 3. ExpVar is replaced with one of ExpLocal, ExpGlobal, or ExpValue, depending on what kind of variable it is.
 
 module Lir
   ( Prog(..)
@@ -12,18 +13,23 @@ module Lir
   , Overload(..), Definition(..)
   , Overloads
   , Exp(..)
+  , Atom(..)
+  , Kind(..), Globals
+  , expLocal, expGlobal, expVal
   , freeOf
   , overTypes
   , empty
   , union
   , check
   , globals
+  , kindConflict
   , lirError, dupError
   , complete
   ) where
 
 import Prelude hiding (mapM)
 import Data.Maybe
+import Data.List hiding (union)
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
@@ -33,6 +39,7 @@ import Util
 import Var
 import SrcLoc
 import Ptrie (Ptrie)
+import Memory
 import Pretty
 import Stage
 import Type
@@ -40,6 +47,7 @@ import Type
 -- Pull in definition of Exp and add a Show instance
 import Gen.Lir
 deriving instance Show Exp
+deriving instance Show Atom
 
 -- Lifted IR data structures
 
@@ -76,11 +84,33 @@ instance HasLoc Definition where loc = loc . defVars
 class Monad m => ProgMonad m where
   getProg :: m Prog
 
+instance HasVar Atom where
+  unVar (AtomLocal v) = Just v
+  unVar (AtomGlobal v) = Just v
+  unVar (AtomVal _ _) = Nothing
+
 instance HasVar Exp where
-  var = ExpVar
-  unVar (ExpVar v) = Just v
+  unVar (ExpAtom a) = unVar a
   unVar (ExpLoc _ e) = unVar e
   unVar _ = Nothing
+
+-- |Information about global variables
+data Kind
+  = GlobalKind
+  | FunctionKind
+  | DatatypeKind
+  deriving (Show, Eq)
+
+type Globals = Map CVar Kind
+
+expLocal :: Var -> Exp
+expLocal = ExpAtom . AtomLocal
+
+expGlobal :: Var -> Exp
+expGlobal = ExpAtom . AtomGlobal
+
+expVal :: TypeVal -> Value -> Exp
+expVal t v = ExpAtom $ AtomVal t v
 
 -- |Type of arguments an overload expects to be passed (as opposed to expects to recieve)
 overTypes :: Overload t -> [t]
@@ -129,10 +159,20 @@ check prog = runSequence $ do
       fv -> lirError l $ "variables" <+> quoted (hsep fv) <+> "are unbound in constructor" <+> quoted (prettyap c tl)
 
 -- |Compute the set of global symbols in a program
-globals :: Prog -> InScopeSet
-globals prog = Set.fromList (concat [Map.keys $ progDatatypes prog,
-                                     Map.keys $ progFunctions prog,
-                                     concatMap (map unLoc . defVars) $ progDefinitions prog])
+globals :: Prog -> Globals
+globals prog = foldl' (Map.unionWithKey kindConflict) Map.empty
+  [Map.map (const DatatypeKind) $ progDatatypes prog,
+   Map.map (const FunctionKind) $ progFunctions prog,
+   foldl' (\g v -> insertVar v GlobalKind g) Map.empty $ concatMap (map unLoc . defVars) $ progDefinitions prog]
+  where 
+
+kindConflict :: Var -> Kind -> Kind -> Kind
+kindConflict v DatatypeKind k | isTuple v = k
+kindConflict v k k' | k == k' = k
+                    | otherwise = lirError noLoc $ quoted v <+> "is declared as both a" <+> s k <+> "and a" <+> s k'
+  where s GlobalKind = "global"
+        s FunctionKind = "function"
+        s DatatypeKind = "datatype"
  
 -- |Compute the list of free variables in an expression
 freeOf :: InScopeSet -> Exp -> [Var]
@@ -140,16 +180,12 @@ freeOf locals e = Set.toList (Set.intersection locals (f e)) where
   f = Set.fromList . map fst . free Set.empty noLoc
 
 free :: InScopeSet -> SrcLoc -> Exp -> [(Var,SrcLoc)]
-free _ _ (ExpVar (V "_")) = []
-free s l (ExpVar v)
-  | Set.notMember v s = [(v,l)]
-  | otherwise = []
-free _ _ (ExpVal _ _) = []
+free s l (ExpAtom a) = freeAtom s l a
 free s l (ExpApply e1 e2) = free s l e1 ++ free s l e2
 free s l (ExpLet v e c) = free s l e ++ free (addVar v s) l c
 free s l (ExpCons _ _ el) = concatMap (free s l) el
-free s l (ExpCase v al d) =
-  free s l (ExpVar v)
+free s l (ExpCase a al d) =
+  freeAtom s l a
   ++ concatMap (\(_,vl,e) -> free (foldr addVar s vl) l e) al
   ++ maybe [] (free s l) d
 free s l (ExpPrim _ el) = concatMap (free s l) el
@@ -157,6 +193,14 @@ free s l (ExpBind v e c) = free s l e ++ free (addVar v s) l c
 free s l (ExpReturn e) = free s l e
 free s l (ExpSpec e _) = free s l e
 free s _ (ExpLoc l e) = free s l e
+
+freeAtom :: InScopeSet -> SrcLoc -> Atom -> [(Var,SrcLoc)]
+freeAtom s l (AtomLocal v)
+  | V "_" <- v = error "unexpected '_' in Lir.freeAtom"
+  | Set.notMember v s = [(v,l)]
+  | otherwise = []
+freeAtom _ _ (AtomGlobal _) = []
+freeAtom _ _ (AtomVal _ _) = []
 
 -- |Merge two programs into one
 
@@ -181,7 +225,7 @@ complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datat
     f (i,(c,tyl)) = do
       case tyl of
         [] -> modify $ \p -> p { progDefinitions = Def [c] (ExpCons d i []) : progDefinitions p }
-        _ -> overload c tl r vl (ExpCons d i (map ExpVar vl)) where
+        _ -> overload c tl r vl (ExpCons d i (map expLocal vl)) where
           vl = take (length tyl) standardVars
           (tl,r) = generalType vl
 

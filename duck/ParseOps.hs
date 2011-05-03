@@ -128,6 +128,5 @@ instance Fold.Foldable Ops where
   foldr f z (OpBin _ l r) = Fold.foldr f (Fold.foldr f z r) l
 
 instance HasVar a => HasVar (Ops a) where
-  var = OpAtom . var
   unVar (OpAtom a) = unVar a
   unVar _ = Nothing

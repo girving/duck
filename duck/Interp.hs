@@ -24,7 +24,7 @@ import Memory
 import Value
 import SrcLoc
 import Pretty
-import Lir
+import Lir hiding (Globals)
 import ExecMonad
 import qualified Infer
 import qualified Base
@@ -36,16 +36,10 @@ type Globals = Env
 type Locals = Env
 type LocalTypes = TypeEnv
 
-lookup :: Globals -> Locals -> SrcLoc -> Var -> Exec Value
-lookup global env loc v
-  | Just r <- Map.lookup v env = return r -- check for local definitions first
-  | Just r <- Map.lookup v global = return r -- fall back to global definitions
-  | otherwise = getProg >>= lp where
-  lp prog
-    | Just _ <- Map.lookup v (progOverloads prog) = return (value $ ValClosure v [] []) -- if we find overloads, make a new closure
-    | Just _ <- Map.lookup v (progFunctions prog) = return (value $ ValClosure v [] []) -- this should never be used
-    | Just _ <- Map.lookup v (progDatatypes prog) = return valEmpty
-    | otherwise = execError loc ("unbound variable" <+> quoted v)
+lookupGlobal :: Globals -> SrcLoc -> Var -> Exec Value
+lookupGlobal global loc v = case Map.lookup v global of
+  Just r -> return r
+  Nothing -> execError loc ("unbound global variable" <+> quoted v)
 
 -- | Pack up the free variables of an expression into a packed environment
 packEnv :: LocalTypes -> Locals -> Exp -> [(Var, TypeVal, Value)]
@@ -63,12 +57,12 @@ prog :: Exec Globals
 prog = getProg >>= foldM definition Map.empty . progDefinitions
 
 definition :: Globals -> Definition -> Exec Globals
-definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl) [] [] (loc d) $ do
+definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (\(L _ (V s)) -> s) vl) [] [] (loc d) $ do
   d <- expr env Map.empty Map.empty noLoc e
   dl <- case (vl,d) of
           ([_],_) -> return [d]
           (_, dl) -> return (unsafeUnvalConsN (length vl) dl)
-  return $ foldl (\g (v,d) -> Map.insert v d g) env (zip (map unLoc vl) dl)
+  return $ foldl (\g (v,d) -> insertVar v d g) env (zip (map unLoc vl) dl)
 
 -- |A placeholder for when implicit casts stop being nops on the data.
 cast :: TypeVal -> Exec Value -> Exec Value
@@ -82,8 +76,7 @@ inferExpr env loc e = do
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
-  exp (ExpVal _ v) = return v
-  exp (ExpVar v) = lookup global env loc v
+  exp (ExpAtom a) = atom global env loc a
   exp (ExpApply e1 e2) = do
     t1 <- inferExpr tenv loc e1
     v1 <- exp e1
@@ -94,11 +87,11 @@ expr global tenv env loc = exp where
     expr global (Map.insert v t tenv) (Map.insert v d env) loc body
   exp (ExpCase _ [] Nothing) = execError loc ("pattern match failed: no cases")
   exp (ExpCase _ [] (Just body)) = exp body
-  exp ce@(ExpCase v pl def) = do
+  exp ce@(ExpCase a pl def) = do
     ct <- inferExpr tenv loc ce
-    t <- liftInfer $ Infer.lookup tenv loc v
+    t <- liftInfer $ Infer.atom tenv loc a
     conses <- liftInfer $ Infer.lookupDatatype loc t
-    d <- lookup global env loc v
+    d <- atom global env loc a
     let i = unsafeTag d
         c = unLoc $ fst $ conses !! i
     case find (\ (c',_,_) -> c == c') pl of
@@ -107,7 +100,7 @@ expr global tenv env loc = exp where
         let Just tl = Infer.lookupCons conses c
             dl = if empty then map (const valEmpty) vl
                  else unsafeUnvalConsN (length vl) d
-        cast ct $ expr global (insertList tenv vl tl) (insertList env vl dl) loc e'
+        cast ct $ expr global (insertVars tenv vl tl) (insertVars env vl dl) loc e'
       Nothing -> case def of
         Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (t,d)) <> ", cases =" <+> show pl) -- XXX data printed
         Just e' -> cast ct $ expr global tenv env loc e'
@@ -123,6 +116,13 @@ expr global tenv env loc = exp where
     t <- inferExpr tenv loc se
     cast t $ exp e
   exp (ExpLoc l e) = expr global tenv env l e
+
+atom :: Globals -> Locals -> SrcLoc -> Atom -> Exec Value
+atom _ _ _ (AtomVal _ v) = return v
+atom _ env loc (AtomLocal v) = case Map.lookup v env of
+  Just v -> return v
+  Nothing -> execError loc ("internal error: unbound local variable" <+> quoted v)
+atom global _ loc (AtomGlobal v) = lookupGlobal global loc v
 
 -- |Check if a type contains no information.
 -- TODO: Move this elsewhere and cache
@@ -198,7 +198,7 @@ apply _ loc t1 v1 e2 t2 = do
 -- |IO and main
 main :: Prog -> Globals -> IO ()
 main prog global = runExec prog $ do
-  main <- lookup global Map.empty noLoc (V "main")
+  main <- lookupGlobal global noLoc (V "main")
   _ <- runIO global (unsafeUnvalue main :: IOValue)
   return ()
 

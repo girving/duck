@@ -118,7 +118,6 @@ prog_precs = foldl' set_precs where
   set_precs s _ = s
 
 instance HasVar Exp where
-  var = Var
   unVar (Var v) = Just v
   unVar (ExpLoc _ e) = unVar e
   unVar _ = Nothing
@@ -133,7 +132,6 @@ anyPat :: Pattern
 anyPat = Pat [] [] Nothing Nothing
 
 instance HasVar Pattern where
-  var v = Pat [v] [] Nothing Nothing
   unVar (Pat{ patVars = v:_ }) = Just v
   unVar _ = Nothing
 

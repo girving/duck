@@ -5,7 +5,7 @@
 
 module Parse (lex, parse) where
 
-import Var hiding (var, unVar)
+import Var hiding (unVar)
 import Lex
 import Token
 import Layout

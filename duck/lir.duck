@@ -5,17 +5,23 @@ import type
 import srcLoc
 import prims
 
--- |Expression.  Identical to 'Ir.Exp' except without 'Lambda'.
+-- |Expression.  Identical to 'Ir.Exp' except
+-- 1. No Lambdas.
+-- 2. ExpVar is replaced with ExpAtom, subdivided into value, local, or global.
 data Exp of
   ExpLoc SrcLoc Exp
-  ExpVal TypeVal Value
-  ExpVar Var
+  ExpAtom Atom
   ExpApply Exp Exp
   ExpLet Var Exp Exp
   ExpCons Datatype Int (List Exp)
-  ExpCase Var (List (Var, List Var, Exp)) (Maybe Exp)
+  ExpCase Atom (List (Var, List Var, Exp)) (Maybe Exp)
   ExpPrim Prim (List Exp)
   ExpSpec Exp TypePat
   -- Monadic IO
   ExpBind Var Exp Exp
   ExpReturn Exp
+
+data Atom of
+  AtomVal TypeVal Value
+  AtomLocal Var
+  AtomGlobal Var

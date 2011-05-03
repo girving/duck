@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances, StandaloneDeriving #-}
+{-# LANGUAGE PatternGuards, TypeSynonymInstances, StandaloneDeriving, BangPatterns #-}
 {-# OPTIONS -fno-warn-orphans #-}
 -- | Duck Variables
 
@@ -7,9 +7,10 @@ module Var
   , CVar
   , ModuleName
   , InScopeSet
-  , addVar
+  , addVar, insertVar, insertVarWithKey, insertVars
   , fresh
   , freshen
+  , freshenKind
   , freshVars
   , standardVars
   , moduleVar
@@ -28,6 +29,8 @@ import Pretty
 import Data.Char
 import Data.Set (Set)
 import qualified Data.Set as Set
+import Data.Map (Map)
+import qualified Data.Map as Map
 
 import SrcLoc
 
@@ -54,11 +57,30 @@ addVar :: Var -> InScopeSet -> InScopeSet
 addVar (V "_") = id
 addVar v = Set.insert v
 
+insertVar :: Var -> t -> Map Var t -> Map Var t
+insertVar (V "_") _ = id
+insertVar v x = Map.insert v x
+
+insertVarWithKey :: (Var -> t -> t -> t) -> Var -> t -> Map Var t -> Map Var t
+insertVarWithKey _ (V "_") _ = id
+insertVarWithKey f v x = Map.insertWithKey f v x
+
+insertVars :: Map Var t -> [Var] -> [t] -> Map Var t
+insertVars !m [] [] = m
+insertVars !m (v:vs) (x:xs) = insertVars (insertVar v x m) vs xs
+insertVars !_ _ _ = error "different lengths in Var.insertVars"
+
 freshen :: InScopeSet -> Var -> (InScopeSet, Var)
 freshen scope v = search v where
   search v | Set.notMember v scope = (Set.insert v scope, v)
            | V s <- v = search (V $ s ++ show size)
   size = Set.size scope
+
+freshenKind :: Map Var t -> Var -> t -> (Map Var t, Var)
+freshenKind scope v x = search v where
+  search v | Map.notMember v scope = (Map.insert v x scope, v)
+           | V s <- v = search (V $ s ++ show size)
+  size = Map.size scope
 
 fresh :: InScopeSet -> (InScopeSet, Var)
 fresh s = freshen s (V "x")
@@ -100,17 +122,13 @@ isCons _ = False
 
 
 class HasVar a where
-  var :: Var -> a
   unVar :: a -> Maybe Var
 
 instance HasVar Var where
-  var x = x
   unVar = Just
 
 instance HasVar String where
-  var (V s) = s
   unVar = Just . V
 
 instance HasVar a => HasVar (Loc a) where
-  var = L noLoc . var
   unVar = unVar . unLoc 

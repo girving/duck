@@ -32,10 +32,9 @@ import qualified Lir
 import qualified Ir
 import Prims
 import Memory
+import Value
 
 -- Lambda lifting: IR to Lifted IR conversion
-
-type Globals = InScopeSet
 
 progs :: Prog -> [(ModuleName, [Ir.Decl])] -> Prog
 progs base progs = foldl' (\p (name,decls) -> prog p name decls) base progs
@@ -44,7 +43,7 @@ prog :: Prog -> ModuleName -> [Ir.Decl] -> Prog
 prog base name decls = complete denv . unreverse . fst $ flip execState start (mapM_ decl decls) where
   denv = unsafePerformIO $ datatypes (progDatatypes base) decls
   denv' = Map.unionWith (error "unexpected duplicate datatype in ToLir.prog") (progDatatypes base) denv
-  globals = foldl decl_vars (Lir.globals base) decls
+  globals = foldl declVars (Lir.globals base) decls
   start = (base { progName = name, progDatatypes = denv', progDefinitions = reverse (progDefinitions base) }, globals)
   unreverse p = p { progDefinitions = reverse (progDefinitions p) } -- Definitions are added in reverse, so reverse again
 
@@ -117,17 +116,21 @@ datatypes baseDenv decls = do
   freeze :: Map CVar (Ref PreDatatype) -> IO (Map CVar Datatype)
   freeze mutable = mapM (unsafeFreeze <=< unsafeCastRef) mutable
 
-decl_vars :: InScopeSet -> Ir.Decl -> InScopeSet
-decl_vars s (Ir.LetD (L _ v) _) = addVar v s
-decl_vars s (Ir.LetM vl _) = foldl (flip addVar) s (map unLoc vl)
-decl_vars s (Ir.Over (L _ v) _ _) = Set.insert v s
-decl_vars s (Ir.Data _ _ _) = s
+declVars :: Globals -> Ir.Decl -> Globals
+declVars g (Ir.LetD (L _ v) e) | ((_:_),_) <- unwrapLambda noLoc e = insertVarWithKey kindConflict v FunctionKind g
+declVars g (Ir.LetD (L _ v) _) = insertVarWithKey kindConflict v GlobalKind g
+declVars g (Ir.LetM vl _) = foldl' (\g v -> insertVarWithKey kindConflict v GlobalKind g) g (map unLoc vl)
+declVars g (Ir.Over (L _ v) _ _) = Map.insertWithKey kindConflict v FunctionKind g
+declVars g (Ir.Data (L _ v) _ conses) = Map.insertWithKey kindConflict v DatatypeKind (foldl' cons g conses) where
+  cons g (L _ v, tl) = Map.insertWithKey kindConflict v (case tl of [] -> GlobalKind ; _ -> FunctionKind) g
 
 -- |Statements are added in reverse order
 decl :: Ir.Decl -> State (Prog, Globals) ()
-decl (Ir.LetD v e) | (vl@(_:_),e') <- unwrapLambda noLoc e = do
-  e <- expr (Set.fromList vl) noLocExpr e'
-  function v vl e
+decl (Ir.LetD v e) | (vl@(_:_),e') <- unwrapLambda noLoc e = case v of
+  L _ (V "_") -> return ()
+  _ -> do
+    e <- expr (Set.fromList vl) noLocExpr e'
+    function v vl e
 decl (Ir.Over v@(L l _) t e) = do
   denv <- get >.= progDatatypes . fst
   let (tl,r,vl,e') = unwrapTypeLambda t e
@@ -207,9 +210,9 @@ noLocExpr = (noLoc,Nothing)
 
 -- |Lambda lift an expression
 expr :: InScopeSet -> (SrcLoc, Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp
-expr _ _ (Ir.Int i) = return $ ExpVal typeInt $ value i
-expr _ _ (Ir.Char c) = return $ ExpVal typeChar $ value c
-expr _ _ (Ir.Var v) = return $ ExpVar v
+expr _ _ (Ir.Int i) = return $ expVal typeInt $ value i
+expr _ _ (Ir.Char c) = return $ expVal typeChar $ value c
+expr locals l (Ir.Var v) = ExpAtom =.< var locals l v
 expr locals l (Ir.Apply e1 e2) = do
   e1 <- expr locals l e1
   e2 <- expr locals l e2
@@ -222,7 +225,8 @@ expr locals l e@(Ir.Lambda _ _) = lambda locals l e
 expr locals l (Ir.Case v pl def) = do
   pl <- mapM (\ (c,vl,e) -> expr (foldl (flip addVar) locals vl) l e >.= \e -> (c,vl,e)) pl
   def <- mapM (expr locals l) def
-  return $ ExpCase v pl def
+  a <- var locals l v
+  return $ ExpCase a pl def
 expr locals l (Ir.Prim prim el) = do
   el <- mapM (expr locals l) el
   return $ ExpPrim prim el
@@ -237,6 +241,20 @@ expr locals l@(loc,_) (Ir.Spec e t) = do
   return $ ExpSpec e' (toType loc denv t)
 expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l =.< expr locals (l,v) e
 
+var :: InScopeSet -> (SrcLoc, Maybe Var) -> Var -> State (Prog, Globals) Atom
+var locals _ v | Set.member v locals = return $ AtomLocal v
+var _ (loc,_) v = do
+  (prog, globals) <- get
+  case Map.lookup v globals of
+    Just GlobalKind -> return $ AtomGlobal v
+    Just DatatypeKind | Just d <- Map.lookup v (progDatatypes prog) -> return $ AtomVal (typeType (TyCons d [])) valEmpty
+    Just DatatypeKind -> lirError loc $ "internal error: unexpected unbound datatype" <+> quoted v
+    Just FunctionKind -> return $ closure v
+    Nothing -> lirError loc $ "unbound variable" <+> quoted v
+
+closure :: Var -> Atom
+closure v = AtomVal (typeClosure v []) (value $ ValClosure v [] [])
+
 -- |Lift a single lambda expression
 lambda :: InScopeSet -> (SrcLoc,Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp
 lambda locals l@(loc,v) e = do
@@ -247,12 +265,12 @@ lambda locals l@(loc,v) e = do
   e <- expr localsPlus l e'
   let vs = freeOf localsMinus e
   function (L loc f) (vs ++ vl) e
-  return $ foldl ExpApply (ExpVar f) (map ExpVar vs)
+  return $ foldl ExpApply (ExpAtom $ closure f) (map expLocal vs)
 
 -- |Generate a fresh variable
 freshenM :: Var -> State (Prog, Globals) Var
 freshenM v = do
   (p,globals) <- get
-  let (globals',v') = freshen globals $ moduleVar (progName p) v
+  let (globals',v') = freshenKind globals (moduleVar (progName p) v) FunctionKind
   put $ (p,globals')
   return v'

@@ -11,7 +11,6 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Var
-import Util
 import Type
 import Prims
 import Pretty
@@ -97,13 +96,7 @@ instance Pretty Exp where
     arm (c, vl, e) = prettyop c vl <+> "->" <+> pretty e
     def Nothing = []
     def (Just e) = ["_ ->" <+> pretty e]
-  pretty' (ExpVal t v) = prettyval t v
-  pretty' (ExpVar v) = pretty' v
-  pretty' (ExpApply (ExpApply (ExpVar (V ":")) h) t) | Just t' <- extract t =
-    pretty' $ brackets $ 3 #> punctuate ',' (h : t') where
-    extract (ExpVar (V "[]")) = Just []
-    extract (ExpApply (ExpApply (ExpVar (V ":")) h) t) = (h :) =.< extract t
-    extract _ = Nothing
+  pretty' (ExpAtom a) = pretty' a
   pretty' (ExpApply e1 e2) = uncurry prettyop (apply e1 [e2])
     where apply (ExpApply e a) al = apply e (a:al)
           apply e al = (e,al)
@@ -114,3 +107,8 @@ instance Pretty Exp where
   pretty' (ExpReturn e) = prettyap "return" [e]
   pretty' (ExpLoc _ e) = pretty' e
   --pretty' (ExpLoc l e) = "{-@" <+> show l <+> "-}" <+> pretty' e
+
+instance Pretty Atom where
+  pretty' (AtomLocal v) = pretty' v
+  pretty' (AtomGlobal v) = pretty' v
+  pretty' (AtomVal t v) = prettyval t v

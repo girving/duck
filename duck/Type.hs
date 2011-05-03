@@ -56,7 +56,6 @@ type TypeEnv = Map Var TypeVal
 type TransType t = (Trans, t)
 
 instance HasVar TypePat where
-  var = TsVar
   unVar (TsVar v) = Just v
   unVar _ = Nothing
 

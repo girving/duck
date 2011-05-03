@@ -109,7 +109,7 @@ base = (complete datatypes . types . prims . io) (empty "") where
     tyargs = map singleton $ primArgs p
     ret = singleton $ primRet p
     args = zipWith const standardVars $ primArgs p
-    exp = ExpPrim (primPrim p) (map ExpVar args)
+    exp = ExpPrim (primPrim p) (map expLocal args)
   prims prog = foldl' primop prog $ Map.elems primOps
 
   types prog = prog { progDatatypes = datatypes }
@@ -122,10 +122,10 @@ io prog = map' $ join $ returnIO prog where
   [f,a,b,c,x] = map V ["f","a","b","c","x"]
   [ta,tb] = map TsVar [a,b]
   map' p = overload p (V "map") [typeArrow ta tb, typeIO ta] (typeIO tb) [f,c] $
-    (ExpBind x (ExpVar c)
-    (ExpReturn (ExpApply (ExpVar f) (ExpVar x))))
+    (ExpBind x (expLocal c)
+    (ExpReturn (ExpApply (expLocal f) (expLocal x))))
   join p = overload p (V "join") [typeIO (typeIO ta)] (typeIO ta) [c]
-    (ExpBind x (ExpVar c)
-    (ExpVar x))
+    (ExpBind x (expLocal c)
+    (expLocal x))
   returnIO p = overload p (V "returnIO") [TsVar a] (typeIO (TsVar a)) [x]
-    (ExpReturn (ExpVar x))
+    (ExpReturn (expLocal x))

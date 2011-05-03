@@ -120,7 +120,6 @@ opsPattern loc (OpUn _ _) = fatal $ stageMsg StageParse loc $ "unary operator in
 opsPattern loc (OpBin o l r) = PatCons o [opsPattern loc l, opsPattern loc r]
 
 instance HasVar Exp where
-  var = Var
   unVar (Var v) = Just v
   unVar Any = Just ignored
   unVar (ExpLoc _ e) = unVar e
@@ -128,7 +127,6 @@ instance HasVar Exp where
   unVar _ = Nothing
 
 instance HasVar Pattern where
-  var = PatVar
   unVar (PatVar v) = Just v
   unVar PatAny = Just ignored
   unVar (PatLoc _ p) = unVar p

@@ -15,6 +15,7 @@
 module Infer
   ( prog
   , expr
+  , atom
   , cons
   , spec
   , apply
@@ -22,7 +23,7 @@ module Infer
   , main
   , isTypeType
   -- * Environment access
-  , lookup
+  , lookupGlobal
   , lookupDatatype
   , lookupCons
   , lookupVariances
@@ -75,15 +76,11 @@ transOvers [] _ = Nothing
 transOvers os n = if all (tt ==) tts then Just tt else Nothing
   where tt:tts = map (map fst . (take n) . overArgs) os
 
-lookup :: Locals -> SrcLoc -> Var -> Infer TypeVal
-lookup env loc v
-  | Just r <- Map.lookup v env = return r -- check for local definitions first
-  | otherwise = getProg >>= lp where
+lookupGlobal :: SrcLoc -> Var -> Infer TypeVal
+lookupGlobal loc v = getProg >>= lp where
   lp prog
     | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
-    | Just _ <- Map.lookup v (progFunctions prog) = return $ typeClosure v [] -- if we find overloads, make a new closure
-    | Just d <- Map.lookup v (progDatatypes prog) = return $ typeType (TyCons d []) -- found a type constructor, return Type v
-    | otherwise = inferError loc $ "unbound variable" <+> quoted v
+    | otherwise = inferError loc $ "unbound global variable" <+> quoted v
 
 lookupDatatype :: SrcLoc -> TypeVal -> Infer [(Loc CVar, [TypeVal])]
 lookupDatatype loc (TyCons d [t]) | d == datatypeType = case t of
@@ -110,7 +107,7 @@ prog :: Infer TypeEnv
 prog = getProg >>= foldM (\g -> withGlobals g . definition) Map.empty . progDefinitions
 
 definition :: Definition -> Infer [(Var,TypeVal)]
-definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl) [] l $ do
+definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (\(L _ (V s)) -> s) vl) [] l $ do
   t <- expr Map.empty l e
   tl <- case (vl,t) of
           ([_],_) -> return [t]
@@ -121,8 +118,7 @@ definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (var . unLoc) vl)
 
 expr :: Locals -> SrcLoc -> Exp -> Infer TypeVal
 expr env loc = exp where
-  exp (ExpVal t _) = return t
-  exp (ExpVar v) = lookup env loc v
+  exp (ExpAtom a) = atom env loc a
   exp (ExpApply e1 e2) = do
     t1 <- exp e1
     t2 <- exp e2
@@ -132,15 +128,15 @@ expr env loc = exp where
     expr (Map.insert v t env) loc body
   exp (ExpCase _ [] Nothing) = return TyVoid
   exp (ExpCase _ [] (Just body)) = exp body
-  exp (ExpCase v pl def) = do
-    t <- lookup env loc v
+  exp (ExpCase a pl def) = do
+    t <- atom env loc a
     case t of
       TyVoid -> return TyVoid
       t -> do
         conses <- lookupDatatype loc t
         let caseType (c,vl,e') = case lookupCons conses c of
               Just tl | length tl == length vl ->
-                expr (insertList env vl tl) loc e'
+                expr (insertVars env vl tl) loc e'
               Just tl | a <- length tl ->
                 inferError loc $ "arity mismatch in pattern:" <+> quoted c <+> "expected" <+> a <+> "argument"<>sPlural tl 
                   <+>"but got" <+> quoted (hsep vl)
@@ -164,6 +160,13 @@ expr env loc = exp where
   exp (ExpSpec e ts) =
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr env l e
+
+atom :: Locals -> SrcLoc -> Atom -> Infer TypeVal
+atom _ _ (AtomVal t _) = return t
+atom env loc (AtomLocal v) = case Map.lookup v env of
+  Just r -> return r
+  Nothing -> inferError loc $ "internal error: unbound local variable" <+> quoted v
+atom _ loc (AtomGlobal v) = lookupGlobal loc v
 
 cons :: SrcLoc -> Datatype -> Int -> [TypeVal] -> Infer TypeVal
 cons loc d c args = do
@@ -320,7 +323,7 @@ cache f args (Over oloc atypes rt vl ~(Just e)) = do
 -- |Verify that main exists and has type IO ().
 main :: Infer ()
 main = do
-  main <- lookup Map.empty noLoc (V "main")
+  main <- lookupGlobal noLoc (V "main")
   typeReError noLoc ("main has type" <+> quoted main <> ", but should have type IO ()") $
     subset'' main (typeIO typeUnit)
 

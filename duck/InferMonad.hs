@@ -61,7 +61,7 @@ withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
 
 withGlobals :: TypeEnv -> Infer [(Var,TypeVal)] -> Infer TypeEnv
 withGlobals g f = Infer $ ReaderT $ \(p,s) -> 
-  foldr (uncurry Map.insert) g =.< 
+  foldr (uncurry insertVar) g =.< 
     runReaderT (unInfer f) (p{ progGlobalTypes = g },s)
 
 runInfer :: (Prog, InferStack) -> Infer a -> IO (a, FunctionInfo)
