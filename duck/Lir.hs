@@ -28,7 +28,6 @@ module Lir
   ) where
 
 import Prelude hiding (mapM)
-import Data.Maybe
 import Data.List hiding (union)
 import qualified Data.Set as Set
 import Data.Map (Map)
@@ -154,7 +153,7 @@ check prog = runSequence $ do
   expr s = mapM_ (\(v,l) -> lirError l $ quoted v <+> "undefined") . free' s noLoc
   datatype (_, d) = mapM_ cons (dataConses d) where
     cons (L l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
-      [] -> success
+      [] -> nop
       [v] -> lirError l $ "variable" <+> quoted v <+> "is unbound in constructor" <+> quoted (prettyap c tl)
       fv -> lirError l $ "variables" <+> quoted (hsep fv) <+> "are unbound in constructor" <+> quoted (prettyap c tl)
 

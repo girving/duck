@@ -18,7 +18,6 @@ module Util
   , zipWithCheck
   -- ** Maybe
   , MaybeT(..)
-  , success
   , mapMaybeT
   -- ** Map
   , insertList
@@ -189,9 +188,6 @@ instance MonadTrans MaybeT where
 instance Monad m => MonadPlus (MaybeT m) where
   mzero = MaybeT (return Nothing)
   mplus f g = MaybeT (runMaybeT f >>= maybe (runMaybeT g) (return . Just))
-
-success :: Monad m => m ()
-success = nop
 
 instance MonadError e m => MonadError e (MaybeT m) where
   throwError = lift . throwError

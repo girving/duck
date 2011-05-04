@@ -53,6 +53,7 @@ deriving instance Show Trans
 deriving instance Eq Variance
 
 type TypeEnv = Map Var TypeVal
+-- |A type with an associated Transform to be applied to the value.
 type TransType t = (Trans, t)
 
 instance HasVar TypePat where
@@ -129,7 +130,7 @@ subst env (TsVar v)
   | otherwise = TsVar v
 subst env (TsCons c tl) = TsCons c (map (subst env) tl)
 subst env (TsFun f) = TsFun (map fun f) where
-  fun (FunArrow s t) = FunArrow (subst env s) (subst env t)
+  fun (FunArrow tr s t) = FunArrow tr (subst env s) (subst env t)
   fun (FunClosure f tl) = FunClosure f (map (subst env) tl)
 subst _ TsVoid = TsVoid
 _subst = subst
@@ -139,7 +140,7 @@ substVoid :: TypeEnv -> TypePat -> TypeVal
 substVoid env (TsVar v) = Map.findWithDefault TyVoid v env
 substVoid env (TsCons c tl) = TyCons c (map (substVoid env) tl)
 substVoid env (TsFun f) = TyFun (map fun f) where
-  fun (FunArrow s t) = FunArrow (substVoid env s) (substVoid env t)
+  fun (FunArrow tr s t) = FunArrow tr (substVoid env s) (substVoid env t)
   fun (FunClosure f tl) = FunClosure f (map (substVoid env) tl)
 substVoid _ TsVoid = TyVoid
 
@@ -149,7 +150,7 @@ occurs env v (TsVar v') | Just t <- Map.lookup v' env = occurs' v t
 occurs _ v (TsVar v') = v == v'
 occurs env v (TsCons _ tl) = any (occurs env v) tl
 occurs env v (TsFun f) = any fun f where
-  fun (FunArrow s t) = occurs env v s || occurs env v t
+  fun (FunArrow _ s t) = occurs env v s || occurs env v t
   fun (FunClosure _ tl) = any (occurs env v) tl
 occurs _ _ TsVoid = False
 _occurs = occurs
@@ -173,7 +174,7 @@ instance Singleton a b => Singleton [a] [b] where
   singleton = map singleton
 
 instance Singleton a b => Singleton (TypeFun a) (TypeFun b) where
-  singleton (FunArrow s t) = FunArrow (singleton s) (singleton t)
+  singleton (FunArrow tr s t) = FunArrow tr (singleton s) (singleton t)
   singleton (FunClosure f tl) = FunClosure f (singleton tl)
  
 -- |Convert a singleton typeset to a type if possible
@@ -188,10 +189,10 @@ unsingleton' env (TsFun f) = TyFun =.< mapM (unsingletonFun' env) f
 unsingleton' _ TsVoid = Just TyVoid
 
 unsingletonFun' :: TypeEnv -> TypeFun TypePat -> Maybe (TypeFun TypeVal)
-unsingletonFun' env (FunArrow s t) = do
+unsingletonFun' env (FunArrow tr s t) = do
   s <- unsingleton' env s
   t <- unsingleton' env t
-  return (FunArrow s t)
+  return (FunArrow tr s t)
 unsingletonFun' env (FunClosure f tl) = FunClosure f =.< mapM (unsingleton' env) tl
 
 -- |Find the set of free variables in a typeset
@@ -199,7 +200,7 @@ freeVars :: TypePat -> [Var]
 freeVars (TsVar v) = [v]
 freeVars (TsCons _ tl) = concatMap freeVars tl
 freeVars (TsFun fl) = concatMap f fl where
-  f (FunArrow s t) = freeVars s ++ freeVars t
+  f (FunArrow _ s t) = freeVars s ++ freeVars t
   f (FunClosure _ tl) = concatMap freeVars tl
 freeVars TsVoid = []
 
@@ -210,7 +211,7 @@ datatypeUnit = box $ Data (V "()") noLoc [] [(L noLoc (V "()"), [])] []
 -- |Converts an annotation argument type to the effective type of the argument within the function.
 argType :: IsType t => TransType t -> t
 argType (NoTrans, t) = t
-argType (Delayed, t) = typeFun [FunArrow (typeCons datatypeUnit []) t]
+argType (Delayed, t) = typeFun [FunArrow NoTrans (typeCons datatypeUnit []) t]
 
 generalType :: [a] -> ([TypePat], TypePat)
 generalType vl = (tl,r) where
@@ -229,14 +230,19 @@ instance Pretty TypePat where
 instance Pretty TypeVal where
   pretty' = pretty' . singleton
 
-instance Pretty t => Pretty (TypeFun t) where
+instance (Pretty t, IsType t) => Pretty (TypeFun t) where
   pretty' (FunClosure f []) = pretty' f
   pretty' (FunClosure f tl) = prettyap f tl
-  pretty' (FunArrow s t) = 1 #> s <+> "->" <+> guard 1 t
+  pretty' (FunArrow NoTrans s t) = 1 #> s <+> "->" <+> guard 1 t
+  pretty' (FunArrow tr s t) = 1 #> (tr, s) <+> "->" <+> guard 1 t
 
-instance Pretty t => Pretty [TypeFun t] where
+instance (Pretty t, IsType t) => Pretty [TypeFun t] where
   pretty' [f] = pretty' f
   pretty' fl = 5 #> punctuate '&' fl
+
+instance Pretty Trans where
+  pretty' NoTrans = pretty' "<no transform>"
+  pretty' tr = pretty' (show tr)
 
 instance (Pretty t, IsType t) => Pretty (TransType t) where
   pretty' (NoTrans, t) = pretty' t

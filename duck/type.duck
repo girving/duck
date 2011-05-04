@@ -19,7 +19,7 @@ import srcLoc
 -- chosen to make all intersections representable by storing intersections of
 -- function types as well, but for now we still stick to storing unions.
 data TypeFun t of
-  FunArrow t t
+  FunArrow Trans t t
   FunClosure Var (List t)
 
 -- |A concrete type (the types of values are always concrete)

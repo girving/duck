@@ -17,7 +17,6 @@ module InferMonad
   ) where
 
 import Data.Map (Map)
-import qualified Data.Map as Map
 import Control.Monad.Reader
 import Control.Monad.State hiding (guard)
 import Control.Monad.Error hiding (guard)

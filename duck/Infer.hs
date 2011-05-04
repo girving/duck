@@ -201,10 +201,10 @@ apply loc (TyFun fl) t2 = do
     inferError loc ("conflicting transforms applying" <+> quoted fl <+> "to" <+> quoted t2)
   (,) t =.< joinList loc l
   where
-  fun f@(FunArrow a r) = do
+  fun f@(FunArrow t a r) = do
     typeReError loc ("cannot apply" <+> quoted f <+> "to" <+> quoted t2) $
       subset'' t2 a
-    return (NoTrans, r)
+    return (t, r)
   fun (FunClosure f args) = do
     let atl = args ++ [t2]
     o <- maybe
@@ -240,7 +240,7 @@ isTypeIO :: TypeVal -> Infer (Maybe TypeVal)
 isTypeIO = isTypeC1 datatypeIO
 
 instance TypeMonad Infer where
-  typeApply f = snd .=< apply noLoc f
+  typeApply f = apply noLoc f
 
 lookupVariances :: Prog -> Var -> [Variance]
 lookupVariances prog c | Just d <- Map.lookup c (progDatatypes prog) = dataVariances d

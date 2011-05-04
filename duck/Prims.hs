@@ -74,11 +74,11 @@ typeUnit :: IsType t => t
 typeUnit = typeC datatypeUnit
 
 typeArrow :: IsType t => t -> t -> t
-typeArrow s t = typeFun [FunArrow s t]
+typeArrow s t = typeFun [FunArrow NoTrans s t]
 
 isTypeArrow :: TypePat -> Maybe (TypePat,TypePat)
 isTypeArrow t
-  | Just [FunArrow s t] <- unTypeFun t = Just (s,t)
+  | Just [FunArrow NoTrans s t] <- unTypeFun t = Just (s,t)
   | otherwise = Nothing
 
 typeClosure :: IsType t => Var -> [t] -> t

@@ -171,9 +171,7 @@ apply global loc ft@(TyFun _) fun ae at = case unsafeUnvalue fun :: FunValue of
       (execError loc ("unresolved overload:" <+> quoted (prettyap f tl)))
       return =<< liftInfer (Infer.lookupOver f tl)
     -- we throw away the type because we can reconstruct it later with argType
-    let tt' = fst $ overArgs o !! length args
-    --when (tt /= tt') $ execError loc "XXX"
-    a <- ae tt'
+    a <- ae tt
     let dl = args ++ [a]
     case o of
       Over _ _ _ _ Nothing ->
@@ -223,7 +221,7 @@ testAll global = do
     | isPrefixOf "test_" v = do
         liftIO $ puts ("  "++v)
         _ <- runIO global (unsafeUnvalue d :: IOValue)
-        success
-    | otherwise = success
+        nop
+    | otherwise = nop
   nop = return valEmpty
 

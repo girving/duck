@@ -39,6 +39,10 @@ apply = id
 
 ignore x = True
 
+fold :: (a -> Delayed b -> a) -> a -> List b -> a
+fold _ x [] = x
+fold f x (y:l) = fold f (f x y) l
+
 test_exec = assert \ 3 == exec 3
 test_delayed = assert \ 3 == force (delay 3)
 test_if = assert \ ss_if True True (loop 0)
@@ -48,5 +52,6 @@ test_ambig2 = assert \ ambiguous (loop 0) == ()
 test_depend1 = assert \ apply depend True (loop 1)
 test_depend2 = assert \ depend 1 2 == 3
 test_liftor = assert \ id (lift_or True) (loop 1)
+test_fold = assert \ fold (||) False [False, True, False]
 
 main = testAll

@@ -8,7 +8,8 @@ test_bool3 = assert \ or [[],[()]]
 
 test_maybe = assert \ not $ maybe True bool $ map tail $ Just [()]
 test_maybe2 = assert \ not $ bool $ join (Just Nothing)
-test_maybe3 = assert \ fold (||) False (Just True)
+-- this looks funny, but it effectively undoes Delayed:
+test_maybe3 = assert \ fold (x -> y -> x || y) False (Just True)
 test_maybe4 = assert \ Just (Just False) > Just Nothing
 
 test_either = assert \ either not id (Left False)

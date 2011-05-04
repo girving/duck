@@ -28,7 +28,6 @@ import Pretty
 import Type hiding (freeVars)
 import PreType
 import Lir
-import qualified Lir
 import qualified Ir
 import Prims
 import Memory
@@ -108,7 +107,7 @@ datatypes baseDenv decls = do
         f Covariant = invVars
         f Invariant = return . freeVars
       invVars (TpFun fl) = concat =.< mapM fun fl where
-        fun (FunArrow s t) = (++) (freeVars s) =.< invVars t
+        fun (FunArrow _ s t) = (++) (freeVars s) =.< invVars t
         fun (FunClosure _ tl) = return $ concatMap freeVars tl
       invVars TpVoid = return []
 
@@ -152,7 +151,7 @@ toType _ _ (Ir.TsVar v) = TsVar v
 toType l denv (Ir.TsCons c tl) = TsCons d (map (toType l denv) tl) where
   d = fromMaybe (lirError l $ "unbound datatype" <+> quoted c) (Map.lookup c denv)
 toType l denv (Ir.TsFun fl) = TsFun $ map fun fl where
-  fun (Ir.FunArrow s t) = FunArrow (toType l denv s) (toType l denv t)
+  fun (Ir.FunArrow s t) = FunArrow tr (toType l denv s') (toType l denv t) where (tr, s') = typeArg s
   fun (Ir.FunClosure f tl) = FunClosure f (map (toType l denv) tl)
 toType _ _ Ir.TsVoid = TsVoid
 
@@ -165,7 +164,7 @@ toPreType l baseDenv denv (Ir.TsCons c tl) = TpCons d (map (toPreType l baseDenv
     _ | Just d <- Map.lookup c baseDenv -> toVol $ unsafeCastBox d
     _ -> lirError l $ "unbound datatype" <+> quoted c
 toPreType l baseDenv denv (Ir.TsFun fl) = TpFun $ map fun fl where
-  fun (Ir.FunArrow s t) = FunArrow (toPreType l baseDenv denv s) (toPreType l baseDenv denv t)
+  fun (Ir.FunArrow s t) = FunArrow tr (toPreType l baseDenv denv s') (toPreType l baseDenv denv t) where (tr, s') = typeArg s
   fun (Ir.FunClosure f tl) = FunClosure f (map (toPreType l baseDenv denv) tl)
 toPreType _ _ _ Ir.TsVoid = TpVoid
 

@@ -19,6 +19,6 @@ freeVars :: PreTypePat -> [Var]
 freeVars (TpVar v) = [v]
 freeVars (TpCons _ tl) = concatMap freeVars tl
 freeVars (TpFun fl) = concatMap f fl where
-  f (FunArrow s t) = freeVars s ++ freeVars t
+  f (FunArrow _ s t) = freeVars s ++ freeVars t
   f (FunClosure _ tl) = concatMap freeVars tl
 freeVars TpVoid = []

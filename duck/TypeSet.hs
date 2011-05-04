@@ -1,4 +1,4 @@
-{-# LANGUAGE ScopedTypeVariables, PatternGuards, FlexibleContexts #-}
+{-# LANGUAGE ScopedTypeVariables, PatternGuards, FlexibleContexts, FlexibleInstances #-}
 -- | Type "set" operations
 --
 -- Explanation of covariance and contravariance:
@@ -51,10 +51,23 @@ import Prims
 
 -- |TypeMonad stores type information about programs for use by the various
 -- type manipulation functions.
---
--- 'typeApply' says how to apply closure types to types.
 class MonadError TypeError m => TypeMonad m where
-  typeApply :: TypeVal -> TypeVal -> m TypeVal
+  -- |How to apply closure types to types, returning the transform to be applied to the argument, along with the result of the application (i.e., not a TransType)
+  typeApply :: TypeVal -> TypeVal -> m (Trans, TypeVal)
+
+class TypeSuccess r where
+  typeSuccess :: r
+  typeConcat :: [r] -> r
+
+instance TypeSuccess () where
+  typeSuccess = ()
+  typeConcat _ = ()
+
+success :: (TypeMonad m, TypeSuccess r) => m r
+success = return typeSuccess
+
+sequenceS :: (TypeMonad m, TypeSuccess r) => [m r] -> m r
+sequenceS l = typeConcat =.< sequence l
 
 -- |Constraints represent constraints on type variables in a typeset
 -- or list of typesets.  An entry x -> op t means the final type of x must
@@ -156,13 +169,13 @@ reduceFuns (f:fl) = do
     Just fl -> reduceFuns fl -- keep trying, maybe we can reduce more
   where
   reduce _ _ [] = return Nothing
-  reduce f@(FunArrow s t) prev (f'@(FunArrow s' t') : next) = do
+  reduce f@(FunArrow tr s t) prev (f'@(FunArrow tr' s' t') : next) = do
     ss <- intersect s s' -- function arguments are contravariant, so intersect
-    case ss of
-      Nothing -> reduce f (f':prev) next
-      Just ss -> do
+    case (intersectTrans tr tr', ss) of
+      (Just tr, Just ss) -> do
         tt <- union t t' -- return values are covariant, so union 
-        return $ Just $ FunArrow ss tt : reverse prev ++ next
+        return $ Just $ FunArrow tr ss tt : reverse prev ++ next
+      _ -> reduce f (f':prev) next
   reduce f prev (f' : next) | f == f' = return $ Just $ f : reverse prev ++ next
   reduce f prev (f' : next) = reduce f (f':prev) next
 
@@ -185,6 +198,11 @@ intersect (TyFun f) (TyFun f') = return (
 intersect TyVoid _ = return (Just TyVoid)
 intersect _ TyVoid = return (Just TyVoid)
 intersect x y = typeMismatch x "&" y
+
+intersectTrans :: Trans -> Trans -> Maybe Trans
+intersectTrans tr tr'
+  | tr == tr' = Just tr
+  | otherwise = Nothing
 
 -- |The equivalent of 'intersect' for lists.  The two lists must have the same size.
 --
@@ -232,17 +250,15 @@ type Leftovers = [Leftover]
 type EnvM m a = StateT Constraints m a
 type Env m = EnvM m Leftovers
 
-instance TypeMonad m => TypeMonad (StateT s m) where
+instance TypeMonad m => TypeMonad (StateT Constraints m) where
   typeApply t = lift . typeApply t
+
+instance TypeSuccess [Leftover] where
+  typeSuccess = []
+  typeConcat = concat
 
 runEnv :: Monad m => EnvM m (Either [Var] TypeEnv) -> m (Either [Var] TypeEnv)
 runEnv m = evalStateT m Map.empty
-
-successS :: Monad m => Env m
-successS = return []
-
-sequenceS :: Monad m => [Env m] -> Env m
-sequenceS l = concat =.< sequence l
 
 -- Iterate subset checking until all leftovers are resolved or we reach a
 -- fixpoint.  If all leftovers are resolved, we return Right env (success).
@@ -258,16 +274,16 @@ subsetFix prev leftovers = do
     else subsetFix env =<< sequenceS (map step leftovers) where
   step (Incomplete f f') = subsetFun' f f'
   step (Complete env f f') = get >>= \cnstrs ->
-    if any (changed cnstrs) (Map.toList env) then subsetFun' f f' else successS
+    if any (changed cnstrs) (Map.toList env) then subsetFun' f f' else success
   changed cnstrs (v,t) = let Just (_,t') = Map.lookup v cnstrs in t /= t'
   contravariantVars :: Leftover -> [Var]
   contravariantVars (Incomplete _ fl') = filter (\v -> Map.notMember v prev) (concatMap fun fl') where
-    fun (FunArrow s _) = freeVars s
+    fun (FunArrow _ s _) = freeVars s
     fun (FunClosure _ _) = []
   contravariantVars _ = []
 
 constrain :: TypeMonad m => Var -> ConstraintOp -> TypeVal -> Env m
-constrain v op t = successS << c op =<< Map.lookup v =.< get where
+constrain v op t = success << c op =<< Map.lookup v =.< get where
   c op Nothing = set op t
   c Superset (Just (Superset,t')) = set Superset =<< lift (union t t')
   c Equal    (Just (Superset,t')) = lift (subset'' t' t) >> set Equal t
@@ -284,7 +300,7 @@ subset' (TyCons c tl) (TsCons c' tl') = do
   arg Covariant t t' = subset' t t'
   arg Invariant t t' = equal' t t'
 subset' (TyFun f) (TsFun f') = subsetFun' f f'
-subset' TyVoid _ = successS
+subset' TyVoid _ = success
 subset' x y = typeMismatch x "<=" y
 
 equal' :: TypeMonad m => TypeVal -> TypePat -> Env m
@@ -293,7 +309,7 @@ equal' (TyCons c tl) (TsCons c' tl') = do
   (c,tl,tl') <- unifyCons c tl c' tl'
   sequenceS =<< zipWithVariances (\_ t -> return . equal' t) c tl tl'
 equal' (TyFun f) (TsFun f') = equalFun' f f'
-equal' TyVoid TsVoid = successS
+equal' TyVoid TsVoid = success
 equal' x y = typeMismatch x "==" y
 
 -- |Same as 'subset'', but the first argument is a type.
@@ -305,6 +321,22 @@ subset'' (TyCons c tl) (TyCons c' tl') = do
 subset'' (TyFun f) (TyFun f') = subsetFun'' f f'
 subset'' TyVoid _ = success
 subset'' x y = typeMismatch x "<=" y
+
+subsetTrans :: Trans -> Trans -> Bool
+subsetTrans = (==)
+
+equalTrans :: Trans -> Trans -> Bool
+equalTrans = (==)
+
+subsetTrans' :: (TypeMonad m, TypeSuccess r) => Trans -> Trans -> m r
+subsetTrans' tr tr'
+  | subsetTrans tr tr' = success
+  | otherwise = typeMismatch tr "<=" tr'
+
+equalTrans' :: (TypeMonad m, TypeSuccess r) => Trans -> Trans -> m r
+equalTrans' tr tr'
+  | equalTrans tr tr' = success
+  | otherwise = typeMismatch tr "==" tr'
 
 -- |Subset for function types
 --
@@ -324,8 +356,8 @@ subset'' x y = typeMismatch x "<=" y
 subsetFun' :: TypeMonad m => [TypeFun TypeVal] -> [TypeFun TypePat] -> Env m
 subsetFun' fl fl' = sequenceS (map (fun fl') fl) where
   fun fl' f
-    | List.elem (singleton f) fl' = successS -- succeed if f appears in fl'
-  fun (FunArrow s' t':_) f = do
+    | List.elem (singleton f) fl' = success -- succeed if f appears in fl'
+  fun (FunArrow tr' s' t':_) f = do
     cnstrs <- get
     let vars = freeVars s'
         cl = mapM (\v -> Map.lookup v cnstrs) vars
@@ -334,15 +366,16 @@ subsetFun' fl fl' = sequenceS (map (fun fl') fl) where
       Just cl -> do
         let env = Map.fromList (zip vars (map snd cl))
             Just s'' = unsingleton' env s'
-        t <- typeApply (TyFun [f]) s'' 
+        (tr, t) <- typeApply (TyFun [f]) s'' 
         sequenceS
           [ return [Complete env fl fl'] -- if anything in env changes, we'll need to redo this pair
+          , subsetTrans' tr tr'
           , subset' t t' ]
   fun _ _ = typeMismatch (TyFun fl) "<=" (TsFun fl')
 
 -- TODO: This is implemented only for primitive functions (single entry TypeFun's)
 equalFun' :: forall m. TypeMonad m => [TypeFun TypeVal] -> [TypeFun TypePat] -> Env m
-equalFun' [FunArrow s t] [FunArrow s' t'] = sequenceS [equal' s s', equal' t t']
+equalFun' [FunArrow tr s t] [FunArrow tr' s' t'] = sequenceS [equal' s s', equalTrans' tr tr', equal' t t']
 equalFun' [FunClosure v tl] [FunClosure v' tl'] | v == v', length tl == length tl' = sequenceS (zipWith equal' tl tl')
 equalFun' x y = typeMismatch (TyFun x) "==" (TsFun y)
 
@@ -350,9 +383,11 @@ equalFun' x y = typeMismatch (TyFun x) "==" (TsFun y)
 subsetFun'' :: forall m. TypeMonad m => [TypeFun TypeVal] -> [TypeFun TypeVal] -> m ()
 subsetFun'' fl fl' = mapM_ (fun fl') fl where
   fun fl' f | List.elem f fl' = success -- succeed if f appears in fl'
-  fun (FunArrow s' t':_) f = do
-    t <- typeApply (TyFun [f]) s'
-    subset'' t t'
+  fun (FunArrow tr' s' t':_) f = do
+    (tr, t) <- typeApply (TyFun [f]) s'
+    sequenceS
+      [ subsetTrans' tr tr'
+      , subset'' t t' ]
   fun _ _ = typeMismatch (TyFun fl) "<=" (TyFun fl')
 
 -- |The equivalent of 'subset' for lists.  To succeed, the second argument must
@@ -369,7 +404,7 @@ subsetList' tl tl'
 -- |Same as 'subsetList'', but for 'TypeVal' instead of 'TypePat'
 subsetList'' :: TypeMonad m => [TypeVal] -> [TypeVal] -> m ()
 subsetList'' tl tl'
-  | length tl <= length tl' = zipWithM_ subset'' tl tl'
+  | length tl <= length tl' = sequenceS $ zipWith subset'' tl tl'
   | otherwise = typeMismatchList tl "<=" tl'
 
 -- |Check whether one typeset list is a specialization of another.  Note that
@@ -408,6 +443,6 @@ specializationFuns' :: [TypeFun TypePat] -> [TypeFun TypePat] -> Map Var TypePat
 specializationFuns' fl fl' env = foldl (>>=) (return env) (map right fl') where
   right f' env = msum (map (\f -> spec f f' env) fl)
   spec f f' | f == f' = Just
-  spec (FunClosure _ _) (FunArrow _ _) = Just -- treat closures as specializations of all arrows
-  spec (FunArrow _ t) (FunArrow _ t') = specialization' t t'
+  spec (FunClosure _ _) (FunArrow _ _ _) = Just -- treat closures as specializations of all arrows
+  spec (FunArrow _ _ t) (FunArrow _ _ t') = specialization' t t'
   spec _ (FunClosure _ _) = const Nothing

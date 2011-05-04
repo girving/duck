@@ -10,13 +10,13 @@ import Var
 import SrcLoc
  
 {-# LINE 21 "type.duck" #-}
-data TypeFun t = FunArrow !t !t
+data TypeFun t = FunArrow !Trans !t !t
                | FunClosure !Var ![t]
  
 {-# LINE 21 "type.duck" #-}
 instance (Convert t) => Convert (TypeFun t) where
         {-# LINE 21 "type.duck" #-}
-        value (FunArrow a b) = valCons 0 [value a, value b]
+        value (FunArrow a b c) = valCons 0 [value a, value b, value c]
         {-# LINE 21 "type.duck" #-}
         value (FunClosure a b) = valCons 1 [value a, value b]
         {-# LINE 21 "type.duck" #-}
@@ -24,8 +24,8 @@ instance (Convert t) => Convert (TypeFun t) where
           = case unsafeTag val of
                 0
                   -> let {-# LINE 22 "type.duck" #-}
-                         (a, b) = unsafeUnvalCons val
-                       in FunArrow (unsafeUnvalue a) (unsafeUnvalue b)
+                         (a, b, c) = unsafeUnvalCons val
+                       in FunArrow (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
                 1
                   -> let {-# LINE 23 "type.duck" #-}
                          (a, b) = unsafeUnvalCons val
