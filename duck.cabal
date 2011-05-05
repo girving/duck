@@ -63,6 +63,8 @@ Executable duck
     c-sources:          duck/runtime.c
     if flag(debug)
         ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing
+        if impl(ghc >= 7)
+            ghc-options: -rtsopts -debug -auto-all
     if flag(boehm)
         cpp-options:     -DUSE_BOEHM
         extra-libraries: gc
