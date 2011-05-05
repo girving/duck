@@ -17,7 +17,9 @@ info: Parse.info
 
 .PHONY: $(DUCK)
 $(DUCK): $(CONFIG_DONE)
+	@echo "make: Entering directory \`..'"
 	$(SETUP) build
+	@echo "make: Leaving directory \`..'"
 
 $(CONFIG_DONE): $(TOPDIR)/duck.cabal
 	$(SETUP) configure $(CONFIGFLAGS)
