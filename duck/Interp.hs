@@ -48,8 +48,8 @@ packEnv s tenv env e = map grab (free s e) where
 
 unpackEnv :: [(Var, TypeVal, Value)] -> (LocalTypes, Locals)
 unpackEnv penv = (tenv,env) where
-  tenv = foldl (\e (v,t,_) -> Map.insert v t e) Map.empty penv
-  env = foldl (\e (v,_,d) -> Map.insert v d e) Map.empty penv
+  tenv = foldl' (\e (v,t,_) -> Map.insert v t e) Map.empty penv
+  env = foldl' (\e (v,_,d) -> Map.insert v d e) Map.empty penv
 
 -- |Process a list of definitions into the global environment.
 prog :: Exec Globals
@@ -61,7 +61,7 @@ definition env d@(Def vl e) = withFrame (V $ intercalate "," $ map (\(L _ (V s))
   dl <- case (vl,d) of
           ([_],_) -> return [d]
           (_, dl) -> return (unsafeUnvalConsN (length vl) dl)
-  return $ foldl (\g (v,d) -> insertVar v d g) env (zip (map unLoc vl) dl)
+  return $ foldl' (\g (v,d) -> insertVar v d g) env (zip (map unLoc vl) dl)
 
 -- |A placeholder for when implicit casts stop being nops on the data.
 cast :: TypeVal -> Exec Value -> Exec Value
@@ -132,7 +132,7 @@ emptyType loc = empty Set.empty where
   empty' _ (TyCons c _) | c == datatypeInt = return False
                         | c == datatypeChar = return False
                         | c == datatypeIO = return False
-                        | c == datatypeDelayed = return False
+                        | c == datatypeDelay = return False
                         | c == datatypeType = return True
   empty' seen (TyCons d args) = case dataConses d of
     [] -> execError loc ("datatype" <+> quoted d <+> "has no constructors, so we don't know if it's empty or not")
@@ -147,7 +147,7 @@ emptyType loc = empty Set.empty where
 -- |Evaluate an argument acording to the given transform
 transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Trans -> Exec Value
 transExpr global tenv env loc e NoTrans = expr global tenv env loc e
-transExpr _ tenv env _ e Delayed = return $ value $ ValDelay e (packEnv Set.empty tenv env e)
+transExpr _ tenv env _ e Delay = return $ value $ ValDelay e (packEnv Set.empty tenv env e)
 
 applyExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> TypeVal -> Value -> Exp -> Exec Value
 applyExpr global tenv env loc ft f e =
@@ -160,8 +160,8 @@ applyExpr global tenv env loc ft f e =
 -- "at" is the type of the value which was passed in, and is the type used for
 -- type inference/overload resolution.
 apply :: Globals -> SrcLoc -> TypeVal -> Value -> (Trans -> Exec Value) -> TypeVal -> Exec Value
-apply global loc ft@(TyFun _) fun ae at = case unsafeUnvalue fun :: FunValue of
-  ValClosure f types args -> do
+apply global loc ft@(TyFun _) fun ae at 
+  | ValClosure f types args <- unsafeUnvalue fun = do
     -- infer return type
     (tt, rt) <- liftInfer $ Infer.apply loc ft at
     when (rt == TyVoid) $ execError loc $ "cannot apply" <+> quoted ft <+> "to" <+> quoted at <> ", result is Void"
@@ -181,16 +181,18 @@ apply global loc ft@(TyFun _) fun ae at = case unsafeUnvalue fun :: FunValue of
         -- full function call (parallels Infer.cache)
         let tl = map snd tl'
         cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
-  ValDelay e penv -> do
-    (_, rt) <- liftInfer $ Infer.apply loc ft at
-    when (rt == TyVoid) $ execError loc $ "cannot force" <+> quoted ft <> ", result is Void"
+apply global loc t1 v1 e2 t2 = 
+  app Infer.isTypeType appty $
+  app Infer.isTypeDelay appdel $
+  e2 NoTrans >>= \v2 -> execError loc ("can't apply" <+> quoted (t1,v1) <+> "to" <+> quoted (t2,v2)) where
+  app t f r = maybe r f =<< liftInfer (t t1)
+  appty _ = return valEmpty
+  appdel _ = do
+    (_, rt) <- liftInfer $ Infer.apply loc t1 t2
+    when (rt == TyVoid) $ execError loc $ "cannot force" <+> quoted t1 <> ", result is Void"
     let (tenv,env) = unpackEnv penv
     cast rt $ expr global tenv env loc e
-apply _ loc t1 v1 e2 t2 = do
-  r <- liftInfer $ Infer.isTypeType t1
-  case r of
-    Just _ -> return valEmpty
-    Nothing -> e2 NoTrans >>= \v2 -> execError loc ("can't apply" <+> quoted (t1,v1) <+> "to" <+> quoted (t2,v2))
+    where ValDelay e penv = unsafeUnvalue v1
 
 -- |IO and main
 main :: Prog -> Globals -> IO ()

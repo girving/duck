@@ -1,6 +1,6 @@
 import base
 
-exec :: Delayed a -> a
+exec :: delay a -> a
 exec x = force x
 
 loop :: Int -> Bool
@@ -9,25 +9,25 @@ loop x = loop x
 bad_if :: Bool -> a -> a -> a
 bad_if c x y = (if) c x y
 
-ss_if :: Bool -> Delayed a -> Delayed a -> a
+ss_if :: Bool -> delay a -> delay a -> a
 ss_if b x y = force (bad_if b x y)
 
-ss_and :: Bool -> Delayed Bool -> Bool
+ss_and :: Bool -> delay Bool -> Bool
 ss_and c x = case c of 
   True -> force x
   False -> c
 
-ss_or :: Bool -> Delayed Bool -> Bool
+ss_or :: Bool -> delay Bool -> Bool
 ss_or c x = case c of
   True -> c
   False -> force x
 
-ambiguous :: Delayed Bool -> a
+ambiguous :: delay Bool -> a
 ambiguous x = ()
 ambiguous :: Int -> Int
 ambiguous x = x
 
-depend :: Bool -> Delayed Bool -> Bool
+depend :: Bool -> delay Bool -> Bool
 depend x y = x
 
 depend :: Int -> Int -> Int
@@ -39,7 +39,7 @@ apply = id
 
 ignore x = True
 
-fold :: (a -> Delayed b -> a) -> a -> List b -> a
+fold :: (a -> delay b -> a) -> a -> List b -> a
 fold _ x [] = x
 fold f x (y:l) = fold f (f x y) l
 

@@ -12,6 +12,7 @@ module Util
   , debugVal
   -- * Data
   -- ** List
+  , unique
   , groupPairs
   , spanJust
   , zipCheck
@@ -72,6 +73,10 @@ debug = traceShow
 
 debugVal :: Show a => a -> a
 debugVal a = debug a a
+
+unique :: Eq a => [a] -> Maybe a
+unique (x:l) | all (x ==) l = Just x
+unique _ = Nothing
 
 -- |'group' on keyed pairs.
 groupPairs :: Eq a => [(a,b)] -> [(a,[b])]

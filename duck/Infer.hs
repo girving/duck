@@ -22,6 +22,7 @@ module Infer
   , runIO
   , main
   , isTypeType
+  , isTypeDelay
   -- * Environment access
   , lookupGlobal
   , lookupDatatype
@@ -73,8 +74,7 @@ lookupOver f tl = get >.=
 -- |Given a set of overloads, return the transform annotations for the first @n@ arguments, if they are the same.
 transOvers :: [Overload t] -> Int -> Maybe [Trans]
 transOvers [] _ = Nothing
-transOvers os n = if all (tt ==) tts then Just tt else Nothing
-  where tt:tts = map (map fst . (take n) . overArgs) os
+transOvers os n = unique $ map (map fst . (take n) . overArgs) os
 
 lookupGlobal :: SrcLoc -> Var -> Infer TypeVal
 lookupGlobal loc v = getProg >>= lp where
@@ -211,19 +211,25 @@ apply loc (TyFun fl) t2 = do
       (withFrame f atl loc $ resolve f atl) -- no match, type not yet inferred
       return =<< lookupOver f atl
     return (fst $ overArgs o !! length args, overRet o)
-apply loc t1 t2 = (,) NoTrans =.< do
-  r <- isTypeType t1
-  case r of
-    Just (TyCons c tl) -> do
-      let vl = dataVariances c
-      if length tl < length vl
-        then typeType =.< if c == datatypeType then return t2 else do
-          r <- isTypeType t2
-          case r of
-            Just t -> return $ TyCons c (tl++[t])
-            _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to non-type" <+> quoted t2)
-        else typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2 <> "," <+> quoted c <+> "is already fully applied")
-    _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2)
+apply loc t1 t2 = liftM ((,) NoTrans) $
+  app Infer.isTypeType appty $
+  app Infer.isTypeDelay appdel $
+  typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2)
+  where
+  app t f r = maybe r f =<< t t1
+  appty ~(TyCons c tl)
+    | length tl < length (dataVariances c) =
+      typeType =.< if c == datatypeType then return t2 else do
+        r <- isTypeType t2
+        case r of
+          Just t -> return $ TyCons c (tl++[t])
+          _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to non-type" <+> quoted t2)
+    | otherwise = typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2 <> "," <+> quoted c <+> "is already fully applied")
+  appdel t = do
+    r <- tryError $ subset t2 typeUnit
+    case r of
+      Right (Right _) -> return t
+      _ -> typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2 <> ", can only be applied to" <+> quoted "()")
 
 isTypeC1 :: Datatype -> TypeVal -> Infer (Maybe TypeVal)
 isTypeC1 c tt = do
@@ -238,6 +244,9 @@ isTypeType = isTypeC1 datatypeType
 
 isTypeIO :: TypeVal -> Infer (Maybe TypeVal)
 isTypeIO = isTypeC1 datatypeIO
+
+isTypeDelay :: TypeVal -> Infer (Maybe TypeVal)
+isTypeDelay = isTypeC1 datatypeDelay
 
 instance TypeMonad Infer where
   typeApply f = apply noLoc f
@@ -256,7 +265,7 @@ resolve f args = do
   let nargs = length args
       prune o = tryError $ subsetList args (overTypes o) >. o
       isSpecOf :: Overload TypePat -> Overload TypePat -> Bool
-      isSpecOf a b = specializationList (overTypes a) (overTypes b)
+      isSpecOf a b = specializationArgs (overArgs a) (overArgs b)
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
       findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
       options overs = vcat $ map overDesc overs
@@ -267,7 +276,7 @@ resolve f args = do
 
   -- determine applicable argument type transform annotations
   tt <- maybe
-    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") (options overloads))
+    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:" $$ vcat args) (options overloads))
     return $ transOvers overloads nargs
   let at = zip tt args
 
@@ -278,7 +287,7 @@ resolve f args = do
     ([],_) ->
       -- all overloads are still partially applied, so create a closure overload
       return (Over noLoc at (typeClosure f args) [] Nothing)
-    _ | any ((TyVoid ==) . argType) at ->
+    _ | any ((TyVoid ==) . transType) at ->
       -- ambiguous with void arguments
       return (Over noLoc at TyVoid [] Nothing)
     _ ->
@@ -300,7 +309,7 @@ cache f args (Over oloc atypes rt vl ~(Just e)) = do
   tenv <- checkLeftovers noLoc ("invalid overload" <+> quoted (foldr typeArrow rt types)) $
     subsetList args types
   let al = zip tt args
-      tl = map (argType . fmap (substVoid tenv)) atypes
+      tl = map (transType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv rt
       or r = Over oloc (zip tt tl) r vl (Just e)
       eval = do

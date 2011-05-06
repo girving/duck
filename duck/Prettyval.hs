@@ -29,9 +29,13 @@ prettyval t v | t == typeChar = pretty' (unsafeUnvalue v :: Char)
 prettyval (TyCons d [t]) v | V "List" == dataName d = pretty' $
   brackets $ 3 #> punctuate ',' (map (prettyval t) v')
   where v' = unsafeUnvalue v :: [Value]
-prettyval (TyCons d [t]) _ | d == datatypeType = pretty' t
-prettyval (TyFun _) v = prettyfun (unsafeUnvalue v :: FunValue)
-prettyval (TyCons d [t]) v | d == datatypeIO = prettyio t (unsafeUnvalue v :: IOValue)
+prettyval (TyFun _) v 
+  | ValClosure v types args <- unsafeUnvalue v
+  = prettyop v (zipWith prettyval types args)
+prettyval (TyCons d [t]) v
+  | d == datatypeType = pretty' t
+  | d == datatypeIO = prettyio t (unsafeUnvalue v :: IOValue)
+  | d == datatypeDelay, ValDelay e _ <- unsafeUnvalue v = prettyop "delay" [e]
 prettyval (TyCons d args) v = prettyop c (zipWith prettyval tl' values) where
   (L _ c,tl) = dataConses d !! unsafeTag v
   tenv = Map.fromList (zip (dataTyVars d) args)
@@ -41,10 +45,6 @@ prettyval TyVoid _ = error "found an impossible Void value in prettyval"
 
 instance Pretty (TypeVal, Value) where
   pretty' (t,v) = 2 #> prettyval t v <+> "::" <+> t
-
-prettyfun :: FunValue -> Doc'
-prettyfun (ValClosure v types args) = prettyop v (zipWith prettyval types args)
-prettyfun (ValDelay e _) = prettyop "delay" [e]
 
 prettyio :: TypeVal -> IOValue -> Doc'
 prettyio t (ValLiftIO v) = pretty' (t,v)

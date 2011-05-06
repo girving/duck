@@ -291,8 +291,9 @@ arrows (L l stack) = case splitStack stack of
   (el,e) -> patterns (L l el) >.= fmap (\pl -> Lambda pl e)
 
 patternExp :: SrcLoc -> Exp -> P Pattern
-patternExp l (Apply e el) | Just (L _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
-patternExp l (Apply e _) = parseError l $ "only constructors can be applied in patterns, not" <+> quoted e
+patternExp l (Apply e el)  | Just (L _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
+patternExp l (Apply f [e]) | Just (L _ t) <- unVar l f = PatTrans t =.< patternExp l e
+patternExp l (Apply e _) = parseError l $ "only constructors and transforms can be applied in patterns, not" <+> quoted e
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
 patternExp l Any = return PatAny
@@ -322,8 +323,9 @@ tys :: Loc [Exp] -> P (Loc [TypePat])
 tys (L l el) = L l =.< mapM (typeExp l) el
 
 typeExp :: SrcLoc -> Exp -> P TypePat
-typeExp l (Apply e el) | Just (L _ c) <- unVar l e, isCons c = tscons c =.< mapM (typeExp l) el
-typeExp l (Apply e _) = parseError l ("only constructors can be applied in types, not" <+> quoted e)
+typeExp l (Apply e el)  | Just (L _ c) <- unVar l e, isCons c = tscons c =.< mapM (typeExp l) el
+typeExp l (Apply f [e]) | Just (L _ t) <- unVar l f = TsTrans t =.< typeExp l e
+typeExp l (Apply e _) = parseError l ("only constructors and transforms can be applied in types, not" <+> quoted e)
 typeExp l (Var c) | isCons c = return $ tscons c []
 typeExp l (Var v) = return $ TsVar v
 typeExp l (Lambda pl e) = do
@@ -342,6 +344,7 @@ typePat l (PatLambda pl p) = do
   tl <- mapM (typePat l) pl
   t <- typePat l p 
   return $ foldr typeArrow t tl
+typePat l (PatTrans t p) = TsTrans =.< typePat l p
 typePat _ (PatLoc l p) = typePat l p
 typePat l PatAny = parseError l ("'_' isn't implemented for types yet")
 typePat l p = parseError l $ patTypeDesc p <+> "expression not allowed in type"

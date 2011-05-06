@@ -103,19 +103,19 @@ instance Convert Variance where
  
 {-# LINE 62 "type.duck" #-}
 data Trans = NoTrans
-           | Delayed
+           | Delay
  
 {-# LINE 62 "type.duck" #-}
 instance Convert Trans where
         {-# LINE 62 "type.duck" #-}
         value (NoTrans) = valCons 0 []
         {-# LINE 62 "type.duck" #-}
-        value (Delayed) = valCons 1 []
+        value (Delay) = valCons 1 []
         {-# LINE 62 "type.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
                 0 -> NoTrans
-                1 -> Delayed
+                1 -> Delay
                 _ -> error "bad tag in unsafeUnvalue Trans"
  
 {-# LINE 67 "type.duck" #-}

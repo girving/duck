@@ -1,6 +1,6 @@
 import base
 
-delay_id :: Delayed a -> a
+delay_id :: delay a -> a
 delay_id x = force x
 
 delay_if False = id

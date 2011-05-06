@@ -39,7 +39,7 @@ data PrimOp = PrimOp
   }
 
 intOp :: Binop -> TypeVal -> (Int -> Int -> Value) -> PrimOp
-intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \[i,j] -> fun (unsafeUnvalue i) (unsafeUnvalue j)
+intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \ ~[i,j] -> fun (unsafeUnvalue i) (unsafeUnvalue j)
 
 intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
 intBoolOp op fun = intOp op typeBool $ \i j -> valCons (if fun i j then 1 else 0) []
@@ -61,9 +61,9 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
-  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] typeBool $ \[i,j] -> valCons (if (unsafeUnvalue i :: Char) == unsafeUnvalue j then 1 else 0) []
-  , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \[c] -> value (Char.ord $ unsafeUnvalue c)
-  , PrimOp IntCharChr "chr" [typeInt] typeChar $ \[c] -> value (Char.chr $ unsafeUnvalue c)
+  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] typeBool $ \ ~[i,j] -> valCons (if (unsafeUnvalue i :: Char) == unsafeUnvalue j then 1 else 0) []
+  , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \ ~[c] -> value (Char.ord $ unsafeUnvalue c)
+  , PrimOp IntCharChr "chr" [typeInt] typeChar $ \ ~[c] -> value (Char.chr $ unsafeUnvalue c)
   , ioOp Exit "exit" [typeInt] typeVoid
   , ioOp IOPutChar "put" [typeChar] typeUnit
   , ioOp TestAll "testAll" [] typeUnit
@@ -114,7 +114,7 @@ base = (complete datatypes . types . prims . io) (empty "") where
 
   types prog = prog { progDatatypes = datatypes }
   datatypes = Map.fromList $ map expand $ map ((!!) datatypeTuples) (0:[2..5]) ++
-    [ datatypeInt, datatypeChar, datatypeIO, datatypeDelayed, datatypeType, datatypeBool ]
+    [ datatypeInt, datatypeChar, datatypeIO, datatypeDelay, datatypeType, datatypeBool ]
     where expand d = (dataName d,d)
 
 io :: Prog -> Prog

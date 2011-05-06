@@ -12,6 +12,8 @@ import prims
 
 data FunValue of
   ValClosure Var (List TypeVal) (List Value) -- ^ Partially applied function (note that values are post-trans, and types are pre-trans)
+
+data DelayValue of
   ValDelay Exp (List (Var, TypeVal, Value)) -- ^ Delay (lazy) evaluation.
 
 -- Monadic IO

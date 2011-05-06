@@ -61,7 +61,7 @@ data Variance of Covariant ; Invariant
 -- |Possible kinds of type macro transformers.
 data Trans of
   NoTrans
-  Delayed -- :: Delay
+  Delay -- :: Delay
 
 -- |Datatype definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
 data Datatype of Data

@@ -38,13 +38,12 @@ flip f x y = f y x
 
 -------- macros
 
--- macro Delayed a = ...
--- type Delay a = () -> a
+-- type Delay a :: () -> a
 
-force :: (() -> a) -> a
+force :: Delay a -> a
 force x = x ()
 
-delay :: Delayed a -> (() -> a)
+delay :: delay a -> Delay a
 delay x = x
 
 --------- basic types and related functions
@@ -63,7 +62,7 @@ delay x = x
 bool :: Bool -> Bool
 bool x = x
 
-(if) :: a -> Delayed b -> Delayed b -> b
+(if) :: a -> delay b -> delay b -> b
 (if) c x y = force \ case bool c of
   True -> x
   False -> y
@@ -71,10 +70,10 @@ bool x = x
 not :: a -> Bool
 not x = if x then False else True
 
-(&&) :: a -> Delayed a -> a
+(&&) :: a -> delay a -> a
 x && y = if x then force y else x
 
-(||) :: a -> Delayed a -> a
+(||) :: a -> delay a -> a
 x || y = if x then x else force y
 
 (==) :: Bool -> Bool -> Bool

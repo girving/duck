@@ -14,7 +14,7 @@ module Prims
   , datatypeInt
   , datatypeChar
   , datatypeIO
-  , datatypeDelayed
+  , datatypeDelay
   , datatypeType
   , datatypeBool
   -- * Primitive types
@@ -27,6 +27,7 @@ module Prims
   , typeIO
   , typeType
   , typeBool
+  , transType
   ) where
 
 import Type
@@ -51,10 +52,11 @@ datatypeTuples = datatypeUnit : error "no singleton tuples" : map dt [2..] where
     c = tupleCons vars
     vars = take i standardVars
 
+datatypeUnit = makeDatatype (V "()") noLoc [] [(L noLoc (V "()"), [])] []
 datatypeInt = makeDatatype (V "Int") noLoc [] [] []
 datatypeChar = makeDatatype (V "Char") noLoc [] [] []
 datatypeIO = makeDatatype (V "IO") noLoc [V "a"] [] [Covariant]
-datatypeDelayed = makeDatatype (V "Delayed") noLoc [V "a"] [] [Covariant]
+datatypeDelay = makeDatatype (V "Delay") noLoc [V "a"] [] [Covariant]
 datatypeType = makeDatatype (V "Type") noLoc [V "t"] [] [Invariant]
 datatypeBool = makeDatatype (V "Bool") noLoc [] [(L noLoc (V "False"),[]),
                                                  (L noLoc (V "True") ,[])] []
@@ -101,6 +103,12 @@ typeType = typeC1 datatypeType
 
 typeBool :: IsType t => t
 typeBool = typeC datatypeBool
+
+-- |Converts an annotation argument type to the effective type of the argument within the function.
+transType :: IsType t => TransType t -> t
+transType (NoTrans, t) = t
+transType (Delay, t) = typeCons datatypeDelay [t]
+
 
 -- Pretty printing
 

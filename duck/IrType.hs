@@ -19,6 +19,7 @@ data TypePat
   = TsVar Var
   | TsCons CVar [TypePat]
   | TsFun [TypeFun]
+  | TsTrans Var TypePat
   | TsVoid
   deriving Show
 

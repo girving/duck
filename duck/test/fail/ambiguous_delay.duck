@@ -2,7 +2,7 @@ import base
 
 main = exit 0
 
-f :: Delayed Int -> Int -> Int
+f :: delay Int -> Int -> Int
 f _ y = y
 
 f :: Int -> Char -> Char

@@ -4,7 +4,7 @@
 
 module Value
   ( Env
-  , FunValue(..), IOValue(..)
+  , FunValue(..), DelayValue(..), IOValue(..)
   , valEmpty
   ) where
 

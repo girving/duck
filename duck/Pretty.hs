@@ -127,7 +127,7 @@ vcat l i = PP.vcat $ map (guard i) l
 
 -- | List version of $+$
 vsep :: Pretty t => [t] -> PrecDoc
-vsep = foldl ($+$) (const empty) . map pretty'
+vsep = foldr ($+$) (const empty) . map pretty'
 
 sep :: Pretty t => [t] -> PrecDoc
 sep l i = PP.sep $ map (guard i) l

@@ -97,6 +97,7 @@ data Pattern
   | PatLambda [Pattern] !Pattern
   | PatAs !Var !Pattern
   | PatSpec !Pattern !TypePat
+  | PatTrans !Var !Pattern
   | PatLoc SrcLoc !Pattern
   deriving Show
 

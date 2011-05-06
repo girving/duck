@@ -128,11 +128,11 @@ decl :: Ir.Decl -> State (Prog, Globals) ()
 decl (Ir.LetD v e) | (vl@(_:_),e') <- unwrapLambda noLoc e = case v of
   L _ (V "_") -> return ()
   _ -> do
-    e <- expr (Set.fromList vl) noLocExpr e'
+    e <- expr (Set.fromList (map snd vl)) noLocExpr e'
     function v vl e
 decl (Ir.Over v@(L l _) t e) = do
   denv <- get >.= progDatatypes . fst
-  let (tl,r,vl,e') = unwrapTypeLambda t e
+  let (tl,r,vl,e') = unwrapTypeLambda l t e
       tl' = map (second $ toType l denv) tl
       r' = toType l denv r
   e <- expr (Set.fromList vl) noLocExpr e'
@@ -151,8 +151,9 @@ toType _ _ (Ir.TsVar v) = TsVar v
 toType l denv (Ir.TsCons c tl) = TsCons d (map (toType l denv) tl) where
   d = fromMaybe (lirError l $ "unbound datatype" <+> quoted c) (Map.lookup c denv)
 toType l denv (Ir.TsFun fl) = TsFun $ map fun fl where
-  fun (Ir.FunArrow s t) = FunArrow tr (toType l denv s') (toType l denv t) where (tr, s') = typeArg s
+  fun (Ir.FunArrow s t) = FunArrow tr (toType l denv s') (toType l denv t) where (tr, s') = typeArg l s
   fun (Ir.FunClosure f tl) = FunClosure f (map (toType l denv) tl)
+toType l _ (Ir.TsTrans v _) = lirError l $ "cannot apply" <+> quoted v <+> "in type"
 toType _ _ Ir.TsVoid = TsVoid
 
 -- |Convert a pretype
@@ -164,44 +165,61 @@ toPreType l baseDenv denv (Ir.TsCons c tl) = TpCons d (map (toPreType l baseDenv
     _ | Just d <- Map.lookup c baseDenv -> toVol $ unsafeCastBox d
     _ -> lirError l $ "unbound datatype" <+> quoted c
 toPreType l baseDenv denv (Ir.TsFun fl) = TpFun $ map fun fl where
-  fun (Ir.FunArrow s t) = FunArrow tr (toPreType l baseDenv denv s') (toPreType l baseDenv denv t) where (tr, s') = typeArg s
+  fun (Ir.FunArrow s t) = FunArrow tr (toPreType l baseDenv denv s') (toPreType l baseDenv denv t) where (tr, s') = typeArg l s
   fun (Ir.FunClosure f tl) = FunClosure f (map (toPreType l baseDenv denv) tl)
+toPreType l _ _ (Ir.TsTrans v _) = lirError l $ "cannot apply" <+> quoted v <+> "in type"
 toPreType _ _ _ Ir.TsVoid = TpVoid
 
 -- |Add a toplevel statement
 definition :: [Loc Var] -> Exp -> State (Prog, Globals) ()
 definition vl e = modify $ first $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
 
+-- |Expand argument types to all possible combinations
+argTypes :: [TransType TypePat] -> [[TransType TypePat]]
+--argTypes (t@(Delay, _):tl) = map (t:) tll ++ map ((NoTrans, transType t):) tll where tll = argTypes tl
+argTypes (t:tl) = map (t:) $ argTypes tl
+argTypes tl = [tl]
+
 -- |Add a global overload
 overload :: Loc Var -> [TransType TypePat] -> TypePat -> [Var] -> Exp -> State (Prog, Globals) ()
-overload (L l v) tl r vl e | length vl == length tl = modify $ first $ \p -> p { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
+overload (L l v) tl r vl e | length vl == length tl = modify $ first $ \p -> p 
+  { progFunctions = Map.insertWith (++) v [ Over l t r vl (Just e) | t <- argTypes tl ] (progFunctions p) }
 overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
 
 -- |Add an unoverloaded global function
-function :: Loc Var -> [Var] -> Exp -> State (Prog, Globals) ()
-function v vl e = overload v (map ((,) NoTrans) tl) r vl e where
+function :: Loc Var -> [TransType Var] -> Exp -> State (Prog, Globals) ()
+function v tvl e = overload v (zip tr tl) r vl e where
+  (tr,vl) = unzip tvl
   (tl,r) = generalType vl
 
 -- |Unwrap a lambda as far as we can
-unwrapLambda :: SrcLoc -> Ir.Exp -> ([Var], Ir.Exp)
-unwrapLambda l (Ir.Lambda v e) = (v:vl, e') where
+unwrapLambda :: SrcLoc -> Ir.Exp -> ([TransType Var], Ir.Exp)
+unwrapLambda l (Ir.Lambda tr v e) = ((maybe NoTrans (trans l) tr, v):vl, e') where
   (vl, e') = unwrapLambda l e
 unwrapLambda _ (Ir.ExpLoc l e) = unwrapLambda l e
 unwrapLambda l e
   | hasLoc l = ([], Ir.ExpLoc l e)
   | otherwise = ([], e)
 
+trans :: SrcLoc -> Var -> Trans
+trans _ (V "delay") = Delay
+trans l v = lirError l $ "unknown transform" <+> quoted v <+> "applied"
+
 -- |Extracts the annotation from a possibly annotated argument type.
-typeArg :: Ir.TypePat -> TransType Ir.TypePat
-typeArg (Ir.TsCons (V "Delayed") [t]) = (Delayed, t)
-typeArg t = (NoTrans, t)
+typeArg :: SrcLoc -> Ir.TypePat -> TransType Ir.TypePat
+typeArg loc (Ir.TsTrans trv t) = (trans loc trv, t)
+typeArg _ t = (NoTrans, t)
 
 -- |Unwrap a type/lambda combination as far as we can
-unwrapTypeLambda :: Ir.TypePat -> Ir.Exp -> ([TransType Ir.TypePat], Ir.TypePat, [Var], Ir.Exp)
-unwrapTypeLambda (Ir.TsFun [Ir.FunArrow t tl]) (Ir.Lambda v e) =
-  let (tl', r, vl, e') = unwrapTypeLambda tl e in
-    (typeArg t:tl', r, v:vl, e')
-unwrapTypeLambda t e = ([], t, [], e)
+unwrapTypeLambda :: SrcLoc -> Ir.TypePat -> Ir.Exp -> ([TransType Ir.TypePat], Ir.TypePat, [Var], Ir.Exp)
+unwrapTypeLambda loc (Ir.TsFun [Ir.FunArrow t tl]) (Ir.Lambda vtr v e) = ((tr,t'):tl', r, v:vl, e') where
+  (ttr, t') = typeArg loc t
+  -- type transform takes precedence, but definition must match if specified
+  tr = case vtr of
+    Just vtr | trans loc vtr /= ttr -> lirError loc "transform applied in definition does not match type"
+    _ -> ttr
+  (tl', r, vl, e') = unwrapTypeLambda loc tl e
+unwrapTypeLambda _ t e = ([], t, [], e)
 
 -- |Expr uses both location and current variable being defined
 noLocExpr :: (SrcLoc, Maybe Var)
@@ -220,9 +238,9 @@ expr locals l@(loc,_) (Ir.Let v e rest) = do
   e <- expr locals (loc,Just v) e
   rest <- expr (addVar v locals) l rest
   return $ ExpLet v e rest
-expr locals l e@(Ir.Lambda _ _) = lambda locals l e
+expr locals l e@(Ir.Lambda _ _ _) = lambda locals l e
 expr locals l (Ir.Case v pl def) = do
-  pl <- mapM (\ (c,vl,e) -> expr (foldl (flip addVar) locals vl) l e >.= \e -> (c,vl,e)) pl
+  pl <- mapM (\ (c,vl,e) -> expr (foldl' (flip addVar) locals vl) l e >.= \e -> (c,vl,e)) pl
   def <- mapM (expr locals l) def
   a <- var locals l v
   return $ ExpCase a pl def
@@ -259,11 +277,11 @@ lambda :: InScopeSet -> (SrcLoc,Maybe Var) -> Ir.Exp -> State (Prog, Globals) Ex
 lambda locals l@(loc,v) e = do
   f <- freshenM $ fromMaybe (V "f") v -- use the suggested function name
   let (vl,e') = unwrapLambda loc e
-      vls = Set.fromList $ filter (/= V "_") vl
+      vls = Set.fromList $ filter (/= V "_") (map snd vl)
       localsPlus = Set.union locals vls
   e <- expr localsPlus l e'
   let vs = free vls e
-  function (L loc f) (vs ++ vl) e
+  function (L loc f) (map ((,) NoTrans) vs ++ vl) e
   return $ foldl ExpApply (ExpAtom $ closure f) (map expLocal vs)
 
 -- |Generate a fresh variable

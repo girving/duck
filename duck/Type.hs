@@ -16,12 +16,9 @@ module Type
   , generalType
   -- * Transformation annotations
   , Trans(..), TransType
-  , argType
   -- * Datatypes
   , Datatype, makeDatatype
   , dataName, dataLoc, dataTyVars, dataConses, dataVariances
-  -- * Primitive datatypes (see Prims for others)
-  , datatypeUnit
   ) where
 
 import Data.Map (Map)
@@ -204,15 +201,6 @@ freeVars (TsFun fl) = concatMap f fl where
   f (FunClosure _ tl) = concatMap freeVars tl
 freeVars TsVoid = []
 
--- |Unit datatype
-
-datatypeUnit = box $ Data (V "()") noLoc [] [(L noLoc (V "()"), [])] []
-
--- |Converts an annotation argument type to the effective type of the argument within the function.
-argType :: IsType t => TransType t -> t
-argType (NoTrans, t) = t
-argType (Delayed, t) = typeFun [FunArrow NoTrans (typeCons datatypeUnit []) t]
-
 generalType :: [a] -> ([TypePat], TypePat)
 generalType vl = (tl,r) where
   r : tl = map TsVar (take (length vl + 1) standardVars)
@@ -242,8 +230,8 @@ instance (Pretty t, IsType t) => Pretty [TypeFun t] where
 
 instance Pretty Trans where
   pretty' NoTrans = pretty' "<no transform>"
-  pretty' tr = pretty' (show tr)
+  pretty' Delay = pretty' "delay"
 
 instance (Pretty t, IsType t) => Pretty (TransType t) where
   pretty' (NoTrans, t) = pretty' t
-  pretty' (c, t) = prettyap (show c) [t]
+  pretty' (c, t) = prettyap c [t]

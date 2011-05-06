@@ -44,7 +44,7 @@ data Exp
   | Int !Int
   | Char !Char
   | Var !Var
-  | Lambda !Var Exp                     -- ^ Simple lambda expression: @VAR -> EXP@
+  | Lambda (Maybe Var) !Var Exp         -- ^ Simple lambda expression: @[TRANS] VAR -> EXP@
   | Apply Exp Exp                       -- ^ Application: @EXP EXP@
   | Let !Var Exp Exp                    -- ^ Simple variable assignment: @let VAR = EXP in EXP@
   | Case Var [(CVar, [Var], Exp)] (Maybe Exp) -- ^ @case VAR of { CVAR VARs -> EXP ; ... [ ; _ -> EXP ] }@
@@ -107,6 +107,7 @@ pattern_vars s (Ast.PatList pl) = foldl' pattern_vars s pl
 pattern_vars s (Ast.PatAs v p) = pattern_vars (Set.insert v s) p
 pattern_vars s (Ast.PatSpec p _) = pattern_vars s p
 pattern_vars s (Ast.PatLambda pl p) = foldl' pattern_vars (pattern_vars s p) pl
+pattern_vars s (Ast.PatTrans _ p) = pattern_vars s p
 pattern_vars s (Ast.PatLoc _ p) = pattern_vars s p
 
 prog_precs :: PrecEnv -> Ast.Prog -> PrecEnv
@@ -166,6 +167,11 @@ patsNames :: InScopeSet -> Int -> [[Pattern]] -> (InScopeSet, [Var])
 patsNames s n [p] = patNames s n p
 patsNames s n _ = freshVars s n
 
+unPatTrans :: Ast.Pattern -> (Maybe Var, Ast.Pattern)
+unPatTrans (Ast.PatTrans t p) = (Just t, p)
+unPatTrans (Ast.PatLoc l p) = fmap (Ast.PatLoc l) $ unPatTrans p
+unPatTrans p = (Nothing, p)
+
 mapss :: (a -> (InScopeSet, b)) -> [a] -> (InScopeSet, [b])
 --mapss f = first Set.unions . unzipWith f l
 mapss f = mapAccumL (\s -> first (Set.union s) . f) Set.empty
@@ -216,6 +222,7 @@ prog pprec p = (precs, decls p) where
   pattern' s _ (Ast.PatInt i) = (anyPat { patCheck = Just (\v -> Prim (Binop IntEqOp) [Int i, Spec (Var v) typeInt]) }, s)
   pattern' s _ (Ast.PatChar c) = (anyPat { patCheck = Just (\v -> Prim (Binop ChrEqOp) [Char c, Spec (Var v) typeChar]) }, s)
   pattern' _ l (Ast.PatLambda _ _) = irError l $ quoted "->" <+> "(lambda) patterns not yet implemented"
+  pattern' _ l (Ast.PatTrans t _) = irError l $ "cannot apply" <+> quoted t <+> "in pattern here"
 
   patterns' :: Map Var SrcLoc -> SrcLoc -> [Ast.Pattern] -> ([Pattern], Map Var SrcLoc)
   patterns' s l = foldl' (\(pl,s) -> first ((pl ++).(:[])) . pattern' s l) ([],s)
@@ -255,9 +262,8 @@ prog pprec p = (precs, decls p) where
     body = lambdacases s l n (map unLoc defs)
     l = loc defs
     (defs,rest) = spanJust isfdef dl
-    n = case group $ map (length . fst . unLoc) defs of
-      [n:_] -> n
-      _ -> irError l $ "equations for" <+> quoted f <+> "have different numbers of arguments"
+    n = fromMaybe (irError l $ "equations for" <+> quoted f <+> "have different numbers of arguments") $ 
+      unique $ map (length . fst . unLoc) defs
 
   -- |process a multi-argument lambda expression
   lambdas :: InScopeSet -> SrcLoc -> [Ast.Pattern] -> Ast.Exp -> Exp
@@ -265,9 +271,13 @@ prog pprec p = (precs, decls p) where
 
   -- |process a multi-argument multi-case function set
   lambdacases :: InScopeSet -> SrcLoc -> Int -> [([Ast.Pattern], Ast.Exp)] -> Exp
-  lambdacases s loc n arms = foldr Lambda body vl where
+  lambdacases s loc n arms = foldr (uncurry Lambda) body (zip tl vl) where
     (s',vl) = patsNames (Set.union s ps) n b
-    ((ps,[b]),body) = matcher cases s' loc (vl,arms)
+    ((ps,[b]),body) = matcher cases s' loc (vl,arms')
+    (tls, arms') = unzip $ map transarm arms
+    transarm (pl, e) = second (\p -> (p, e)) $ unzip $ map unPatTrans pl
+    tl = map (fromMaybe (irError loc "cases apply inconsistent transforms") . unique) $
+      transpose tls
 
   letpat :: InScopeSet -> SrcLoc -> (Ast.Pattern, Ast.Exp, Ast.Exp) -> (InScopeSet, [Switch])
   letpat s0 loc (p,e,c) = (ps, [Switch [e'] [CaseMatch p' id (CaseBody c')]]) where
@@ -321,7 +331,7 @@ prog pprec p = (precs, decls p) where
     withFall f s [x] fall = f s x fall
     withFall f s (x:l) fall = letf $ f s' x (Just callf) where
       (s',fv) = freshen s (V "fall")
-      letf = Let fv $ Lambda ignored $ withFall f s' l fall
+      letf = Let fv $ (Lambda Nothing) ignored $ withFall f s' l fall
       callf = Apply (Var fv) (Var $ V "()")
 
     switch :: InScopeSet -> Switch -> Maybe Exp -> Exp
@@ -339,7 +349,7 @@ prog pprec p = (precs, decls p) where
         Nothing -> switch s (Switch vals (map snd alts)) fall
         Just _ -> Case var (map cons alts') fall
       where
-        alts = map (\(CaseMatch (p@(Pat{ patCons = c }):pl) f e) -> (c,(CaseMatch pl (patLets var p . f) (checknext p e)))) group
+        alts = map (\(CaseMatch ~(p@(Pat{ patCons = c }):pl) f e) -> (c,(CaseMatch pl (patLets var p . f) (checknext p e)))) group
         -- sort alternatives by toplevel tag (along with arity)
         alts' = groupPairs $ sortBy (on compare fst) $
               map (\(Just (c,cp), CaseMatch p pf pe) -> ((c,length cp), CaseMatch (cp++p) pf pe)) alts
@@ -381,8 +391,10 @@ instance Pretty Exp where
   pretty' (Int i) = pretty' i
   pretty' (Char c) = pretty' (show c)
   pretty' (Var v) = pretty' v
-  pretty' (Lambda v e) = 1 #>
+  pretty' (Lambda Nothing v e) = 1 #>
     v <+> "->" <+> guard 1 e
+  pretty' (Lambda (Just t) v e) = 1 #>
+    prettyop t [v] <+> "->" <+> guard 1 e
   pretty' (Apply (Apply (Var (V ":")) h) t) | Just t' <- extract t =
     pretty' $ brackets $ 3 #> punctuate ',' (h : t') where
     extract (Var (V "[]")) = Just []
