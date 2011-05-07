@@ -30,7 +30,7 @@ module TypeSet
   , subset''
   , subsetList
   , subsetList''
-  , specializationArgs
+  , specializationList
   , union
   ) where
 
@@ -432,15 +432,8 @@ specialization' (TsCons _ _) (TsCons c _) env | c == datatypeType = Just env
 specialization' (TsFun f) (TsFun f') env = specializationFuns' f f' env
 specialization' _ _ _ = Nothing
 
-specializationArg' :: TransType TypePat -> TransType TypePat -> Map Var TypePat -> Maybe (Map Var TypePat)
-specializationArg' (_, t1) (NoTrans, t2) env = specialization' t1 t2 env
-specializationArg' (_, t1) t2 env = {- specialization' t1 (transType t2) env `mplus` -} specialization' t1 (snd t2) env
-
-specializationArgs :: [TransType TypePat] -> [TransType TypePat] -> Bool
-specializationArgs tl tl' = isJust (specializationArgs' tl tl' Map.empty)
-
-specializationArgs' :: [TransType TypePat] -> [TransType TypePat] -> Map Var TypePat -> Maybe (Map Var TypePat)
-specializationArgs' tl tl' env = List.foldl' (>>=) (return env) =<< zipWithCheck specializationArg' tl tl'
+specializationList :: [TypePat] -> [TypePat] -> Bool
+specializationList tl tl' = isJust (specializationList' tl tl' Map.empty)
 
 specializationList' :: [TypePat] -> [TypePat] -> Map Var TypePat -> Maybe (Map Var TypePat)
 specializationList' tl tl' env = List.foldl' (>>=) (return env) =<< zipWithCheck specialization' tl tl'

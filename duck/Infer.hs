@@ -265,7 +265,7 @@ resolve f args = do
   let nargs = length args
       prune o = tryError $ subsetList args (overTypes o) >. o
       isSpecOf :: Overload TypePat -> Overload TypePat -> Bool
-      isSpecOf a b = specializationArgs (overArgs a) (overArgs b)
+      isSpecOf a b = specializationList (overTypes a) (overTypes b)
       isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
       findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
       options overs = vcat $ map overDesc overs

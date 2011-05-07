@@ -174,16 +174,10 @@ toPreType _ _ _ Ir.TsVoid = TpVoid
 definition :: [Loc Var] -> Exp -> State (Prog, Globals) ()
 definition vl e = modify $ first $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
 
--- |Expand argument types to all possible combinations
-argTypes :: [TransType TypePat] -> [[TransType TypePat]]
---argTypes (t@(Delay, _):tl) = map (t:) tll ++ map ((NoTrans, transType t):) tll where tll = argTypes tl
-argTypes (t:tl) = map (t:) $ argTypes tl
-argTypes tl = [tl]
-
 -- |Add a global overload
 overload :: Loc Var -> [TransType TypePat] -> TypePat -> [Var] -> Exp -> State (Prog, Globals) ()
 overload (L l v) tl r vl e | length vl == length tl = modify $ first $ \p -> p 
-  { progFunctions = Map.insertWith (++) v [ Over l t r vl (Just e) | t <- argTypes tl ] (progFunctions p) }
+  { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
 overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
 
 -- |Add an unoverloaded global function
