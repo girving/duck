@@ -344,7 +344,7 @@ typePat l (PatLambda pl p) = do
   tl <- mapM (typePat l) pl
   t <- typePat l p 
   return $ foldr typeArrow t tl
-typePat l (PatTrans t p) = TsTrans =.< typePat l p
+typePat l (PatTrans t p) = TsTrans t =.< typePat l p
 typePat _ (PatLoc l p) = typePat l p
 typePat l PatAny = parseError l ("'_' isn't implemented for types yet")
 typePat l p = parseError l $ patTypeDesc p <+> "expression not allowed in type"
