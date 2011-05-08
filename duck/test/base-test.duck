@@ -1,28 +1,26 @@
 import base
 
-test_misc = assert $ 1 == (id . flip const []) 1
+assert $ 1 == (id . flip const []) 1
 
-test_bool = assert \ True > False || not False
-test_bool2 = assert \ and [1,2,3]
-test_bool3 = assert \ or [[],[()]]
+assert \ True > False || not False
+assert \ and [1,2,3]
+assert \ or [[],[()]]
 
-test_maybe = assert \ not $ maybe True bool $ map tail $ Just [()]
-test_maybe2 = assert \ not $ bool $ join (Just Nothing)
+assert \ not $ maybe True bool $ map tail $ Just [()]
+assert \ not $ bool $ join (Just Nothing)
 -- this looks funny, but it effectively undoes Delayed:
-test_maybe3 = assert \ fold (x -> y -> x || y) False (Just True)
-test_maybe4 = assert \ Just (Just False) > Just Nothing
+assert \ fold (x -> y -> x || y) False (Just True)
+assert \ Just (Just False) > Just Nothing
 
-test_either = assert \ either not id (Left False)
-test_either2 = assert \ Left (Right 2) > Left (Left 3)
+assert \ either not id (Left False)
+assert \ Left (Right 2) > Left (Left 3)
 
-test_list = assert \ tail $ head [[1,2]]
-test_list2 = assert \ [[]] == join [[],[[]]]
-test_list3 = assert \ [3,1] < map succ [2,1]
-test_list4 = assert \ [1,2,3] == fold (++) [1] [[2],[],[3]]
-test_list5 = assert \ range 1 3 == reverse [3,2,1]
-test_list6 = assert \ 3 == length [[[[]]],[],[[]]]
+assert \ tail $ head [[1,2]]
+assert \ [[]] == join [[],[[]]]
+assert \ [3,1] < map succ [2,1]
+assert \ [1,2,3] == fold (++) [1] [[2],[],[3]]
+assert \ range 1 3 == reverse [3,2,1]
+assert \ 3 == length [[[[]]],[],[[]]]
 
-test_tuple = assert \ (3,Just (),[]) > (3,Nothing,[0])
-test_tuple2 = assert \ 3 == snd \ (curry . uncurry) (flip const) (1,2) (1,3)
-
-main = testAll
+assert \ (3,Just (),[]) > (3,Nothing,[0])
+assert \ 3 == snd \ (curry . uncurry) (flip const) (1,2) (1,3)

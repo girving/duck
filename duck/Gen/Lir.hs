@@ -22,8 +22,6 @@ data Exp = ExpLoc !SrcLoc !Exp
          | ExpCase !Atom ![(Var, [Var], Exp)] !(Maybe Exp)
          | ExpPrim !Prim ![Exp]
          | ExpSpec !Exp !TypePat
-         | ExpBind !Var !Exp !Exp
-         | ExpReturn !Exp
  
 {-# LINE 11 "lir.duck" #-}
 instance Convert Exp where
@@ -43,10 +41,6 @@ instance Convert Exp where
         value (ExpPrim a b) = valCons 6 [value a, value b]
         {-# LINE 11 "lir.duck" #-}
         value (ExpSpec a b) = valCons 7 [value a, value b]
-        {-# LINE 11 "lir.duck" #-}
-        value (ExpBind a b c) = valCons 8 [value a, value b, value c]
-        {-# LINE 11 "lir.duck" #-}
-        value (ExpReturn a) = valCons 9 [value a]
         {-# LINE 11 "lir.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
@@ -79,31 +73,26 @@ instance Convert Exp where
                   -> let {-# LINE 19 "lir.duck" #-}
                          (a, b) = unsafeUnvalCons val
                        in ExpSpec (unsafeUnvalue a) (unsafeUnvalue b)
-                8
-                  -> let {-# LINE 21 "lir.duck" #-}
-                         (a, b, c) = unsafeUnvalCons val
-                       in ExpBind (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
-                9 -> ExpReturn (unsafeUnvalue (unsafeUnvalCons val))
                 _ -> error "bad tag in unsafeUnvalue Exp"
  
-{-# LINE 24 "lir.duck" #-}
+{-# LINE 21 "lir.duck" #-}
 data Atom = AtomVal !TypeVal !Value
           | AtomLocal !Var
           | AtomGlobal !Var
  
-{-# LINE 24 "lir.duck" #-}
+{-# LINE 21 "lir.duck" #-}
 instance Convert Atom where
-        {-# LINE 24 "lir.duck" #-}
+        {-# LINE 21 "lir.duck" #-}
         value (AtomVal a b) = valCons 0 [value a, value b]
-        {-# LINE 24 "lir.duck" #-}
+        {-# LINE 21 "lir.duck" #-}
         value (AtomLocal a) = valCons 1 [value a]
-        {-# LINE 24 "lir.duck" #-}
+        {-# LINE 21 "lir.duck" #-}
         value (AtomGlobal a) = valCons 2 [value a]
-        {-# LINE 24 "lir.duck" #-}
+        {-# LINE 21 "lir.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
                 0
-                  -> let {-# LINE 25 "lir.duck" #-}
+                  -> let {-# LINE 22 "lir.duck" #-}
                          (a, b) = unsafeUnvalCons val
                        in AtomVal (unsafeUnvalue a) (unsafeUnvalue b)
                 1 -> AtomLocal (unsafeUnvalue (unsafeUnvalCons val))

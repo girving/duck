@@ -2,5 +2,3 @@ import base
 
 _ = case Nothing of
   Just _ -> 1
-
-main = exit 0

@@ -1,3 +1,2 @@
 import base
 data A of { B ; B }
-main = exit 0

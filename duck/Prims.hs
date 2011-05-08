@@ -13,7 +13,6 @@ module Prims
   , isDatatypeTuple
   , datatypeInt
   , datatypeChar
-  , datatypeIO
   , datatypeDelay
   , datatypeType
   , datatypeBool
@@ -24,7 +23,6 @@ module Prims
   , typeTuple
   , typeInt
   , typeChar
-  , typeIO
   , typeType
   , typeBool
   , transType
@@ -55,7 +53,6 @@ datatypeTuples = datatypeUnit : error "no singleton tuples" : map dt [2..] where
 datatypeUnit = makeDatatype (V "()") noLoc [] [(L noLoc (V "()"), [])] []
 datatypeInt = makeDatatype (V "Int") noLoc [] [] []
 datatypeChar = makeDatatype (V "Char") noLoc [] [] []
-datatypeIO = makeDatatype (V "IO") noLoc [V "a"] [] [Covariant]
 datatypeDelay = makeDatatype (V "Delay") noLoc [V "a"] [] [Covariant]
 datatypeType = makeDatatype (V "Type") noLoc [V "t"] [] [Invariant]
 datatypeBool = makeDatatype (V "Bool") noLoc [] [(L noLoc (V "False"),[]),
@@ -94,9 +91,6 @@ typeInt = typeC datatypeInt
 
 typeChar :: IsType t => t
 typeChar = typeC datatypeChar
-
-typeIO :: IsType t => t -> t
-typeIO = typeC1 datatypeIO
 
 typeType :: IsType t => t -> t
 typeType = typeC1 datatypeType

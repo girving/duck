@@ -34,6 +34,7 @@ import ParseOps
 data Decl
   = LetD !(Loc Var) Exp                 -- ^ Single symbol definition, either a variable or a function without a corresponding type specification (with 'Lambda'): @VAR = EXP@
   | LetM [Loc Var] Exp                  -- ^ Tuple assignment/definition, from a pattern definition with 0 or more than 1 variable: @(VARs) = EXP@
+  | ExpD Exp                            -- ^ Top level expression: @EXP@
   | Over !(Loc Var) !TypePat Exp        -- ^ Overload paired type declaration and definition: @VAR :: TYPE = EXP@
   | Data !(Loc CVar) [Var] [(Loc CVar, [TypePat])] -- ^ Datatype declaration: @data CVAR VARs = { CVAR TYPEs ; ... }@
   deriving Show
@@ -50,9 +51,6 @@ data Exp
   | Case Var [(CVar, [Var], Exp)] (Maybe Exp) -- ^ @case VAR of { CVAR VARs -> EXP ; ... [ ; _ -> EXP ] }@
   | Prim !Prim [Exp]                    -- ^ Primitive function call: @PRIM EXPs@
   | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
-    -- Monadic IO
-  | Bind !Var Exp Exp                   -- ^ IO binding: @EXP >>= \VAR -> EXP@
-  | Return Exp                          -- ^ IO return
   deriving Show
 
 -- Ast to IR conversion
@@ -92,6 +90,7 @@ decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
 decl_vars s (Ast.SpecD (L _ v) _) = Set.insert v s 
 decl_vars s (Ast.DefD (L _ v) _ _) = Set.insert v s 
 decl_vars s (Ast.LetD p _) = pattern_vars s p
+decl_vars s (Ast.ExpD _) = s
 decl_vars s (Ast.Data _ _ _) = s
 decl_vars s (Ast.Infix _ _) = s
 decl_vars s (Ast.Import _) = s
@@ -201,6 +200,7 @@ prog pprec p = (precs, decls p) where
     body r = match globals [Switch [e] [CaseMatch [p] id (CaseBody r)]] Nothing
     e = expr globals l ae
     (p,vm) = pattern' Map.empty l ap
+  decls (L l (Ast.ExpD e) : rest) = ExpD (expr globals l e) : decls rest
   decls (L _ (Ast.Data t args cons) : rest) = Data t args cons : decls rest
   decls (L _ (Ast.Infix _ _) : rest) = decls rest
   decls (L _ (Ast.Import _) : rest) = decls rest
@@ -248,9 +248,9 @@ prog pprec p = (precs, decls p) where
   expr _ l a = irError l $ quoted a <+> "not allowed in expressions"
 
   seq :: InScopeSet -> [Loc Ast.Stmt] -> Exp
-  seq _ [] = Var (V "()") -- only used when last is assignment; might as well be a warning/error
+  seq _ [] = Var (V "()") -- only used when last is assignment; not a warning or error since "_ = ..." is sensible
   seq s [L l (Ast.StmtExp e)] = expr s l e
-  seq s (L l (Ast.StmtExp e):q) = seq s (L l (Ast.StmtLet (Ast.PatCons (V "()") []) e):q) -- should we just assign to '_'?
+  seq s (L l (Ast.StmtExp e):q) = seq s (L l (Ast.StmtLet (Ast.PatCons (V "()") []) e):q)
   seq s (L l (Ast.StmtLet p e):q) = doMatch letpat s l (p,e,Ast.Seq q)
   seq s q@(L _ (Ast.StmtDef f _ _):_) = ExpLoc l $ Let f body $ seq (Set.insert f s) rest where
     (L l body, rest) = funcases s f isfcase q -- TODO: local recursion (scope)
@@ -369,6 +369,8 @@ instance Pretty Decl where
     nestedPunct '=' v e
   pretty' (LetM vl e) =
     nestedPunct '=' (punctuate ',' vl) e
+  pretty' (ExpD e) =
+    pretty' e
   pretty' (Over v t e) =
     v <+> "::" <+> t $$
     nestedPunct '=' v e
@@ -404,8 +406,5 @@ instance Pretty Exp where
     where apply (Apply e a) al = apply e (a:al) 
           apply e al = (e,al)
   pretty' (Prim p el) = prettyop (V (primString p)) el
-  pretty' (Bind v e1 e2) = 0 #>
-    v <+> "<-" <+> e1 $$ pretty e2
-  pretty' (Return e) = prettyap "return" [e]
   pretty' (ExpLoc _ e) = pretty' e
   --pretty' (ExpLoc l e) = "{-@" <+> show l <+> "-}" <+> pretty' e

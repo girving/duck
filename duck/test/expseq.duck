@@ -12,7 +12,5 @@ fm x =
   y = x
   f y
 
-test_f = assert \ f 3 3 == 12
-test_fm = assert \ fm [()] == 1
-
-main = testAll
+assert \ f 3 3 == 12
+assert \ fm [()] == 1

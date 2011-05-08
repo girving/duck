@@ -35,20 +35,17 @@ data PrimOp = PrimOp
   , primName :: String
   , primArgs :: [TypeVal]
   , primRet :: TypeVal
-  , primBody :: [Value] -> Value
+  , primBody :: [Value] -> Exec Value
   }
 
 intOp :: Binop -> TypeVal -> (Int -> Int -> Value) -> PrimOp
-intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \ ~[i,j] -> fun (unsafeUnvalue i) (unsafeUnvalue j)
+intOp op rt fun = PrimOp (Binop op) (binopString op) [typeInt, typeInt] rt $ \ ~[i,j] -> return $ fun (unsafeUnvalue i) (unsafeUnvalue j)
 
 intBoolOp :: Binop -> (Int -> Int -> Bool) -> PrimOp
 intBoolOp op fun = intOp op typeBool $ \i j -> valCons (if fun i j then 1 else 0) []
 
 intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
 intBinOp op fun = intOp op typeInt $ \i -> value . fun i
-
-ioOp :: Prim -> String -> [TypeVal] -> TypeVal -> PrimOp
-ioOp p name tl t = PrimOp p name tl (typeIO t) (value . ValPrimIO p)
 
 primOps :: Map.Map Prim PrimOp
 primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
@@ -61,12 +58,11 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , intBoolOp IntLEOp (<=)
   , intBoolOp IntGTOp (>)
   , intBoolOp IntGEOp (>=)
-  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] typeBool $ \ ~[i,j] -> valCons (if (unsafeUnvalue i :: Char) == unsafeUnvalue j then 1 else 0) []
-  , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \ ~[c] -> value (Char.ord $ unsafeUnvalue c)
-  , PrimOp IntCharChr "chr" [typeInt] typeChar $ \ ~[c] -> value (Char.chr $ unsafeUnvalue c)
-  , ioOp Exit "exit" [typeInt] typeVoid
-  , ioOp IOPutChar "put" [typeChar] typeUnit
-  , ioOp TestAll "testAll" [] typeUnit
+  , PrimOp (Binop ChrEqOp) (binopString ChrEqOp) [typeChar, typeChar] typeBool $ \ ~[i,j] -> return $ valCons (if (unsafeUnvalue i :: Char) == unsafeUnvalue j then 1 else 0) []
+  , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \ ~[c] -> return $ value (Char.ord $ unsafeUnvalue c)
+  , PrimOp IntCharChr "chr" [typeInt] typeChar $ \ ~[c] -> return $ value (Char.chr $ unsafeUnvalue c)
+  , PrimOp Exit "exit" [typeInt] typeVoid $ \ ~[i] -> liftIO $ exit (unsafeUnvalue i :: Int)
+  , PrimOp IOPutChar "put" [typeChar] typeUnit $ \ ~[c] -> valEmpty .< liftIO (putChar (unsafeUnvalue c :: Char))
   ]
 
 invalidPrim :: Show t => Prim -> [t] -> Doc'
@@ -76,7 +72,7 @@ invalidPrim p a = "invalid primitive arguments" <:> quoted (prettyap (V (primStr
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
 prim loc prim args
   | Just primop <- Map.lookup prim primOps = do
-    join $ liftIO $ (Exn.catch . Exn.evaluate) (return $ (primBody primop) args) $
+    join $ liftIO $ (Exn.catch . Exn.evaluate) (primBody primop args) $
       \(Exn.PatternMatchFail _) -> return $ execError loc $ invalidPrim prim args
   | otherwise = execError loc $ invalidPrim prim args
 
@@ -102,7 +98,7 @@ overload prog name tl r args body = prog{ progFunctions = Map.insertWith (++) na
 -- |The internal, implicit declarations giving names to primitive operations.
 -- Note that this is different than base.duck.
 base :: Prog
-base = (complete datatypes . types . prims . io) (empty "") where
+base = (complete datatypes . types . prims) (empty "") where
   primop prog p | [] <- primArgs p = prog{ progDefinitions = Def [L noLoc name] exp : progDefinitions prog }
                 | otherwise = overload prog name tyargs ret args exp where
     name = V (primName p)
@@ -114,18 +110,5 @@ base = (complete datatypes . types . prims . io) (empty "") where
 
   types prog = prog { progDatatypes = datatypes }
   datatypes = Map.fromList $ map expand $ map ((!!) datatypeTuples) (0:[2..5]) ++
-    [ datatypeInt, datatypeChar, datatypeIO, datatypeDelay, datatypeType, datatypeBool ]
+    [ datatypeInt, datatypeChar, datatypeDelay, datatypeType, datatypeBool ]
     where expand d = (dataName d,d)
-
-io :: Prog -> Prog
-io prog = map' $ join $ returnIO prog where
-  [f,a,b,c,x] = map V ["f","a","b","c","x"]
-  [ta,tb] = map TsVar [a,b]
-  map' p = overload p (V "map") [typeArrow ta tb, typeIO ta] (typeIO tb) [f,c] $
-    (ExpBind x (expLocal c)
-    (ExpReturn (ExpApply (expLocal f) (expLocal x))))
-  join p = overload p (V "join") [typeIO (typeIO ta)] (typeIO ta) [c]
-    (ExpBind x (expLocal c)
-    (expLocal x))
-  returnIO p = overload p (V "returnIO") [TsVar a] (typeIO (TsVar a)) [x]
-    (ExpReturn (expLocal x))

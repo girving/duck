@@ -26,11 +26,10 @@ g x = case x of { A y -> case y of
  ; B -> 3 }
 
 -- verify that f and g work as expected
-test_f1 = assert \ f (A (A (A B))) == 17
-test_f2 = assert \ f (A (A B)) == 23
-test_f3 = assert \ f (A B) == 9
-test_f4 = assert \ f B == 7
-test_g1 = assert \ g (A (A B)) == 1 
-test_g2 = assert \ g (A B) == 2
-test_g3 = assert \ g B == 3
-main = testAll
+assert \ f (A (A (A B))) == 17
+assert \ f (A (A B)) == 23
+assert \ f (A B) == 9
+assert \ f B == 7
+assert \ g (A (A B)) == 1 
+assert \ g (A B) == 2
+assert \ g B == 3

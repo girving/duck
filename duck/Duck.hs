@@ -120,11 +120,8 @@ main = do
   lir <- phase StageInfer id (runInferProg Infer.prog lir)
 
   unless (compileOnly flags) $ do
-  runStage StageInfer $ rerunInfer (lir,[]) Infer.main
-  env <- phase StageEnv (\v -> (Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
-
-  unless (Set.null (phases flags)) $ putStr "\n-- Main --\n"
-  runStage StageExec $ Interp.main lir env
+  _ <- phase StageExec (\v -> (Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
+  return ()
 
 -- for ghci use
 run :: String -> IO ()

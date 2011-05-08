@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 -- Verify that we can feed a Void expression through the left side
 -- of an if without producing a Void type.

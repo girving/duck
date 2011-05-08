@@ -17,9 +17,6 @@ data Exp of
   ExpCase Atom (List (Var, List Var, Exp)) (Maybe Exp)
   ExpPrim Prim (List Exp)
   ExpSpec Exp TypePat
-  -- Monadic IO
-  ExpBind Var Exp Exp
-  ExpReturn Exp
 
 data Atom of
   AtomVal TypeVal Value

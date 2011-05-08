@@ -19,8 +19,6 @@ module Infer
   , cons
   , spec
   , apply
-  , runIO
-  , main
   , isTypeType
   , isTypeDelay
   -- * Environment access
@@ -110,8 +108,10 @@ definition :: Definition -> Infer [(Var,TypeVal)]
 definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (\(L _ (V s)) -> s) vl) [] l $ do
   t <- expr Map.empty l e
   tl <- case (vl,t) of
+          (_, TyVoid) -> return $ map (const TyVoid) vl
           ([_],_) -> return [t]
           (_, TyCons c tl) | isDatatypeTuple c, length vl == length tl -> return tl
+          ([],_) -> inferError l $ "expected (), got" <+> quoted t
           _ -> inferError l $ "expected" <+> length vl <> "-tuple, got" <+> quoted t
   return (zip (map unLoc vl) tl)
   where l = loc d
@@ -151,12 +151,6 @@ expr env loc = exp where
     cons loc d c =<< mapM exp el
   exp (ExpPrim op el) =
     Base.primType loc op =<< mapM exp el
-  exp (ExpBind v e1 e2) = do
-    t1 <- runIO =<< exp e1
-    t2 <- expr (Map.insert v t1 env) loc e2
-    checkIO t2
-  exp (ExpReturn e) =
-    exp e >.= typeIO
   exp (ExpSpec e ts) =
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr env l e
@@ -242,9 +236,6 @@ isTypeC1 c tt = do
 isTypeType :: TypeVal -> Infer (Maybe TypeVal)
 isTypeType = isTypeC1 datatypeType
 
-isTypeIO :: TypeVal -> Infer (Maybe TypeVal)
-isTypeIO = isTypeC1 datatypeIO
-
 isTypeDelay :: TypeVal -> Infer (Maybe TypeVal)
 isTypeDelay = isTypeC1 datatypeDelay
 
@@ -292,7 +283,7 @@ resolve f args = do
       return (Over noLoc at TyVoid [] Nothing)
     _ ->
       -- ambiguous
-      inferError noLoc $ nested ("ambiguous overloads, possibilities are:") (options overloads)
+      inferError noLoc $ nested ("ambiguous overloads for" <+> quoted f <> ", possibilities are:") (options overloads)
 
   insertOver True f at over
   return over
@@ -328,25 +319,6 @@ cache f args (Over oloc atypes rt vl ~(Just e)) = do
   o <- fix False TyVoid -- recursive function calls are initially assumed to be void
   put s -- restore state
   fix True (overRet o) -- and finalize with correct type
-
--- |Verify that main exists and has type IO ().
-main :: Infer ()
-main = do
-  main <- lookupGlobal noLoc (V "main")
-  typeReError noLoc ("main has type" <+> quoted main <> ", but should have type IO ()") $
-    subset'' main (typeIO typeUnit)
-
--- |This is the analog for 'Interp.runIO' for types.  It exists by analogy even though it is very simple.
-runIO :: TypeVal -> Infer TypeVal
-runIO io = do
-  r <- isTypeIO io
-  case r of
-    Just t -> return t
-    Nothing -> typeError noLoc ("expected IO type, got" <+> quoted io)
-
--- |Verify that a type is in IO, and leave it unchanged if so
-checkIO :: TypeVal -> Infer TypeVal
-checkIO t = typeIO =.< runIO t
 
 checkLeftovers :: Pretty m => SrcLoc -> m -> Infer (Either [Var] a) -> Infer a
 checkLeftovers loc m f = f >>= either (\l -> 

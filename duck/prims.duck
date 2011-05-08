@@ -19,4 +19,3 @@ data Prim of
   -- * IO primitives
   Exit
   IOPutChar
-  TestAll

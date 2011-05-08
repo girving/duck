@@ -1,5 +1,4 @@
 import base
-main = testAll
 
 -- Verify that the first matching alternative is chosen
 
@@ -32,13 +31,13 @@ mv [b,(a=_)] _ = a
 mv (l=[a,(b :: Int),c]) _ = case l of [_,_,a] -> a
 mv _ _ = a
 
-test_f = assert \ f (0,1) == 1
-test_fg = assert \ fg (0,1) == 1
-test_g = assert \ g ([],[]) == 1
-test_c = assert \ c 'b' == 2
-test_h = assert \ h ([1], [1]) == 2
-test_mv2 = assert \ mv [4,2] 9 == 2
-test_mv4 = assert \ mv [4,2,1,7] 9 == 99
+assert \ f (0,1) == 1
+assert \ fg (0,1) == 1
+assert \ g ([],[]) == 1
+assert \ c 'b' == 2
+assert \ h ([1], [1]) == 2
+assert \ mv [4,2] 9 == 2
+assert \ mv [4,2,1,7] 9 == 99
 
 -- Repeated default matches should be harmless
 
@@ -47,7 +46,7 @@ r x = case x of
   0 -> 2
   4 -> 3
 
-test_r = assert \ r 4 == 1
+assert \ r 4 == 1
 
 -- full case syntax
 
@@ -63,6 +62,6 @@ full x = case
       True -> 5
     _ case x of _ -> 6
 
-test_full1 = assert \ full [[]] == 2
-test_full2 = assert \ full [[0],[]] == 5
-test_full3 = assert \ full [[1,2]] == 6
+assert \ full [[]] == 2
+assert \ full [[0],[]] == 5
+assert \ full [[1,2]] == 6

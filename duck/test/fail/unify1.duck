@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 -- Normally, if unification comes up with two variable assignments
 -- (x -> s) and (x -> t), we can merge them into (x -> union s t).

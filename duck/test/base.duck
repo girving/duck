@@ -55,6 +55,9 @@ delay x = x
 (==) :: () -> () -> Bool
 (==) _ _ = True
 
+ignore :: a -> ()
+ignore _ = ()
+
 ---- bool
 
 -- data Bool of False ; True
@@ -114,6 +117,10 @@ map :: (a -> b) -> Maybe a -> Maybe b
 map _ Nothing = Nothing
 map f (Just x) = Just (f x)
 
+iter :: (a -> ()) -> Maybe a -> ()
+iter _ Nothing = ()
+iter f (Just x) = f x
+
 fold :: (a -> b -> a) -> a -> Maybe b -> a
 fold _ x Nothing = x
 fold f x (Just y) = f x y
@@ -171,6 +178,10 @@ tail (_:x) = x
 map :: (a -> b) -> List a -> List b
 map _ [] = []
 map f (x:l) = f x : map f l
+
+iter :: (a -> ()) -> List a -> ()
+iter _ [] = ()
+iter f (x:l) = { f x; iter f l }
 
 fold :: (a -> b -> a) -> a -> List b -> a
 fold _ x [] = x
@@ -321,19 +332,8 @@ range x y = if x > y then [] else x : range (succ x) y
 
 -------- monads
 
-{- TODO: join0 should look something like
-over a -> a
-join0 x = x
-
-over (join :: a -> b) => a -> b
-join0 x = join x
--}
-
 join0 :: a -> a
 join0 x = x
-
-join0 :: IO (IO a) -> IO a
-join0 x = join x
 
 {-
 -- In Haskell, join0 would be replaced with join.  The use
@@ -348,19 +348,11 @@ a >> b = a >>= \_ -> b
 -------- IO!
 
 {-
--- Since IO is magical, we mention the types here but don't actually declare them.
-
-type IO a = ... 
-join :: IO (IO a) -> IO a
-map :: (a -> b) -> IO a -> IO b
-
--- And here are some primitives:
-
+-- Primitive IO operations:
 exit :: Int -> IO Void 
-returnIO :: a -> IO a
-testAll :: IO Void
+put
 -}
 
 assert x = if x 
-  then returnIO ()
+  then ()
   else exit 1

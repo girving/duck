@@ -60,7 +60,6 @@ data Prim = Binop !Binop
           | IntCharChr
           | Exit
           | IOPutChar
-          | TestAll
  
 {-# LINE 15 "prims.duck" #-}
 instance Convert Prim where
@@ -75,8 +74,6 @@ instance Convert Prim where
         {-# LINE 15 "prims.duck" #-}
         value (IOPutChar) = valCons 4 []
         {-# LINE 15 "prims.duck" #-}
-        value (TestAll) = valCons 5 []
-        {-# LINE 15 "prims.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
                 0 -> Binop (unsafeUnvalue (unsafeUnvalCons val))
@@ -84,5 +81,4 @@ instance Convert Prim where
                 2 -> IntCharChr
                 3 -> Exit
                 4 -> IOPutChar
-                5 -> TestAll
                 _ -> error "bad tag in unsafeUnvalue Prim"

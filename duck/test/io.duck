@@ -1,14 +1,6 @@
 import base
 
-mapIO :: (a -> IO b) -> List a -> IO (List b)
-mapIO f l = case l of
-  [] -> returnIO []
-  x:l -> \
-    f x >>= \y -> \
-    mapIO f l >>= \l -> \
-    returnIO (y:l)
+put :: List Char -> ()
+put s = iter put s
 
-put :: List Char -> IO ()
-put s = mapIO put s >> returnIO ()
-
-main = put ['H','e','l','l','o',' ','w','o','r','l','d','!','\n']
+put ['H','e','l','l','o',' ','w','o','r','l','d','!','\n']

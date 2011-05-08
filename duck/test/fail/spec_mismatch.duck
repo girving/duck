@@ -1,4 +1,2 @@
-main = exit 0
-
 f :: Int -> Int
 g x = x

@@ -1,5 +1,4 @@
 import base
-main = testAll
 
 -- verify that closure types join correctly
 
@@ -9,6 +8,6 @@ op b = if b then (+) else (*)
 twice :: (Int -> Int) -> Int -> Int
 twice f x = f \ f x
 
-test_op1 = assert \ op True 3 4 == 7
-test_op2 = assert \ op False 3 4 == 12
-test_twice1 = assert \ twice (op False 2) 3 == 12
+assert \ op True 3 4 == 7
+assert \ op False 3 4 == 12
+assert \ twice (op False 2) 3 == 12

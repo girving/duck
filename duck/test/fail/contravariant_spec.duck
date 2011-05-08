@@ -1,5 +1,3 @@
 import base
 
-main = exit 0
-
 _ = (+) :: (a -> Int -> Int)

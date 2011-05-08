@@ -77,8 +77,8 @@ decls :: { [[Loc Decl]] }
   | decls ';' decl { $3 : $1 }
 
 decl :: { [Loc Decl] }
-  : exp2(atom_) '::' exp {% spec $1 >>= \v -> ty $3 >.= \t -> [loc $1 $> $SpecD v (unLoc t)] }
-  | exp2(atom_) '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
+  : exp { [declExp $1] }
+  | exp '=' exp {% lefthandside $1 >.= \l -> [loc $1 $> $ either (\p -> LetD p (expLoc $3)) (\ (v,pl) -> DefD v pl (expLoc $3)) l] }
   | import var { [loc $1 $> $ Import (var $2)] }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
   | data dvar lvars maybeConstructors { [loc $1 $> $ Data $2 (reverse (unLoc $3)) (reverse (unLoc $4))] }
@@ -104,7 +104,14 @@ exp_1 :: { Loc Exp }
   | exp { $1 }
 
 exp :: { Loc Exp }
-  : arrows {% arrows $1 }
+  : exp0(atom) { $1 }
+
+exp0(a) :: { Loc Exp }
+  : exp0(atom_) '::' exp1(a) {% ty $3 >.= \t -> loc $1 $> $ Spec (expLoc $1) (unLoc t) }
+  | exp1(a) { $1 }
+
+exp1(a) :: { Loc Exp }
+  : arrows(a) {% arrows $1 }
 
 stmts :: { [Loc Stmt] }
   : stmt { [$1] }
@@ -114,43 +121,39 @@ stmt :: { Loc Stmt }
   : exp { loc1 $1 $ StmtExp (expLoc $1) }
   | exp '=' exp {% lefthandside $1 >.= loc $1 $> . either (\p -> StmtLet p (expLoc $3)) (\(v,pl) -> StmtDef (unLoc v) pl (expLoc $3)) }
 
-arrows :: { Loc (Stack Exp Exp) }
-  : notarrow { loc1 $1 (Base (expLoc $1)) }
-  | exp1(atom_) '->' arrows { loc $1 $> (expLoc $1 :. unLoc $3) }
+arrows(a) :: { Loc (Stack Exp Exp) }
+  : notarrow(a) { loc1 $1 (Base (expLoc $1)) }
+  | exp2(atom_) '->' arrows(a) { loc $1 $> (expLoc $1 :. unLoc $3) }
 
-notarrow :: { Loc Exp }
-  : let exp '=' exp in exp {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
-  | case caseblock { loc $1 $> $ Case (unLoc $2) }
-  | if exp then exp else exp { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
+notarrow(a) :: { Loc Exp }
+  : let exp '=' exp in exp1(a) {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
+  | case caseblock(a) { loc $1 $> $ Case (unLoc $2) }
+  | if exp then exp else exp1(a) { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
   | '{' stmts '}' { loc $1 $> $ Seq (reverse $2) }
-  | exp1(atom) { $1 }
+  | exp2(a) { $1 }
 
-caseblock :: { Loc [(Exp, Case)] }
-  : switch { fmap (:[]) $1 }
+caseblock(a) :: { Loc [(Exp, Case)] }
+  : switch(a) { fmap (:[]) $1 }
   | '{' switches '}' { loc $1 $> $ reverse $2 }
 
 switches :: { [(Exp, Case)] }
-  : switch { [unLoc $1] }
-  | switches ';' switch { unLoc $3 : $1 }
+  : switch(atom) { [unLoc $1] }
+  | switches ';' switch(atom) { unLoc $3 : $1 }
 
-switch :: { Loc (Exp, Case) }
-  : exp1(atom_) of '{' cases '}' { loc $1 $> $ (expLoc $1, CaseMatch (reverse $4)) }
-  | exp1(atom_) casetail { loc $1 $> $ (expLoc $1, CaseGuard (unLoc $2)) }
+switch(a) :: { Loc (Exp, Case) }
+  : exp2(atom_) of '{' cases '}' { loc $1 $> $ (expLoc $1, CaseMatch (reverse $4)) }
+  | exp2(atom_) casetail(a) { loc $1 $> $ (expLoc $1, CaseGuard (unLoc $2)) }
 
 cases :: { [(Pattern,CaseTail)] }
   : casematch { [$1] }
   | cases ';' casematch { $3 : $1 }
 
 casematch :: { (Pattern,CaseTail) }
-  : exp1(atom_) casetail {% pattern $1 >.= \p -> (patLoc p, unLoc $2) }
+  : exp2(atom_) casetail(atom) {% pattern $1 >.= \p -> (patLoc p, unLoc $2) }
 
-casetail :: { Loc CaseTail }
-  : '->' exp { loc $1 $> $ CaseBody (expLoc $2) }
-  | case caseblock { loc $1 $> $ CaseGroup (unLoc $2) }
-
-exp1(a) :: { Loc Exp }
-  : exp1(atom_) '::' exp2(a) {% ty $3 >.= \t -> loc $1 $> $ Spec (expLoc $1) (unLoc t) }
-  | exp2(a) { $1 }
+casetail(a) :: { Loc CaseTail }
+  : '->' exp1(a) { loc $1 $> $ CaseBody (expLoc $2) }
+  | case caseblock(a) { loc $1 $> $ CaseGroup (unLoc $2) }
 
 exp2(a) :: { Loc Exp }
   : commas(a) { fmap tuple $1 }
@@ -384,5 +387,10 @@ constructor (L l (Ops (OpBin v (OpAtom e1) (OpAtom e2)))) | isCons v = do
   t2 <- typeExp l e2
   return (L l v,[t1,t2])
 constructor (L l e) = parseError l ("invalid constructor expression" <+> quoted e <+> "(must be <constructor> <args>... or equivalent)")
+
+-- Turn an expression into a type specification decl if possible, or a bare expression decl otherwise
+declExp :: Loc Exp -> Loc Decl
+declExp (L l (Spec (ExpLoc lv (Var v)) t)) = L l (SpecD (L lv v) t)
+declExp (L l e) = L l (ExpD e)
 
 }

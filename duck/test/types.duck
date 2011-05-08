@@ -1,5 +1,4 @@
 import base
-main = testAll
 
 -- Declare various functions
 
@@ -35,15 +34,15 @@ rep (Type t) = t
 
 -- Check whether they work
 
-test_level0 = assert \ level 7 == 0
-test_level1 = assert \ level Int == 1
-test_level2 = assert \ level (Type Int) == 2
-test_len_1 = assert \ len (1,2) == 2
-test_len_2 = assert \ len (Int,2) == 2
-test_len_3 = assert \ len (Int,Int) == 2
+assert \ level 7 == 0
+assert \ level Int == 1
+assert \ level (Type Int) == 2
+assert \ len (1,2) == 2
+assert \ len (Int,2) == 2
+assert \ len (Int,Int) == 2
 
-test_rep1 = assert \ rep Int == 7
-test_rep2 = assert \ rep (List Int) == [7,7,7]
+assert \ rep Int == 7
+assert \ rep (List Int) == [7,7,7]
 
 -- Can we take types of expressions?  Do they get evaluated?
 
@@ -52,4 +51,8 @@ _ = Type (head []) :: Type Void
 
 -- Test tuple types
 
-test_rep3 = assert \ rep (Int, Type Int) == (7, Int)
+assert \ rep (Int, Type Int) == (7, Int)
+
+-- Make sure Void works as a pattern and an expression
+
+Void = Void

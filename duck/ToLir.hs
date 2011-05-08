@@ -118,6 +118,7 @@ datatypes baseDenv decls = do
 declVars :: Globals -> Ir.Decl -> Globals
 declVars g (Ir.LetD (L _ v) e) | ((_:_),_) <- unwrapLambda noLoc e = insertVarWithKey kindConflict v FunctionKind g
 declVars g (Ir.LetD (L _ v) _) = insertVarWithKey kindConflict v GlobalKind g
+declVars g (Ir.ExpD _) = g
 declVars g (Ir.LetM vl _) = foldl' (\g v -> insertVarWithKey kindConflict v GlobalKind g) g (map unLoc vl)
 declVars g (Ir.Over (L _ v) _ _) = Map.insertWithKey kindConflict v FunctionKind g
 declVars g (Ir.Data (L _ v) _ conses) = Map.insertWithKey kindConflict v DatatypeKind (foldl' cons g conses) where
@@ -143,7 +144,10 @@ decl (Ir.LetD v e) = do
 decl (Ir.LetM vl e) = do
   e <- expr Set.empty noLocExpr e
   definition vl e
-decl _ = return () -- Datatypes already processed
+decl (Ir.ExpD e) = do
+  e <- expr Set.empty noLocExpr e
+  definition [] e
+decl (Ir.Data _ _ _) = return () -- Datatypes already processed
 
 -- |Convert a type
 toType :: SrcLoc -> Map CVar Datatype -> Ir.TypePat -> TypePat
@@ -241,11 +245,6 @@ expr locals l (Ir.Case v pl def) = do
 expr locals l (Ir.Prim prim el) = do
   el <- mapM (expr locals l) el
   return $ ExpPrim prim el
-expr locals l (Ir.Bind v e rest) = do
-  e <- expr locals l e
-  rest <- expr (addVar v locals) l rest
-  return $ ExpBind v e rest
-expr locals l (Ir.Return e) = ExpReturn =.< expr locals l e
 expr locals l@(loc,_) (Ir.Spec e t) = do
   e' <- expr locals l e
   denv <- get >.= progDatatypes . fst
@@ -259,6 +258,7 @@ var _ (loc,_) v = do
   case Map.lookup v globals of
     Just GlobalKind -> return $ AtomGlobal v
     Just DatatypeKind | Just d <- Map.lookup v (progDatatypes prog) -> return $ AtomVal (typeType (TyCons d [])) valEmpty
+    Just VoidKind -> return $ AtomVal (typeType TyVoid) valEmpty
     Just DatatypeKind -> lirError loc $ "internal error: unexpected unbound datatype" <+> quoted v
     Just FunctionKind -> return $ closure v
     Nothing -> lirError loc $ "unbound variable" <+> quoted v

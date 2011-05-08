@@ -1,3 +1,2 @@
 import base
 data Bool of { True ; False }
-main = exit 0

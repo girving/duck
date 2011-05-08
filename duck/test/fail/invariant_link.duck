@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 -- T a should be invariant since Type a is.  However,
 -- Type is defined in a different module (namely in Base.hs),

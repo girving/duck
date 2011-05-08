@@ -32,7 +32,6 @@ data Stage
   | StageLir
   | StageLink
   | StageInfer
-  | StageEnv
   | StageExec
   deriving (Eq, Ord, Enum, Bounded)
 
@@ -43,7 +42,6 @@ stageNames =
     ,"lir"
     ,"link"
     ,"infer"
-    ,"env"
     ,"exec"
     ]
 
@@ -54,7 +52,6 @@ instance Pretty Stage where
     s StageLir = "lifting"
     s StageLink = "link"
     s StageInfer = "type"
-    s StageEnv = "top"
     s StageExec = "runtime"
 
 newtype Msg = Msg Doc
@@ -83,7 +80,6 @@ instance Show Err where
 instance Exception Err
 
 stageExitval :: Stage -> Int
-stageExitval StageEnv = 3
 stageExitval StageExec = 3
 stageExitval _ = 1
 

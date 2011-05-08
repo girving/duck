@@ -34,7 +34,6 @@ prettyval (TyFun _) v
   = prettyop v (zipWith prettyval types args)
 prettyval (TyCons d [t]) v
   | d == datatypeType = pretty' t
-  | d == datatypeIO = prettyio t (unsafeUnvalue v :: IOValue)
   | d == datatypeDelay, ValDelay e _ <- unsafeUnvalue v = prettyop "delay" [e]
 prettyval (TyCons d args) v = prettyop c (zipWith prettyval tl' values) where
   (L _ c,tl) = dataConses d !! unsafeTag v
@@ -45,13 +44,6 @@ prettyval TyVoid _ = error "found an impossible Void value in prettyval"
 
 instance Pretty (TypeVal, Value) where
   pretty' (t,v) = 2 #> prettyval t v <+> "::" <+> t
-
-prettyio :: TypeVal -> IOValue -> Doc'
-prettyio t (ValLiftIO v) = pretty' (t,v)
-prettyio _ (ValPrimIO p []) = pretty' $ primString p
-prettyio _ (ValPrimIO IOPutChar [c]) = prettyop (V "ioPutChar") [prettyval typeChar c]
-prettyio _ (ValBindIO v t d e _) = 0 #> v <+> "<-" <+> prettyio t d $$ pretty e
-prettyio _ (ValPrimIO _ _) = pretty' "<unknown-prim-io>"
 
 instance (Ord k, Pretty k) => Pretty (Map k TypeVal, Map k Value) where
   pretty' (t,v) = pretty' $ Map.intersectionWith (,) t v
@@ -102,9 +94,6 @@ instance Pretty Exp where
           apply e al = (e,al)
   pretty' (ExpCons d c args) = prettyop (fst $ dataConses d !! c) args
   pretty' (ExpPrim p el) = prettyop (V (primString p)) el
-  pretty' (ExpBind v e1 e2) = 0 #>
-    v <+> "<-" <+> e1 $$ e2
-  pretty' (ExpReturn e) = prettyap "return" [e]
   pretty' (ExpLoc _ e) = pretty' e
   --pretty' (ExpLoc l e) = "{-@" <+> show l <+> "-}" <+> pretty' e
 

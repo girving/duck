@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 -- Declare an indirectly invariant datatype
 data S a of A a

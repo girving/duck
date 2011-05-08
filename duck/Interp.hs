@@ -5,7 +5,6 @@
 
 module Interp
   ( prog
-  , main
   ) where
 
 import Prelude hiding (lookup)
@@ -14,7 +13,6 @@ import Data.Maybe
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 import Control.Monad hiding (guard)
-import Control.Monad.Trans
 
 import Util
 import Var
@@ -68,10 +66,7 @@ cast :: TypeVal -> Exec Value -> Exec Value
 cast _ x = x
 
 inferExpr :: LocalTypes -> SrcLoc -> Exp -> Exec TypeVal
-inferExpr env loc e = do
-  t <- liftInfer $ Infer.expr env loc e
-  when (t == TyVoid) $ execError loc $ "refusing to evaluate" <+> quoted e <> ", result is Void"
-  return t
+inferExpr env loc e = liftInfer $ Infer.expr env loc e
 
 expr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr global tenv env loc = exp where
@@ -105,12 +100,6 @@ expr global tenv env loc = exp where
         Just e' -> cast ct $ expr global tenv env loc e'
   exp (ExpCons _ c el) = valCons c =.< mapM exp el
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
-  exp (ExpBind v e1 e2) = do
-    t <- inferExpr tenv loc e1
-    d <- exp e1
-    let d' = unsafeUnvalue d :: IOValue
-    return $ value $ ValBindIO v t d' e2 (packEnv (Set.singleton v) tenv env e2)
-  exp (ExpReturn e) = value . ValLiftIO =.< exp e
   exp se@(ExpSpec e _) = do
     t <- inferExpr tenv loc se
     cast t $ exp e
@@ -131,7 +120,6 @@ emptyType loc = empty Set.empty where
   empty seen t = if Set.member t seen then return True else empty' (Set.insert t seen) t
   empty' _ (TyCons c _) | c == datatypeInt = return False
                         | c == datatypeChar = return False
-                        | c == datatypeIO = return False
                         | c == datatypeDelay = return False
                         | c == datatypeType = return True
   empty' seen (TyCons d args) = case dataConses d of
@@ -164,7 +152,6 @@ apply global loc ft@(TyFun _) fun ae at
   | ValClosure f types args <- unsafeUnvalue fun = do
     -- infer return type
     (tt, rt) <- liftInfer $ Infer.apply loc ft at
-    when (rt == TyVoid) $ execError loc $ "cannot apply" <+> quoted ft <+> "to" <+> quoted at <> ", result is Void"
     -- lookup appropriate overload (parallels Infer.apply/resolve)
     let tl = types ++ [at]
     o <- maybe
@@ -189,41 +176,6 @@ apply global loc t1 v1 e2 t2 =
   appty _ = return valEmpty
   appdel _ = do
     (_, rt) <- liftInfer $ Infer.apply loc t1 t2
-    when (rt == TyVoid) $ execError loc $ "cannot force" <+> quoted t1 <> ", result is Void"
     let (tenv,env) = unpackEnv penv
     cast rt $ expr global tenv env loc e
     where ValDelay e penv = unsafeUnvalue v1
-
--- |IO and main
-main :: Prog -> Globals -> IO ()
-main prog global = runExec prog $ do
-  main <- lookupGlobal global noLoc (V "main")
-  _ <- runIO global (unsafeUnvalue main :: IOValue)
-  return ()
-
-runIO :: Globals -> IOValue -> Exec Value
-runIO _ (ValLiftIO d) = return d
-runIO global (ValPrimIO TestAll []) = testAll global
-runIO _ (ValPrimIO p args) = Base.runPrimIO p args
-runIO global (ValBindIO v tm m e penv) = do
-  d <- runIO global m
-  t <- liftInfer $ Infer.runIO tm
-  let (tenv,env) = unpackEnv penv
-  d' <- expr global (Map.insert v t tenv) (Map.insert v d env) noLoc e
-  runIO global (unsafeUnvalue d' :: IOValue)
-
-testAll :: Globals -> Exec Value
-testAll global = do
-  liftIO $ puts "running unit tests..."
-  mapM_ test (Map.toList global)
-  liftIO $ puts "success!"
-  nop
-  where
-  test (V v,d)
-    | isPrefixOf "test_" v = do
-        liftIO $ puts ("  "++v)
-        _ <- runIO global (unsafeUnvalue d :: IOValue)
-        nop
-    | otherwise = nop
-  nop = return valEmpty
-

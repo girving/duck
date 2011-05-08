@@ -57,6 +57,4 @@ cps = facCps id
 
 facs = [frosh, soph, junior, senior, iterative, iterative1, cps]
 
-test_facs = assert \ and \ map (f -> f 5 == 120) facs
-
-main = testAll
+assert \ and \ map (f -> f 5 == 120) facs

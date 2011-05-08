@@ -9,5 +9,3 @@ call1 l = \
   map (call2 call4) l
 
 _ = call1 [0]
-
-main = returnIO ()

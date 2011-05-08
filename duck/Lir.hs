@@ -98,6 +98,7 @@ data Kind
   = GlobalKind
   | FunctionKind
   | DatatypeKind
+  | VoidKind
   deriving (Show, Eq)
 
 type Globals = Map CVar Kind
@@ -160,7 +161,8 @@ check prog = runSequence $ do
 -- |Compute the set of global symbols in a program
 globals :: Prog -> Globals
 globals prog = foldl' (Map.unionWithKey kindConflict) Map.empty
-  [Map.map (const DatatypeKind) $ progDatatypes prog,
+  [Map.singleton (V "Void") VoidKind,
+   Map.map (const DatatypeKind) $ progDatatypes prog,
    Map.map (const FunctionKind) $ progFunctions prog,
    foldl' (\g v -> insertVar v GlobalKind g) Map.empty $ concatMap (map unLoc . defVars) $ progDefinitions prog]
   where 
@@ -172,6 +174,7 @@ kindConflict v k k' | k == k' = k
   where s GlobalKind = "global"
         s FunctionKind = "function"
         s DatatypeKind = "datatype"
+        s VoidKind = "datatype"
  
 -- |Compute the list of free variables in an expression given the set of in scope variables
 free :: InScopeSet -> Exp -> [Var]
@@ -187,8 +190,6 @@ free' s l (ExpCase a al d) =
   ++ concatMap (\(_,vl,e) -> free' (foldr addVar s vl) l e) al
   ++ maybe [] (free' s l) d
 free' s l (ExpPrim _ el) = concatMap (free' s l) el
-free' s l (ExpBind v e c) = free' s l e ++ free' (addVar v s) l c
-free' s l (ExpReturn e) = free' s l e
 free' s l (ExpSpec e _) = free' s l e
 free' s _ (ExpLoc l e) = free' s l e
 

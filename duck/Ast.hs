@@ -32,6 +32,7 @@ type Prog = [Loc Decl]
 data Decl
   = SpecD !(Loc Var) !TypePat           -- ^ Type declaration (for overloads): @VAR :: TYPE@
   | DefD !(Loc Var) [Pattern] Exp       -- ^ Function definition with arguments: @VAR PATs = EXP@
+  | ExpD Exp                            -- ^ Top level expression: @EXP@
   | LetD !Pattern Exp                   -- ^ Global definition without arguments: @PAT = EXP@
   | Data !(Loc CVar) [Var] [(Loc CVar,[TypePat])] -- ^ Datatype declaration: @data CVAR VARs = { CVAR TYPEs ; ... }@
   | Infix !PrecFix [Var]                -- ^ Fixity declaration: @infix[lr] PREC VARs@
@@ -143,6 +144,8 @@ instance Pretty Decl where
     nestedPunct '=' (prettyop f args) e
   pretty' (LetD p e) =
     nestedPunct '=' p e
+  pretty' (ExpD e) =
+    pretty' e
   pretty' (Data t args []) =
     "data" <+> prettyap t args
   pretty' (Data t args l) =
@@ -205,6 +208,7 @@ patToExp (PatInt i) = Int i
 patToExp (PatChar c) = Char c
 patToExp (PatList pl) = List (map patToExp pl)
 patToExp (PatLambda pl p) = Lambda pl (patToExp p)
+patToExp (PatTrans t p) = Apply (Var t) [patToExp p]
 patToExp PatAny = Any
 patToExp (PatLoc l p) = ExpLoc l (patToExp p)
 

@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 _ = case True of
   True -> 1

@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 -- Declare a contravariant datatype
 data T a of A a (a -> Int)

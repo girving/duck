@@ -4,7 +4,7 @@
 
 module Value
   ( Env
-  , FunValue(..), DelayValue(..), IOValue(..)
+  , FunValue(..), DelayValue(..)
   , valEmpty
   ) where
 
@@ -14,12 +14,11 @@ import Data.Map (Map)
 import Var
 import Memory
 
--- Pull in definition of IOValue and FunValue
+-- Pull in definition of FunValue
 import Gen.Value
 
 -- Add instance declarations
 deriving instance Show FunValue
-deriving instance Show IOValue
 
 type Env = Map Var Value
 

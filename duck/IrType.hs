@@ -45,6 +45,7 @@ instance Pretty TypePat where
   pretty' (TsCons t tl) | isTuple t = 3 #> punctuate ',' tl
   pretty' (TsCons t tl) = prettyap t tl
   pretty' (TsFun f) = pretty' f
+  pretty' (TsTrans t s) = prettyap t [s]
   pretty' TsVoid = pretty' "Void"
 
 instance Pretty TypeFun where

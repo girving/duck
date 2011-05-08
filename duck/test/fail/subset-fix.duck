@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 -- When running subset checks on type patterns involving function types, we
 -- might need to iterate subset checking until convergence.  This is because

@@ -1,5 +1,4 @@
 import base
-main = exit 0
 
 mv [] a = a
 mv [a] _ = a
