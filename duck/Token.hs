@@ -42,7 +42,6 @@ data Token
   | TokAny
   | TokLambda
   | TokArrow
-  | TokOr
   | TokMinus
   | TokImport
   | TokInfix { tokFix :: !Fixity }
@@ -91,7 +90,6 @@ instance Pretty Token where
     TokAny -> "_"
     TokLambda -> "\\"
     TokArrow -> "->"
-    TokOr -> "|"
     TokMinus -> "-"
     TokComment -> "{-"
     TokCommentEnd -> "-}"

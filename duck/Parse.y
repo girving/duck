@@ -57,7 +57,6 @@ import Util
   '_'  { L _ (TokAny) }
   '\\' { L _ (TokLambda) }
   '->' { L _ (TokArrow) }
-  -- '|'  { L _ (TokOr) }
   '-'  { L _ (TokMinus) }
   import { L _ (TokImport) }
   infix  { L _ (TokInfix _) }

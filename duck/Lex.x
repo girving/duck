@@ -82,7 +82,6 @@ sym "=" = TokEq
 sym "->" = TokArrow
 sym "::" = TokDColon
 sym "\\" = TokLambda
-sym "|" = TokOr
 sym "-" = TokMinus
 sym s@(':':_) = TokCSym (V s)
 sym s = TokSym (V s)
