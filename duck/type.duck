@@ -32,6 +32,7 @@ data TypeVal of
 
 -- |A polymorphic set of concrete types (used for function overloads).  This is the same
 -- as 'TypeVal' except that it can contain type variables.
+-- IMPORTANT: If you change this, PreTypePat in preType.duck must be changed as well.
 data TypePat of
   TsVar Var
   TsCons (Box Datatype) (List TypePat)
@@ -64,9 +65,16 @@ data Trans of
   Delay -- :: Delay
 
 -- |Datatype definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
+-- IMPORTANT: If you change this, PreDatatype in preType.duck must be changed as well.
 data Datatype of Data
   CVar -- ^ Name
   SrcLoc -- ^ Location
   (List Var) -- ^ Type variable arguments
-  (List (Loc CVar, List TypePat)) -- ^ Constructors
   (List Variance) -- ^ Variances of 'dataTyVars'
+  DataInfo -- ^ Actual definition
+
+-- |Internal information about a datatype
+-- IMPORTANT: If you change this, PreDataInfo in preType.duck must be changed as well.
+data DataInfo of
+  DataAlgebraic (List (Loc CVar, List TypePat)) -- ^ Algebraic datatype with constructors
+  DataPrim Int -- ^ Primitive datatype with constant size

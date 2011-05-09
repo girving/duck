@@ -65,7 +65,7 @@ datatypes baseDenv decls = do
     decl denv _ = denv
 
   -- Generate uninitialized mutable precursor datatypes
-  uninitialized = PreData (V "") noLoc [] [] []
+  uninitialized = PreData (V "") noLoc [] [] $ PreDataPrim (-1)
   alloc :: IO (Map CVar (Ref PreDatatype))
   alloc = mapM (const $ newRef uninitialized) info
 
@@ -74,7 +74,7 @@ datatypes baseDenv decls = do
   fill datatypes = mapM_ f $ Map.toList datatypes where
     f (c,d) = writeRef d initialized where
       Just (l,args,conses) = Map.lookup c info
-      initialized = PreData c l args conses' vars
+      initialized = PreData c l args vars $ PreDataAlgebraic conses'
       conses' = map (second $ map $ toPreType l baseDenv datatypes) conses
       vars = replicate (length args) Covariant
 
@@ -89,19 +89,22 @@ datatypes baseDenv decls = do
     grow :: IO Bool
     grow = or =.< mapM growCons (Map.elems datatypes)
     growCons datatype = do
-      PreData c l args conses vars <- readRef datatype
-      inv <- Set.fromList . concat =.< (mapM invVars $ snd =<< conses)
-      let vars' = map (\v -> if Set.member v inv then Invariant else Covariant) args
-      if vars /= vars' then do
-        writeRef datatype (PreData c l args conses vars') 
-        return True
-       else return False
+      PreData c l args vars info <- readRef datatype
+      case info of
+        PreDataPrim _ -> error ("unexpected primitive datatype "++show (quoted c)++" seen in ToLir.variances")
+        PreDataAlgebraic conses -> do
+          inv <- Set.fromList . concat =.< (mapM invVars $ snd =<< conses)
+          let vars' = map (\v -> if Set.member v inv then Invariant else Covariant) args
+          if vars /= vars' then do
+            writeRef datatype (PreData c l args vars' $ PreDataAlgebraic conses) 
+            return True
+           else return False
       where
       -- The set of (currently known to be) invariant vars in a typeset
       invVars :: PreTypePat -> IO [Var]
       invVars (TpVar _) = return []
       invVars (TpCons c tl) = do
-        PreData _ _ _ _ vars <- readVol c
+        PreData _ _ _ vars _ <- readVol c
         concat =.< zipWithM f vars tl
         where
         f Covariant = invVars

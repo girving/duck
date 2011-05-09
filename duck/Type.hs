@@ -18,7 +18,8 @@ module Type
   , Trans(..), TransType
   -- * Datatypes
   , Datatype, makeDatatype
-  , dataName, dataLoc, dataTyVars, dataConses, dataVariances
+  , dataName, dataLoc, dataTyVars, dataInfo, dataVariances
+  , DataInfo(..)
   ) where
 
 import Data.Map (Map)
@@ -94,8 +95,8 @@ instance IsType TypePat where
 -- |See definition of Datatype in type.duck
 type Datatype = Box Gen.Type.Datatype
 
-makeDatatype :: CVar -> SrcLoc -> [Var] -> [(Loc CVar,[TypePat])] -> [Variance] -> Datatype
-makeDatatype n l args conses vl = box $ Data n l args conses vl
+makeDatatype :: CVar -> SrcLoc -> [Var] -> [Variance] -> DataInfo -> Datatype
+makeDatatype n l args vl info = box $ Data n l args vl info
 
 dataName :: Datatype -> CVar
 dataName d | Data v _ _ _ _ <- unbox d = v
@@ -103,10 +104,10 @@ dataLoc :: Datatype -> SrcLoc
 dataLoc d | Data _ l _ _ _ <- unbox d = l
 dataTyVars :: Datatype -> [Var]
 dataTyVars d | Data _ _ vl _ _ <- unbox d = vl
-dataConses :: Datatype -> [(Loc CVar, [TypePat])]
-dataConses d | Data _ _ _ cl _ <- unbox d = cl
+dataInfo :: Datatype -> DataInfo
+dataInfo d | Data _ _ _ _ info <- unbox d = info
 dataVariances :: Datatype -> [Variance]
-dataVariances d | Data _ _ _ _ vl <- unbox d = vl
+dataVariances d | Data _ _ _ vl _ <- unbox d = vl
 
 instance HasLoc Datatype where loc = dataLoc
 

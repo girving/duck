@@ -152,7 +152,9 @@ check prog = runSequence $ do
         return $ addVar v s) Set.empty vl
       maybe nop (expr (Set.union s vs)) body
   expr s = mapM_ (\(v,l) -> lirError l $ quoted v <+> "undefined") . free' s noLoc
-  datatype (_, d) = mapM_ cons (dataConses d) where
+  datatype (_, d) = info $ dataInfo d where
+    info (DataAlgebraic conses) = mapM_ cons conses
+    info (DataPrim _) = nop
     cons (L l c,tl) = case Set.toList $ Set.fromList (concatMap freeVars tl) Set.\\ Set.fromList (dataTyVars d) of
       [] -> nop
       [v] -> lirError l $ "variable" <+> quoted v <+> "is unbound in constructor" <+> quoted (prettyap c tl)
@@ -219,9 +221,11 @@ union p1 p2 = Prog
 complete :: Map CVar Datatype -> Prog -> Prog
 complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datatypes where
   datatype :: Datatype -> State Prog ()
-  datatype d = mapM_ f (zip [0..] $ dataConses d) where
-    f :: (Int, (Loc CVar, [TypePat])) -> State Prog ()
-    f (i,(c,tyl)) = do
+  datatype d = info $ dataInfo d where
+    info (DataAlgebraic conses) = mapM_ cons (zip [0..] conses)
+    info (DataPrim _) = nop
+    cons :: (Int, (Loc CVar, [TypePat])) -> State Prog ()
+    cons (i,(c,tyl)) = do
       case tyl of
         [] -> modify $ \p -> p { progDefinitions = Def [c] (ExpCons d i []) : progDefinitions p }
         _ -> overload c tl r vl (ExpCons d i (map expLocal vl)) where

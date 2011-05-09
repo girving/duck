@@ -40,8 +40,8 @@ instance Convert PreTypePat where
                 _ -> error "bad tag in unsafeUnvalue PreTypePat"
  
 {-# LINE 20 "preType.duck" #-}
-data PreDatatype = PreData !CVar !SrcLoc ![Var]
-                           ![(Loc CVar, [PreTypePat])] ![Variance]
+data PreDatatype = PreData !CVar !SrcLoc ![Var] ![Variance]
+                           !PreDataInfo
  
 {-# LINE 20 "preType.duck" #-}
 instance Convert PreDatatype where
@@ -56,3 +56,20 @@ instance Convert PreDatatype where
               PreData (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
                 (unsafeUnvalue d)
                 (unsafeUnvalue e)
+ 
+{-# LINE 27 "preType.duck" #-}
+data PreDataInfo = PreDataAlgebraic ![(Loc CVar, [PreTypePat])]
+                 | PreDataPrim !Int
+ 
+{-# LINE 27 "preType.duck" #-}
+instance Convert PreDataInfo where
+        {-# LINE 27 "preType.duck" #-}
+        value (PreDataAlgebraic a) = valCons 0 [value a]
+        {-# LINE 27 "preType.duck" #-}
+        value (PreDataPrim a) = valCons 1 [value a]
+        {-# LINE 27 "preType.duck" #-}
+        unsafeUnvalue val
+          = case unsafeTag val of
+                0 -> PreDataAlgebraic (unsafeUnvalue (unsafeUnvalCons val))
+                1 -> PreDataPrim (unsafeUnvalue (unsafeUnvalCons val))
+                _ -> error "bad tag in unsafeUnvalue PreDataInfo"

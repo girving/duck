@@ -17,6 +17,7 @@ module Memory
   , Box, unbox, box, unsafeCastBox
   , Vol, ToVol(..), readVol
   , Ref, newRef, readRef, writeRef, unsafeCastRef, unsafeFreeze
+  , wordSize
   ) where
 
 import Util

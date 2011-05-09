@@ -31,6 +31,7 @@ module Prims
 import Type
 import Var
 import SrcLoc
+import Memory
 
 -- Pull in definitions of Binop and Prim
 import Gen.Prims
@@ -46,17 +47,17 @@ deriving instance Show Prim
 -- |Primitive datatypes
 
 datatypeTuples = datatypeUnit : error "no singleton tuples" : map dt [2..] where
-  dt i = makeDatatype c noLoc vars [(L noLoc c, map TsVar vars)] (replicate i Covariant) where
+  dt i = makeDatatype c noLoc vars (replicate i Covariant) $ DataAlgebraic [(L noLoc c, map TsVar vars)] where
     c = tupleCons vars
     vars = take i standardVars
 
-datatypeUnit = makeDatatype (V "()") noLoc [] [(L noLoc (V "()"), [])] []
-datatypeInt = makeDatatype (V "Int") noLoc [] [] []
-datatypeChar = makeDatatype (V "Char") noLoc [] [] []
-datatypeDelay = makeDatatype (V "Delay") noLoc [V "a"] [] [Covariant]
-datatypeType = makeDatatype (V "Type") noLoc [V "t"] [] [Invariant]
-datatypeBool = makeDatatype (V "Bool") noLoc [] [(L noLoc (V "False"),[]),
-                                                 (L noLoc (V "True") ,[])] []
+datatypeUnit = makeDatatype (V "()") noLoc [] [] $ DataAlgebraic [(L noLoc (V "()"), [])]
+datatypeInt = makeDatatype (V "Int") noLoc [] [] $ DataPrim wordSize -- TODO: change size?
+datatypeChar = makeDatatype (V "Char") noLoc [] [] $ DataPrim wordSize -- TODO: change size
+datatypeDelay = makeDatatype (V "Delay") noLoc [V "a"] [Covariant] $ DataPrim wordSize
+datatypeType = makeDatatype (V "Type") noLoc [V "t"] [Invariant] $ DataPrim 0
+datatypeBool = makeDatatype (V "Bool") noLoc [] [] $ DataAlgebraic [(L noLoc (V "False"),[]),
+                                                                    (L noLoc (V "True") ,[])]
 
 isDatatypeTuple :: Datatype -> Bool
 isDatatypeTuple = isTuple . dataName

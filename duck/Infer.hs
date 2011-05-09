@@ -85,7 +85,9 @@ lookupDatatype loc (TyCons d [t]) | d == datatypeType = case t of
   TyCons c tl -> return [(L noLoc (dataName c), map typeType tl)]
   TyVoid -> return [(L noLoc (V "Void"), [])]
   TyFun _ -> inferError loc $ "cannot pattern match on" <+> quoted (typeType t) <> "; matching on function types isn't implemented yet"
-lookupDatatype _ (TyCons d types) = return $ map (second $ map $ substVoid $ Map.fromList $ zip (dataTyVars d) types) (dataConses d)
+lookupDatatype loc (TyCons d types) = case dataInfo d of
+  DataAlgebraic conses -> return $ map (second $ map $ substVoid $ Map.fromList $ zip (dataTyVars d) types) conses
+  DataPrim _ -> typeError loc ("expected algebraic datatype, got" <+> quoted d)
 lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 
 lookupFunction :: Var -> Infer [Overload TypePat]
@@ -162,7 +164,10 @@ atom _ loc (AtomGlobal v) = lookupGlobal loc v
 
 cons :: SrcLoc -> Datatype -> Int -> [TypeVal] -> Infer TypeVal
 cons loc d c args = do
-  let (cv,tl) = dataConses d !! c
+  conses <- case dataInfo d of
+    DataAlgebraic conses -> return conses
+    DataPrim _ -> typeError loc ("expected algebraic datatype, got" <+> quoted d)
+  let (cv,tl) = conses !! c
   tenv <- typeReError loc (quoted cv <+> "expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
     checkLeftovers noLoc () $
     subsetList args tl

@@ -35,11 +35,13 @@ prettyval (TyFun _) v
 prettyval (TyCons d [t]) v
   | d == datatypeType = pretty' t
   | d == datatypeDelay, ValDelay e _ <- unsafeUnvalue v = prettyop "delay" [e]
-prettyval (TyCons d args) v = prettyop c (zipWith prettyval tl' values) where
-  (L _ c,tl) = dataConses d !! unsafeTag v
-  tenv = Map.fromList (zip (dataTyVars d) args)
-  tl' = map (substVoid tenv) tl
-  values = unsafeUnvalConsN (length tl) v
+prettyval (TyCons d args) v = case dataInfo d of
+  DataAlgebraic conses -> prettyop c (zipWith prettyval tl' values) where
+    (L _ c,tl) = conses !! unsafeTag v
+    tenv = Map.fromList (zip (dataTyVars d) args)
+    tl' = map (substVoid tenv) tl
+    values = unsafeUnvalConsN (length tl) v
+  DataPrim _ -> error ("don't know how to print primitive datatype "++show (quoted d))
 prettyval TyVoid _ = error "found an impossible Void value in prettyval"
 
 instance Pretty (TypeVal, Value) where
@@ -53,7 +55,7 @@ instance (Ord k, Pretty k) => Pretty (Map k TypeVal, Map k Value) where
 instance Pretty Prog where
   pretty' prog = vcat $
        [pretty "-- datatypes"]
-    ++ [datatype (dataName d) (dataTyVars d) (dataConses d) 0 | d <- Map.elems (progDatatypes prog)]
+    ++ [datatype (dataName d) (dataTyVars d) (dataInfo d) 0 | d <- Map.elems (progDatatypes prog)]
     ++ [pretty "-- functions"]
     ++ [pretty $ function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
     ++ [pretty "-- overloads"]
@@ -63,11 +65,13 @@ instance Pretty Prog where
     where
     function v o = nested (v <+> "::") o
     definition (Def vl e) = nestedPunct '=' (punctuate ',' vl) e
-    datatype t args [] =
+    datatype t args (DataAlgebraic []) =
       "data" <+> prettyap t args
-    datatype t args l =
+    datatype t args (DataAlgebraic l) =
       nested ("data" <+> prettyap t args <+> "of") $
         vcat $ map (\(c,args) -> prettyop c args) l
+    datatype t args (DataPrim _) =
+      "data" <+> prettyap t args <+> "of <opaque>"
 
 instance Pretty (Map Var Overloads) where
   pretty' info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
@@ -92,7 +96,9 @@ instance Pretty Exp where
   pretty' (ExpApply e1 e2) = uncurry prettyop (apply e1 [e2])
     where apply (ExpApply e a) al = apply e (a:al)
           apply e al = (e,al)
-  pretty' (ExpCons d c args) = prettyop (fst $ dataConses d !! c) args
+  pretty' (ExpCons d c args) = case dataInfo d of
+    DataAlgebraic conses -> prettyop (fst $ conses !! c) args
+    DataPrim _ -> error ("ExpCons with non-algebraic datatype"++show (quoted d))
   pretty' (ExpPrim p el) = prettyop (V (primString p)) el
   pretty' (ExpLoc _ e) = pretty' e
   --pretty' (ExpLoc l e) = "{-@" <+> show l <+> "-}" <+> pretty' e

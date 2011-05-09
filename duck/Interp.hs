@@ -17,7 +17,6 @@ import Control.Monad hiding (guard)
 import Util
 import Var
 import Type
-import Prims
 import Memory
 import Value
 import SrcLoc
@@ -118,17 +117,14 @@ atom global _ loc (AtomGlobal v) = lookupGlobal global loc v
 emptyType :: SrcLoc -> TypeVal -> Exec Bool
 emptyType loc = empty Set.empty where
   empty seen t = if Set.member t seen then return True else empty' (Set.insert t seen) t
-  empty' _ (TyCons c _) | c == datatypeInt = return False
-                        | c == datatypeChar = return False
-                        | c == datatypeDelay = return False
-                        | c == datatypeType = return True
-  empty' seen (TyCons d args) = case dataConses d of
-    [] -> execError loc ("datatype" <+> quoted d <+> "has no constructors, so we don't know if it's empty or not")
-    [(_,tl)] -> do
+  empty' seen (TyCons d args) = case dataInfo d of
+    DataPrim s -> return $ s == 0
+    DataAlgebraic [] -> execError loc ("datatype" <+> quoted d <+> "has no constructors, and thus is neither empty nor nonempty")
+    DataAlgebraic [(_,tl)] -> do
       let tenv = Map.fromList $ zip (dataTyVars d) args
       empties <- mapM (empty seen . substVoid tenv) tl
       return $ and empties
-    (_:_:_) -> return False
+    DataAlgebraic (_:_:_) -> return False
   empty' _ (TyFun _) = return False
   empty' _ TyVoid = execError loc "Void is neither empty nor nonempty"
 

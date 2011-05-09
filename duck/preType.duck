@@ -21,5 +21,9 @@ data PreDatatype of PreData
   CVar -- ^ Name
   SrcLoc -- ^ Location
   (List Var) -- ^ Type variable arguments
-  (List (Loc CVar, List PreTypePat)) -- ^ Constructors
   (List Variance) -- ^ Variances of 'dataTyVars'
+  PreDataInfo -- ^ Actual definition
+
+data PreDataInfo of
+  PreDataAlgebraic (List (Loc CVar, List PreTypePat)) -- ^ Algebraic datatype with constructors
+  PreDataPrim Int -- ^ Primitive datatype with constant size

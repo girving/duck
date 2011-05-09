@@ -5,6 +5,7 @@
 module PreType
   ( PreTypePat(..)
   , PreDatatype(..)
+  , PreDataInfo(..)
   , freeVars
   ) where
 
