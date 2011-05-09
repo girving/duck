@@ -353,6 +353,6 @@ exit :: Int -> IO Void
 put
 -}
 
-assert x = if x 
+assert x = if x
   then ()
-  else exit 1
+  else throw ()

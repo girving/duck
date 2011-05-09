@@ -62,6 +62,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \ ~[c] -> return $ value (Char.ord $ unsafeUnvalue c)
   , PrimOp IntCharChr "chr" [typeInt] typeChar $ \ ~[c] -> return $ value (Char.chr $ unsafeUnvalue c)
   , PrimOp Exit "exit" [typeInt] typeVoid $ \ ~[i] -> liftIO $ exit (unsafeUnvalue i :: Int)
+  , PrimOp Throw "throw" [typeUnit] typeVoid $ \ _ -> execError noLoc "uncaught exception"
   , PrimOp IOPutChar "put" [typeChar] typeUnit $ \ ~[c] -> valEmpty .< liftIO (putChar (unsafeUnvalue c :: Char))
   ]
 
