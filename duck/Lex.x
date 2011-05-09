@@ -1,7 +1,7 @@
 -- | Duck lexer
 
 {
-{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches -fno-warn-unused-binds #-}
+{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches -fno-warn-unused-binds -fno-warn-lazy-unlifted-bindings #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Lex 

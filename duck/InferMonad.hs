@@ -1,4 +1,5 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, ScopedTypeVariables, Rank2Types, PatternGuards, TypeSynonymInstances, FlexibleContexts #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Duck type inference monad
 
 module InferMonad

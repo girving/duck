@@ -1,4 +1,5 @@
 {-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
+{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Duck Operator Tree Parsing
 --
 -- Since the precedence of operators is adjustable, we parse expressions

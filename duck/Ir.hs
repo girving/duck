@@ -335,7 +335,7 @@ prog pprec p = (precs, decls p) where
       callf = Apply (Var fv) (Var $ V "()")
 
     switch :: InScopeSet -> Switch -> Maybe Exp -> Exp
-    switch s (Switch [] alts) fall = withFall (\s (CaseMatch [] f e) -> f . matchTail s e) s alts fall
+    switch s (Switch [] alts) fall = withFall (\s ~(CaseMatch [] f e) -> f . matchTail s e) s alts fall
     switch s (Switch (val:vals) alts) fall = letVarIf var val $ withFall (matchGroup var vals) s' groups fall where
       -- separate into groups of vars vs. cons
       groups = groupBy ((==) `on` isJust . patCons . head . casePat) alts
@@ -352,7 +352,7 @@ prog pprec p = (precs, decls p) where
         alts = map (\(CaseMatch ~(p@(Pat{ patCons = c }):pl) f e) -> (c,(CaseMatch pl (patLets var p . f) (checknext p e)))) group
         -- sort alternatives by toplevel tag (along with arity)
         alts' = groupPairs $ sortBy (on compare fst) $
-              map (\(Just (c,cp), CaseMatch p pf pe) -> ((c,length cp), CaseMatch (cp++p) pf pe)) alts
+              map (\ ~(Just (c,cp), CaseMatch p pf pe) -> ((c,length cp), CaseMatch (cp++p) pf pe)) alts
         checknext (Pat{ patCheck = Just c }) e = CaseGroup [Switch [c var] [CaseMatch [consPat (V "True") []] id e]]
         checknext _ e = e
         cons ((c,arity),alts) = (c,vl, switch s' (Switch (map Var vl ++ vals) alts) fall) where
