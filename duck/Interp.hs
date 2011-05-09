@@ -79,8 +79,6 @@ expr global tenv env loc = exp where
     t <- inferExpr tenv loc e
     d <- exp e
     expr global (Map.insert v t tenv) (Map.insert v d env) loc body
-  exp (ExpCase _ [] Nothing) = execError loc ("pattern match failed: no cases")
-  exp (ExpCase _ [] (Just body)) = exp body
   exp ce@(ExpCase a pl def) = do
     ct <- inferExpr tenv loc ce
     t <- liftInfer $ Infer.atom tenv loc a
@@ -96,7 +94,9 @@ expr global tenv env loc = exp where
                  else unsafeUnvalConsN (length vl) d
         cast ct $ expr global (insertVars tenv vl tl) (insertVars env vl dl) loc e'
       Nothing -> case def of
-        Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (t,d)) <> ", cases =" <+> show pl) -- XXX data printed
+        Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (t,d)) <> cases pl) where
+          cases [] = ", no cases"
+          cases pl = ", cases = "++show pl -- TODO: use pretty printing
         Just e' -> cast ct $ expr global tenv env loc e'
   exp (ExpCons _ c el) = valCons c =.< mapM exp el
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el

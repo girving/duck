@@ -126,8 +126,6 @@ expr env loc = exp where
   exp (ExpLet v e body) = do
     t <- exp e
     expr (Map.insert v t env) loc body
-  exp (ExpCase _ [] Nothing) = return TyVoid
-  exp (ExpCase _ [] (Just body)) = exp body
   exp (ExpCase a pl def) = do
     t <- atom env loc a
     case t of
@@ -262,7 +260,7 @@ resolve f args = do
       options overs = vcat $ map overDesc overs
   pruned <- mapM prune rawOverloads
   overloads <- case partitionEithers pruned of
-    (errs,[]) -> typeErrors noLoc ("no matching overload, tried") $ zip (map overDesc rawOverloads) errs
+    (errs,[]) -> typeErrors noLoc ("no matching overload for" <+> quoted f <> ", tried") $ zip (map overDesc rawOverloads) errs
     (_,os) -> return $ findmin os
 
   -- determine applicable argument type transform annotations
