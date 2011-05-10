@@ -270,7 +270,7 @@ resolve f args = do
 
   -- determine applicable argument type transform annotations
   tt <- maybe
-    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:" $$ vcat args) (options overloads))
+    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") (options overloads))
     return $ transOvers overloads nargs
   let at = zip tt args
 
