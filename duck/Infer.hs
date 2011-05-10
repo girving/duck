@@ -252,6 +252,14 @@ lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization w
 overDesc :: Overload TypePat -> Doc'
 overDesc o = pretty (o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
 
+-- |Given a @<@ comparison function, return the elements not greater than any other
+leasts :: (a -> a -> Bool) -> [a] -> [a]
+leasts _ [] = []
+leasts (<) (x:l)
+  | any (< x) l = r
+  | otherwise = x:r
+  where r = leasts (<) $ filter (not . (x <)) l
+
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
 resolve f args = do
@@ -260,8 +268,7 @@ resolve f args = do
       prune o = tryError $ subsetList args (overTypes o) >. o
       isSpecOf :: Overload TypePat -> Overload TypePat -> Bool
       isSpecOf a b = specializationList (overTypes a) (overTypes b)
-      isMinimal os o = all (\o' -> isSpecOf o o' || not (isSpecOf o' o)) os
-      findmin o = filter (isMinimal o) o -- prune away overloads which are more general than some other overload
+      findmin = leasts isSpecOf -- prune away overloads which are more general than some other overload
       options overs = vcat $ map overDesc overs
   pruned <- mapM prune rawOverloads
   overloads <- case partitionEithers pruned of

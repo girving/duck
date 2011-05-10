@@ -423,10 +423,9 @@ _specialization t t' = isJust (specialization' t t' Map.empty)
 
 specialization' :: TypePat -> TypePat -> Map Var TypePat -> Maybe (Map Var TypePat)
 specialization' t (TsVar v') env =
-  case Map.lookup v' env of
-    Nothing -> Just (Map.insert v' t env)
-    Just t2 | t == t2 -> Just env
-    Just _ -> Nothing
+  case Map.insertLookupWithKey (\_ _ t -> t) v' t env of
+    (Just t2, _) | t2 /= t -> Nothing
+    (_, env) -> Just env
 specialization' (TsCons c tl) (TsCons c' tl') env | c == c' = specializationList' tl tl' env
 specialization' (TsCons _ _) (TsCons c _) env | c == datatypeType = Just env
 specialization' (TsFun f) (TsFun f') env = specializationFuns' f f' env
