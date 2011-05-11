@@ -36,6 +36,7 @@ import Util
   csym { L _ (TokCSym _) }
   int  { L _ (TokInt _) }
   chr  { L _ (TokChar _) }
+  str  { L _ (TokString _) }
   data { L _ (TokData) }
   let  { L _ (TokLet) }
   in   { L _ (TokIn) }
@@ -186,6 +187,7 @@ atom :: { Loc Exp }
 atom_ :: { Loc Exp }
   : int { fmap (Int . tokInt) $1 }
   | chr { fmap (Char . tokChar) $1 }
+  | str { fmap (String . tokString) $1 }
   | lvar { fmap Var $1 }
   | cvar { fmap Var $ locVar $1 }
   | '_' { loc1 $1 Any }
@@ -301,6 +303,7 @@ patternExp l (Var v) = return $ PatVar v
 patternExp l Any = return PatAny
 patternExp l (Int i) = return $ PatInt i
 patternExp l (Char c) = return $ PatChar c
+patternExp l (String s) = return $ PatString c
 patternExp l (List el) = PatList =.< mapM (patternExp l) el
 patternExp l (Ops ops) = PatOps =.< patternOps l ops
 patternExp l (Equals v e) = patternExp l e >.= PatAs v

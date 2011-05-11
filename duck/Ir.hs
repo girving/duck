@@ -100,6 +100,7 @@ pattern_vars s Ast.PatAny = s
 pattern_vars s (Ast.PatVar v) = Set.insert v s
 pattern_vars s (Ast.PatInt _) = s
 pattern_vars s (Ast.PatChar _) = s
+pattern_vars s (Ast.PatString _) = s
 pattern_vars s (Ast.PatCons _ pl) = foldl' pattern_vars s pl
 pattern_vars s (Ast.PatOps o) = Fold.foldl' pattern_vars s o
 pattern_vars s (Ast.PatList pl) = foldl' pattern_vars s pl
@@ -221,6 +222,7 @@ prog pprec p = (precs, decls p) where
   pattern' s l (Ast.PatCons c pl) = first (consPat c) $ patterns' s l pl
   pattern' s _ (Ast.PatInt i) = (anyPat { patCheck = Just (\v -> Prim (Binop IntEqOp) [Int i, Spec (Var v) typeInt]) }, s)
   pattern' s _ (Ast.PatChar c) = (anyPat { patCheck = Just (\v -> Prim (Binop ChrEqOp) [Char c, Spec (Var v) typeChar]) }, s)
+  pattern' s l (Ast.PatString cl) = pattern' s l $ Ast.PatList $ map Ast.PatChar cl
   pattern' _ l (Ast.PatLambda _ _) = irError l $ quoted "->" <+> "(lambda) patterns not yet implemented"
   pattern' _ l (Ast.PatTrans t _) = irError l $ "cannot apply" <+> quoted t <+> "in pattern here"
 
@@ -230,9 +232,13 @@ prog pprec p = (precs, decls p) where
   patterns :: SrcLoc -> [Ast.Pattern] -> ([Pattern], InScopeSet)
   patterns l = fmap Map.keysSet . patterns' Map.empty l
 
+  listexpr :: (a -> Exp) -> [a] -> Exp
+  listexpr f = foldr (Apply . Apply (Var $ V ":") . f) (Var $ V "[]")
+
   expr :: InScopeSet -> SrcLoc -> Ast.Exp -> Exp
   expr _ _ (Ast.Int i) = Int i
   expr _ _ (Ast.Char c) = Char c
+  expr _ _ (Ast.String s) = listexpr Char s
   expr _ _ (Ast.Var v) = Var v
   expr s l (Ast.Lambda pl e) = lambdas s l pl e
   expr s l (Ast.Apply f args) = foldl' Apply (expr s l f) $ map (expr s l) args
@@ -241,7 +247,7 @@ prog pprec p = (precs, decls p) where
   expr s l (Ast.Case sl) = doMatch switches s l sl
   expr s l (Ast.Ops o) = expr s l $ Ast.opsExp l $ sortOps precs l o
   expr s l (Ast.Spec e t) = Spec (expr s l e) t
-  expr s l (Ast.List el) = foldr (\a -> Apply (Apply (Var $ V ":") a)) (Var $ V "[]") $ map (expr s l) el
+  expr s l (Ast.List el) = listexpr (expr s l) el
   expr s l (Ast.If c e1 e2) = Apply (Apply (Apply (Var (V "if")) $ e c) $ e e1) $ e e2 where e = expr s l
   expr s _ (Ast.Seq q) = seq s q
   expr s _ (Ast.ExpLoc l e) = ExpLoc l $ expr s l e

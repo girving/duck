@@ -1,4 +1,5 @@
 -- | Duck lexer
+-- vim:filetype=haskell
 
 {
 {-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches -fno-warn-unused-binds -fno-warn-lazy-unlifted-bindings #-}
@@ -27,6 +28,7 @@ $alphanum = [a-zA-Z0-9_']
 $symbol = [! \# \$ \% & \* \+ \. \\ \/ \< = > \? @ \^ \| \- \~ :]
 
 @char  = [^\\] | \\ ( [\\abtnvfr\"\'] | \^[@-_] | [o0] [0-7]{1,3} | x [0-9a-fA-F]{1,2} )
+-- fix for broken syntax highlighting: "
 
 tokens :-
 
@@ -65,6 +67,8 @@ $white+    ;
   $upper $alphanum* { v (TokCVar . V) }
   $symbol+          { v sym }
   \' @char \'       { v chr }
+  \" @char* \"	    { v str }
+-- and another: "
 }
 
 {
@@ -104,8 +108,12 @@ readsChar (c:s) = [(c,s)]
 readsChar [] = []
 
 chr :: Action
-chr ('\'':s) | [(c,"'")] <- readsChar s = TokChar c
-chr s = error ("bad character: " ++ s) -- should not happen
+chr ~('\'':s) | ~[(c,"'")] <- readsChar s = TokChar c
+
+str :: Action
+str ~('"':s) = TokString $ rstr s where
+  rstr ['"'] = []
+  rstr s | ~[(c,s')] <- readsChar s = c : rstr s'
 
 -- Each action has type :: String -> Token
 

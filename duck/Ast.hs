@@ -49,6 +49,7 @@ data Exp
   | Var !Var
   | Int !Int
   | Char !Char
+  | String !String
   | Any                                 -- ^ Magic underscore variable: @_@
   | List [Exp]                          -- ^ List: @[EXP1,...]@
   | Ops !(Ops Exp)
@@ -92,6 +93,7 @@ data Pattern
   | PatVar !Var
   | PatInt !Int
   | PatChar !Char
+  | PatString !String
   | PatCons !CVar [Pattern]
   | PatList [Pattern]
   | PatOps !(Ops Pattern)
@@ -175,6 +177,7 @@ instance Pretty Exp where
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
   pretty' (Char c) = pretty' (show c)
+  pretty' (String s) = pretty' (show s)
   pretty' Any = pretty' '_'
   pretty' (List el) = pretty' $ brackets $ 3 #> punctuate ',' el
   pretty' (Ops o) = pretty' o
@@ -206,6 +209,7 @@ patToExp (PatOps o) = Ops (fmap patToExp o)
 patToExp (PatVar v) = Var v
 patToExp (PatInt i) = Int i
 patToExp (PatChar c) = Char c
+patToExp (PatString s) = String s
 patToExp (PatList pl) = List (map patToExp pl)
 patToExp (PatLambda pl p) = Lambda pl (patToExp p)
 patToExp (PatTrans t p) = Apply (Var t) [patToExp p]
@@ -223,6 +227,7 @@ expTypeDesc (Apply {}) = "apply"
 expTypeDesc (Var {}) = "variable"
 expTypeDesc (Int {}) = "integer"
 expTypeDesc (Char {}) = "character"
+expTypeDesc (String {}) = "string"
 expTypeDesc (Any {}) = show (quoted '_')
 expTypeDesc (List {}) = "list"
 expTypeDesc (Ops {}) = "operator"

@@ -3,4 +3,4 @@ import base
 put :: List Char -> ()
 put s = iter put s
 
-put ['H','e','l','l','o',' ','w','o','r','l','d','!','\n']
+put "Hello world!\n"

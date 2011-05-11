@@ -25,7 +25,9 @@ import qualified Ptrie
 
 prettyval :: TypeVal -> Value -> Doc'
 prettyval t v | t == typeInt = pretty' (unsafeUnvalue v :: Int)
-prettyval t v | t == typeChar = pretty' (unsafeUnvalue v :: Char)
+prettyval t v | t == typeChar = pretty' (show (unsafeUnvalue v :: Char))
+prettyval (TyCons d [t]) v | V "List" == dataName d && t == typeChar =
+  pretty' (show (unsafeUnvalue v :: [Char]))
 prettyval (TyCons d [t]) v | V "List" == dataName d = pretty' $
   brackets $ 3 #> punctuate ',' (map (prettyval t) v')
   where v' = unsafeUnvalue v :: [Value]
