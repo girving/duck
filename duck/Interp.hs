@@ -157,11 +157,9 @@ apply global loc ft@(TyFun _) fun ae at
     a <- ae tt
     let dl = args ++ [a]
     case o of
-      Over _ _ _ _ Nothing ->
-        -- partially applied
+      Over _ _ _ _ Nothing -> -- partially applied
         return $ value $ ValClosure f tl dl
-      Over oloc tl' _ vl (Just e) -> do
-        -- full function call (parallels Infer.cache)
+      Over oloc tl' _ vl (Just e) -> do -- full function call (parallels Infer.cache)
         let tl = map snd tl'
         cast rt $ withFrame f tl dl loc $ expr global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
 apply global loc t1 v1 e2 t2 = 

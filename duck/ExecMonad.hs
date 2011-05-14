@@ -42,14 +42,16 @@ newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
 -- inference and the like.  Therefore, we use exit status 3 so that they can be
 -- distinguished from the better kinds of errors.
 execError :: Pretty s => SrcLoc -> s -> Exec a
-execError l m = Exec $ ReaderT $ \(_,s) ->
+execError l m = do
+  s <- snd =.< ask
   fatalIO $ stageMsg StageExec noLoc $ StackMsg (reverse s) $ locMsg l m
 
 withFrame :: Var -> [TypeVal] -> [Value] -> SrcLoc -> Exec a -> Exec a
-withFrame f types args loc e = Exec $ ReaderT $ \(p,s) -> do
-  let r e = runReaderT (unExec e) (p, CallFrame f (zipWith (,) types args) loc : s)
+withFrame f types args loc e = do
+  let r = local $ second (CallFrame f (zipWith (,) types args) loc :)
+  s <- snd =.< ask
   when (length s > 64) $ r $ execError loc "stack overflow"
-  handle (\(e :: AsyncException) -> r $ execError loc (show e)) $
+  handleE (\(e :: AsyncException) -> r $ execError loc (show e)) $
     r e
 
 instance ProgMonad Exec where
@@ -59,5 +61,6 @@ runExec :: Prog -> Exec a -> IO a
 runExec p e = runReaderT (unExec e) (p,[])
 
 liftInfer :: Infer a -> Exec a
-liftInfer infer = Exec $ ReaderT $ \ps ->
-  rerunInfer (fmap (mapStackArgs (\(t,_) -> t)) ps) infer
+liftInfer infer = do
+  (p, s) <- ask
+  liftIO $ rerunInfer (p, mapStackArgs fst s) infer

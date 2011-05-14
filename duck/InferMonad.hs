@@ -5,7 +5,6 @@
 module InferMonad
   ( Infer
   , inferError
-  , withGlobals
   , withFrame
   , getProg
   , runInferProg
@@ -13,7 +12,7 @@ module InferMonad
   , debugInfer
   -- * Resolvable substitution failures/type errors
   , TypeError
-  , typeError, typeErrors, typeReError
+  , typeError, typeReError
   , typeMismatch
   ) where
 
@@ -47,22 +46,19 @@ newtype Infer a = Infer { unInfer :: ReaderT (Prog, InferStack) (StateT Function
 
 -- |Indicate a fatal error in inference (one that cannot be resolved by a different overload path)
 inferError :: Pretty s => SrcLoc -> s -> Infer a
-inferError l m = Infer $ ReaderT $ \(_,s) -> 
+inferError l m = do
+  s <- snd =.< ask
   fatalIO $ msg $ StackMsg (reverse s) $ locMsg l m
 
 withFrame :: Var -> [TypeVal] -> SrcLoc -> Infer a -> Infer a
-withFrame f args loc e = Infer $ ReaderT $ \(p,s) -> do
+withFrame f args loc e = do
   let frame = CallFrame f args loc
-      r e = runReaderT (unInfer e) $ (p, frame : s)
+      r = local $ second (frame :)
+  s <- snd =.< ask
   when (length s > 16) $ r $ inferError loc "stack overflow"
   handleE (\(e :: AsyncException) -> r $ inferError loc (show e)) $ -- catch real errors
     catchError (r e) $ \e ->
       throwError (e { msgStack = frame : msgStack e }) -- preprend frame to resolve errors
-
-withGlobals :: TypeEnv -> Infer [(Var,TypeVal)] -> Infer TypeEnv
-withGlobals g f = Infer $ ReaderT $ \(p,s) -> 
-  foldr (uncurry insertVar) g =.< 
-    runReaderT (unInfer f) (p{ progGlobalTypes = g },s)
 
 runInfer :: (Prog, InferStack) -> Infer a -> IO (a, FunctionInfo)
 runInfer ps@(prog,_) f =
@@ -82,9 +78,9 @@ instance ProgMonad Infer where
   getProg = fst =.< ask
 
 debugInfer :: Pretty m => m -> Infer ()
-debugInfer m = Infer $ ask >>= \(_,s) -> liftIO $ do
-  putStrLn $ pout $ punctuate ':' (map callFunction (reverse s)) <:> m
-
+debugInfer m = do
+  s <- snd =.< ask
+  liftIO $ putStrLn $ pout $ punctuate ':' (map callFunction (reverse s)) <:> m
 
 -- |Indicate a potentially recoverable substitution failure/type error that could be caught during overload resolution
 typeError :: (Pretty s, MonadError TypeError m) => SrcLoc -> s -> m a
@@ -92,9 +88,6 @@ typeError l m = throwError $ StackMsg [] $ locMsg l m
 
 typeMismatch :: (Pretty a, Pretty b, MonadError TypeError m) => a -> String -> b -> m c
 typeMismatch x op y = typeError noLoc $ "type mismatch:" <+> quoted x <+> op <+> quoted y <+> "failed"
-
-typeErrors :: (Pretty s, Pretty s', MonadError TypeError m) => SrcLoc -> s -> [(s',TypeError)] -> m a
-typeErrors l m tel = typeError l $ nestedPunct ':' m $ vcat $ map (uncurry (nestedPunct ':')) tel
 
 typeReError :: (Pretty s, MonadError TypeError m) => SrcLoc -> s -> m a -> m a
 typeReError l m f = catchError f $ \te -> typeError l $ nestedPunct ':' m te

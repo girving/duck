@@ -259,10 +259,11 @@ var locals _ v | Set.member v locals = return $ AtomLocal v
 var _ (loc,_) v = do
   (prog, globals) <- get
   case Map.lookup v globals of
-    Just GlobalKind -> return $ AtomGlobal v
-    Just DatatypeKind | Just d <- Map.lookup v (progDatatypes prog) -> return $ AtomVal (typeType (TyCons d [])) valEmpty
-    Just VoidKind -> return $ AtomVal (typeType TyVoid) valEmpty
-    Just DatatypeKind -> lirError loc $ "internal error: unexpected unbound datatype" <+> quoted v
+    Just GlobalKind   -> return $ AtomGlobal v
+    Just DatatypeKind | Just d <- Map.lookup v (progDatatypes prog) 
+                      -> return $ AtomVal (typeType (TyCons d [])) valEmpty
+          | otherwise -> lirError loc $ "internal error: unexpected unbound datatype" <+> quoted v
+    Just VoidKind     -> return $ AtomVal (typeType TyVoid) valEmpty
     Just FunctionKind -> return $ closure v
     Nothing -> lirError loc $ "unbound variable" <+> quoted v
 

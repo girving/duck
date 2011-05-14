@@ -173,10 +173,10 @@ kindConflict :: Var -> Kind -> Kind -> Kind
 kindConflict v DatatypeKind k | isTuple v = k
 kindConflict v k k' | k == k' = k
                     | otherwise = lirError noLoc $ quoted v <+> "is declared as both a" <+> s k <+> "and a" <+> s k'
-  where s GlobalKind = "global"
+  where s GlobalKind   = "global"
         s FunctionKind = "function"
         s DatatypeKind = "datatype"
-        s VoidKind = "datatype"
+        s VoidKind     = "datatype"
  
 -- |Compute the list of free variables in an expression given the set of in scope variables
 free :: InScopeSet -> Exp -> [Var]
@@ -208,11 +208,12 @@ freeAtom _ _ (AtomVal _ _) = []
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
   { progName = progName p2 -- use the second module's name
-  , progDatatypes = Map.unionWithKey conflictLoc (progDatatypes p2) (progDatatypes p1)
-  , progFunctions = Map.unionWith (++) (progFunctions p1) (progFunctions p2)
-  , progOverloads = Map.unionWithKey conflict (progOverloads p2) (progOverloads p1) -- XXX cross-module overloads?
-  , progGlobalTypes = Map.unionWithKey conflict (progGlobalTypes p2) (progGlobalTypes p1)
-  , progDefinitions = progDefinitions p1 ++ progDefinitions p2 }
+  , progDatatypes   = Map.unionWithKey conflictLoc (progDatatypes   p2) (progDatatypes   p1)
+  , progFunctions   = Map.unionWith    (++)        (progFunctions   p1) (progFunctions   p2)
+  , progOverloads   = Map.unionWithKey conflict    (progOverloads   p2) (progOverloads   p1) -- XXX cross-module overloads?
+  , progGlobalTypes = Map.unionWithKey conflict    (progGlobalTypes p2) (progGlobalTypes p1)
+  , progDefinitions = progDefinitions p1 ++ progDefinitions p2
+  }
   where
   conflictLoc v n o = dupError v (loc n) (loc o)
   conflict v _ _ = dupError v noLoc noLoc

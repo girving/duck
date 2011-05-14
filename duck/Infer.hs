@@ -22,19 +22,21 @@ module Infer
   , isTypeType
   , isTypeDelay
   -- * Environment access
-  , lookupGlobal
   , lookupDatatype
   , lookupCons
-  , lookupVariances
   , lookupOver
   ) where
 
 import Prelude hiding (lookup)
+
+import qualified Control.Monad.Reader as Reader
+import Control.Monad.State hiding (join)
 import Data.Either
-import qualified Data.Map as Map
+import Data.Function
 import Data.List hiding (lookup, union)
 import qualified Data.List as List
-import Control.Monad.State hiding (join)
+import qualified Data.Map as Map
+import Data.Maybe
 
 import Util
 import Pretty
@@ -60,31 +62,19 @@ insertOver _final f a o = do
   --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> overRet o
   modify $ Ptrie.mapInsert f a o
 
+partialOver :: Var -> [Trans] -> [TypeVal] -> Overload TypeVal
+partialOver f tt tl = Over noLoc (zip tt tl) (typeClosure f tl) [] Nothing
+
 -- |Lookup an overload from the table, or make one if it's partial
 lookupOver :: Var -> [TypeVal] -> Infer (Maybe (Overload TypeVal))
-lookupOver f tl = get >.=
-  (maybe Nothing (makeover . second (fmap Ptrie.unLeaf) . Ptrie.lookup tl) . Map.lookup f)
-  where
-    makeover (_, Nothing) = Nothing
-    makeover (tt, Just Nothing) = Just $ Over noLoc (zip tt tl) (typeClosure f tl) [] Nothing
-    makeover (_, Just (Just o)) = Just o
-
--- |Given a set of overloads, return the transform annotations for the first @n@ arguments, if they are the same.
-transOvers :: [Overload t] -> Int -> Maybe [Trans]
-transOvers [] _ = Nothing
-transOvers os n = unique $ map (map fst . (take n) . overArgs) os
-
-lookupGlobal :: SrcLoc -> Var -> Infer TypeVal
-lookupGlobal loc v = getProg >>= lp where
-  lp prog
-    | Just r <- Map.lookup v (progGlobalTypes prog) = return r -- fall back to global definitions
-    | otherwise = inferError loc $ "unbound global variable" <+> quoted v
+lookupOver f tl = (uncurry over .=< uncurry (fmap . (,)) . Ptrie.lookup tl <=< Map.lookup f) =.< get where
+  over tt = fromMaybe (partialOver f tt tl) . Ptrie.unLeaf
 
 lookupDatatype :: SrcLoc -> TypeVal -> Infer [(Loc CVar, [TypeVal])]
 lookupDatatype loc (TyCons d [t]) | d == datatypeType = case t of
   TyCons c tl -> return [(L noLoc (dataName c), map typeType tl)]
   TyVoid -> return [(L noLoc (V "Void"), [])]
-  TyFun _ -> inferError loc $ "cannot pattern match on" <+> quoted (typeType t) <> "; matching on function types isn't implemented yet"
+  _ -> inferError loc $ "cannot pattern match on" <+> quoted (typeType t) <> "; matching on function types isn't implemented yet"
 lookupDatatype loc (TyCons d types) = case dataInfo d of
   DataAlgebraic conses -> return $ map (second $ map $ substVoid $ Map.fromList $ zip (dataTyVars d) types) conses
   DataPrim _ -> typeError loc ("expected algebraic datatype, got" <+> quoted d)
@@ -99,15 +89,21 @@ lookupFunction f = getProg >>= \prog ->
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 
+withGlobals :: TypeEnv -> Infer [(Var,TypeVal)] -> Infer TypeEnv
+withGlobals g f =
+  foldr (uncurry insertVar) g =.< 
+    Reader.local (first (\p -> p{ progGlobalTypes = g })) f
+
 -- |Process a list of definitions into the global environment.
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
 prog :: Infer TypeEnv
-prog = getProg >>= foldM (\g -> withGlobals g . definition) Map.empty . progDefinitions
+prog = foldM (\g -> withGlobals g . definition) Map.empty . progDefinitions =<< getProg
 
 definition :: Definition -> Infer [(Var,TypeVal)]
-definition d@(Def vl e) = withFrame (V $ intercalate "," $ map (\(L _ (V s)) -> s) vl) [] l $ do
+definition d@(Def vl e) =
+  withFrame (V $ intercalate "," $ map (\(L _ (V s)) -> s) vl) [] l $ do
   t <- expr Map.empty l e
   tl <- case (vl,t) of
           (_, TyVoid) -> return $ map (const TyVoid) vl
@@ -155,12 +151,16 @@ expr env loc = exp where
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr env l e
 
+lookupVariable :: SrcLoc -> Var -> TypeEnv -> Infer TypeVal
+lookupVariable loc v env = 
+  maybe 
+    (inferError loc $ "unbound variable" <+> quoted v)
+    return $ Map.lookup v env
+
 atom :: Locals -> SrcLoc -> Atom -> Infer TypeVal
 atom _ _ (AtomVal t _) = return t
-atom env loc (AtomLocal v) = case Map.lookup v env of
-  Just r -> return r
-  Nothing -> inferError loc $ "internal error: unbound local variable" <+> quoted v
-atom _ loc (AtomGlobal v) = lookupGlobal loc v
+atom env loc (AtomLocal v) = lookupVariable loc v env
+atom _ loc (AtomGlobal v) = lookupVariable loc v . progGlobalTypes =<< getProg
 
 cons :: SrcLoc -> Datatype -> Int -> [TypeVal] -> Infer TypeVal
 cons loc d c args = do
@@ -203,11 +203,10 @@ apply loc (TyFun fl) t2 = do
       subset'' t2 a
     return (t, r)
   fun (FunClosure f args) = do
-    let atl = args ++ [t2]
-    o <- maybe
-      (withFrame f atl loc $ resolve f atl) -- no match, type not yet inferred
-      return =<< lookupOver f atl
+    o <- maybe (withFrame f tl loc $ resolve f tl)
+      return =<< lookupOver f tl
     return (fst $ overArgs o !! length args, overRet o)
+    where tl = args ++ [t2]
 apply loc t1 t2 = liftM ((,) NoTrans) $
   app Infer.isTypeType appty $
   app Infer.isTypeDelay appdel $
@@ -245,12 +244,8 @@ isTypeDelay = isTypeC1 datatypeDelay
 instance TypeMonad Infer where
   typeApply f = apply noLoc f
 
-lookupVariances :: Prog -> Var -> [Variance]
-lookupVariances prog c | Just d <- Map.lookup c (progDatatypes prog) = dataVariances d
-lookupVariances _ _ = [] -- return [] instead of bailing so that skolemization works cleanly
-
 overDesc :: Overload TypePat -> Doc'
-overDesc o = pretty (o { overBody = Nothing }) <+> parens ("at" <+> show (overLoc o))
+overDesc o = o { overBody = Nothing } <+> parens ("at" <+> show (overLoc o))
 
 -- |Given a @<@ comparison function, return the elements not greater than any other
 leasts :: (a -> a -> Bool) -> [a] -> [a]
@@ -263,37 +258,34 @@ leasts (<) (x:l)
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
 resolve f args = do
-  rawOverloads <- lookupFunction f -- look up possibilities
-  let nargs = length args
-      prune o = tryError $ subsetList args (overTypes o) >. o
-      isSpecOf :: Overload TypePat -> Overload TypePat -> Bool
-      isSpecOf a b = specializationList (overTypes a) (overTypes b)
-      findmin = leasts isSpecOf -- prune away overloads which are more general than some other overload
-      options overs = vcat $ map overDesc overs
-  pruned <- mapM prune rawOverloads
-  overloads <- case partitionEithers pruned of
-    (errs,[]) -> typeErrors noLoc ("no matching overload for" <+> quoted f <> ", tried") $ zip (map overDesc rawOverloads) errs
-    (_,os) -> return $ findmin os
+  allovers <- lookupFunction f
+  let prune o = tryError $ subsetList args (overTypes o) >. o
+  pruned <- mapM prune allovers
+  matches <- case partitionEithers pruned of
+    (errs,[]) -> typeError noLoc $
+      nestedPunct ':' ("no matching overload for" <+> quoted f <> ", tried") $
+        vcat $ zipWith (nestedPunct ':' . overDesc) allovers errs
+    (_,os) -> return os
+
+  -- prune away overloads which are more general than some other overload
+  let overs = leasts (specializationList `on` overTypes) matches
+      options = vcat $ map overDesc overs
 
   -- determine applicable argument type transform annotations
   tt <- maybe
-    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") (options overloads))
-    return $ transOvers overloads nargs
+    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") options)
+    return $ unique $ map (map fst . take (length args) . overArgs) overs
   let at = zip tt args
 
-  over <- case partition ((nargs ==) . length . overVars) overloads of
-    ([o],[]) ->
-      -- exactly one fully applied option: evaluate
+  over <- case partition ((length args ==) . length . overVars) overs of
+    ([o],[]) -> -- exactly one fully applied option: evaluate
       cache f args o
-    ([],_) ->
-      -- all overloads are still partially applied, so create a closure overload
-      return (Over noLoc at (typeClosure f args) [] Nothing)
-    _ | any ((TyVoid ==) . transType) at ->
-      -- ambiguous with void arguments
+    ([],_) -> -- all overloads are still partially applied, so create a closure overload
+      return $ partialOver f tt args
+    _ | any ((TyVoid ==) . transType) at -> -- ambiguous with void arguments
       return (Over noLoc at TyVoid [] Nothing)
-    _ ->
-      -- ambiguous
-      inferError noLoc $ nested ("ambiguous overloads for" <+> quoted f <> ", possibilities are:") (options overloads)
+    _ -> -- ambiguous
+      inferError noLoc $ nested ("ambiguous overloads for" <+> quoted f <> ", possibilities are:") options
 
   insertOver True f at over
   return over
