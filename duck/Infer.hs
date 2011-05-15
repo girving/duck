@@ -169,16 +169,16 @@ cons loc d c args = do
     DataPrim _ -> typeError loc ("expected algebraic datatype, got" <+> quoted d)
   let (cv,tl) = conses !! c
   tenv <- typeReError loc (quoted cv <+> "expected arguments" <+> quoted (hsep tl) <> ", got" <+> quoted (hsep args)) $
-    checkLeftovers noLoc () $
+    checkLeftovers noLoc () =<<
     subsetList args tl
   let targs = map (\v -> Map.findWithDefault TyVoid v tenv) (dataTyVars d)
   return $ TyCons d targs
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do
-  tenv <- checkLeftovers loc ("type specification" <+> quoted ts <+> "is invalid") $
-    typeReError loc (quoted e <+> "has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
-    subset t ts
+  tenv <- checkLeftovers loc ("type specification" <+> quoted ts <+> "is invalid") =<<
+    (typeReError loc (quoted e <+> "has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
+      subset t ts)
   return $ substVoid tenv ts
 
 join :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
@@ -259,7 +259,7 @@ leasts (<) (x:l)
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
 resolve f args = do
   allovers <- lookupFunction f
-  let prune o = tryError $ subsetList args (overTypes o) >. o
+  let prune o = tryError $ ((,) o) =.< subsetList args (overTypes o)
   pruned <- mapM prune allovers
   matches <- case partitionEithers pruned of
     (errs,[]) -> typeError noLoc $
@@ -268,18 +268,19 @@ resolve f args = do
     (_,os) -> return os
 
   -- prune away overloads which are more general than some other overload
-  let overs = leasts (specializationList `on` overTypes) matches
-      options = vcat $ map overDesc overs
+  let overs = leasts (specializationList `on` overTypes . fst) matches
+      options = vcat $ map (overDesc . fst) overs
 
   -- determine applicable argument type transform annotations
   tt <- maybe
     (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") options)
-    return $ unique $ map (map fst . take (length args) . overArgs) overs
+    return $ unique $ map (map fst . take (length args) . overArgs . fst) overs
   let at = zip tt args
 
-  over <- case partition ((length args ==) . length . overVars) overs of
-    ([o],[]) -> -- exactly one fully applied option: evaluate
-      cache f args o
+  over <- case partition ((length args ==) . length . overVars . fst) overs of
+    ([(o,tenv)],[]) -> -- exactly one fully applied option: evaluate
+      cache f args o =<< 
+        checkLeftovers noLoc ("invalid overload" <+> overDesc o) tenv
     ([],_) -> -- all overloads are still partially applied, so create a closure overload
       return $ partialOver f tt args
     _ | any ((TyVoid ==) . transType) at -> -- ambiguous with void arguments
@@ -296,12 +297,10 @@ resolve f args = do
 --
 -- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
-cache :: Var -> [TypeVal] -> Overload TypePat -> Infer (Overload TypeVal)
-cache f args (Over oloc atypes rt vl ~(Just e)) = do
-  let (tt,types) = unzip atypes
-  tenv <- checkLeftovers noLoc ("invalid overload" <+> quoted (foldr typeArrow rt types)) $
-    subsetList args types
-  let al = zip tt args
+cache :: Var -> [TypeVal] -> Overload TypePat -> TypeEnv -> Infer (Overload TypeVal)
+cache f args (Over oloc atypes rt vl ~(Just e)) tenv = do
+  let tt = map fst atypes
+      al = zip tt args
       tl = map (transType . fmap (substVoid tenv)) atypes
       rs = substVoid tenv rt
       or r = Over oloc (zip tt tl) r vl (Just e)
@@ -322,7 +321,7 @@ cache f args (Over oloc atypes rt vl ~(Just e)) = do
   put s -- restore state
   fix True (overRet o) -- and finalize with correct type
 
-checkLeftovers :: Pretty m => SrcLoc -> m -> Infer (Either [Var] a) -> Infer a
-checkLeftovers loc m f = f >>= either (\l -> 
-    inferError loc (m <> "; cannot overload on contravariant variable"<>sPlural l <+> quoted (hsep l)))
+checkLeftovers :: Pretty m => SrcLoc -> m -> Either [Var] a -> Infer a
+checkLeftovers loc m = either 
+  (\l -> inferError loc (m <> "; cannot overload on contravariant variable"<>sPlural l <+> quoted (hsep l)))
   return
