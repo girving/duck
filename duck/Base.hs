@@ -100,7 +100,7 @@ overload prog name tl r args body = prog{ progFunctions = Map.insertWith (++) na
 -- Note that this is different than base.duck.
 base :: Prog
 base = (complete datatypes . types . prims) (empty "") where
-  primop prog p | [] <- primArgs p = prog{ progDefinitions = Def [L noLoc name] exp : progDefinitions prog }
+  primop prog p | [] <- primArgs p = prog{ progDefinitions = Def False [L noLoc name] exp : progDefinitions prog }
                 | otherwise = overload prog name tyargs ret args exp where
     name = V (primName p)
     tyargs = map singleton $ primArgs p

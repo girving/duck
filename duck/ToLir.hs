@@ -179,7 +179,7 @@ toPreType _ _ _ Ir.TsVoid = TpVoid
 
 -- |Add a toplevel statement
 definition :: [Loc Var] -> Exp -> State (Prog, Globals) ()
-definition vl e = modify $ first $ \p -> p { progDefinitions = (Def vl e) : progDefinitions p }
+definition vl e = modify $ first $ \p -> p { progDefinitions = Def False vl e : progDefinitions p }
 
 -- |Add a global overload
 overload :: Loc Var -> [TransType TypePat] -> TypePat -> [Var] -> Exp -> State (Prog, Globals) ()
@@ -204,6 +204,7 @@ unwrapLambda l e
 
 trans :: SrcLoc -> Var -> Trans
 trans _ (V "delay") = Delay
+trans _ (V "static") = Static
 trans l v = lirError l $ "unknown transform" <+> quoted v <+> "applied"
 
 -- |Extracts the annotation from a possibly annotated argument type.

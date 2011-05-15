@@ -75,7 +75,8 @@ type Overloads = Ptrie TypeVal Trans (Overload TypeVal)
 
 -- |Top-level variable definition: @(VARs) = EXP@
 data Definition = Def
-  { defVars :: [Loc Var] -- (tuple of) variables to assign
+  { defStatic :: Bool
+  , defVars :: [Loc Var] -- (tuple of) variables to assign
   , defBody :: Exp -- definition
   }
 instance HasLoc Definition where loc = loc . defVars
@@ -136,7 +137,7 @@ check prog = runSequence $ do
   mapM_ datatype (Map.toList $ progDatatypes prog)
   where
   types = Map.keysSet (progDatatypes prog)
-  def s (Def vl body) = do
+  def s (Def _ vl body) = do
     let add s (L _ (V "_")) = return s
         add s (L l v) = do
           maybe nop (dupError v l) $ Map.lookup v s
@@ -228,7 +229,8 @@ complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datat
     cons :: (Int, (Loc CVar, [TypePat])) -> State Prog ()
     cons (i,(c,tyl)) = do
       case tyl of
-        [] -> modify $ \p -> p { progDefinitions = Def [c] (ExpCons d i []) : progDefinitions p }
+        -- The static == True on the next line is sort of a hack, but probably a safe one
+        [] -> modify $ \p -> p { progDefinitions = Def True [c] (ExpCons d i []) : progDefinitions p }
         _ -> overload c tl r vl (ExpCons d i (map expLocal vl)) where
           vl = take (length tyl) standardVars
           (tl,r) = generalType vl

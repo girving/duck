@@ -14,6 +14,7 @@ module Type
   , unsingleton, unsingleton'
   , freeVars
   , generalType
+  , deStatic
   -- * Transformation annotations
   , Trans(..), TransType
   -- * Datatypes
@@ -166,6 +167,7 @@ class Singleton a b | a -> b where
 instance Singleton TypeVal TypePat where
   singleton (TyCons c tl) = TsCons c (singleton tl)
   singleton (TyFun f) = TsFun (singleton f)
+  singleton (TyStatic t _) = singleton t
   singleton TyVoid = TsVoid
 
 instance Singleton a b => Singleton [a] [b] where
@@ -206,6 +208,10 @@ generalType :: [a] -> ([TypePat], TypePat)
 generalType vl = (tl,r) where
   r : tl = map TsVar (take (length vl + 1) standardVars)
 
+deStatic :: TypeVal -> TypeVal
+deStatic (TyStatic t _) = t
+deStatic t = t
+
 -- Pretty printing
 
 instance Pretty TypePat where
@@ -217,7 +223,8 @@ instance Pretty TypePat where
   pretty' TsVoid = pretty' "Void"
 
 instance Pretty TypeVal where
-  pretty' = pretty' . singleton
+  pretty' (TyStatic t _) = prettyap Static [t]
+  pretty' t = pretty' $ singleton t
 
 instance (Pretty t, IsType t) => Pretty (TypeFun t) where
   pretty' (FunClosure f []) = pretty' f
@@ -232,6 +239,7 @@ instance (Pretty t, IsType t) => Pretty [TypeFun t] where
 instance Pretty Trans where
   pretty' NoTrans = pretty' "<no transform>"
   pretty' Delay = pretty' "delay"
+  pretty' Static = pretty' "static"
 
 instance (Pretty t, IsType t) => Pretty (TransType t) where
   pretty' (NoTrans, t) = pretty' t

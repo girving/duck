@@ -44,6 +44,7 @@ prettyval (TyCons d args) v = case dataInfo d of
     tl' = map (substVoid tenv) tl
     values = unsafeUnvalConsN (length tl) v
   DataPrim _ -> error ("don't know how to print primitive datatype "++show (quoted d))
+prettyval (TyStatic t _) d = prettyval t d
 prettyval TyVoid _ = error "found an impossible Void value in prettyval"
 
 instance Pretty (TypeVal, Value) where
@@ -66,7 +67,7 @@ instance Pretty Prog where
     ++ [pretty $ definition d | d <- progDefinitions prog]
     where
     function v o = nested (v <+> "::") o
-    definition (Def vl e) = nestedPunct '=' (punctuate ',' vl) e
+    definition (Def _ vl e) = nestedPunct '=' (punctuate ',' vl) e
     datatype t args (DataAlgebraic []) =
       "data" <+> prettyap t args
     datatype t args (DataAlgebraic l) =

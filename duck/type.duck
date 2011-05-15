@@ -28,6 +28,7 @@ data TypeFun t of
 data TypeVal of
   TyCons (Box Datatype) (List TypeVal)
   TyFun (List (TypeFun TypeVal))
+  TyStatic TypeVal Value
   TyVoid
 
 -- |A polymorphic set of concrete types (used for function overloads).  This is the same
@@ -63,6 +64,7 @@ data Variance of Covariant ; Invariant
 data Trans of
   NoTrans
   Delay -- :: Delay
+  Static -- Const might be a better name
 
 -- |Datatype definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
 -- IMPORTANT: If you change this, PreDatatype in preType.duck must be changed as well.

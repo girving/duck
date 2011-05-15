@@ -21,6 +21,7 @@ module Infer
   , apply
   , isTypeType
   , isTypeDelay
+  , staticFunction
   -- * Environment access
   , lookupDatatype
   , lookupCons
@@ -29,8 +30,9 @@ module Infer
 
 import Prelude hiding (lookup)
 
+import Control.Monad
 import qualified Control.Monad.Reader as Reader
-import Control.Monad.State hiding (join)
+import Control.Monad.State
 import Data.Either
 import Data.Function
 import Data.List hiding (lookup, union)
@@ -39,7 +41,7 @@ import qualified Data.Map as Map
 import Data.Maybe
 
 import Util
-import Pretty
+import Pretty hiding (guard)
 import Var
 import SrcLoc
 import Type
@@ -49,6 +51,7 @@ import Lir hiding (union)
 import InferMonad
 import qualified Ptrie
 import qualified Base
+import Memory
 
 -- Some aliases for documentation purposes
 
@@ -78,6 +81,8 @@ lookupDatatype loc (TyCons d [t]) | d == datatypeType = case t of
 lookupDatatype loc (TyCons d types) = case dataInfo d of
   DataAlgebraic conses -> return $ map (second $ map $ substVoid $ Map.fromList $ zip (dataTyVars d) types) conses
   DataPrim _ -> typeError loc ("expected algebraic datatype, got" <+> quoted d)
+lookupDatatype loc (TyStatic t _) = lookupDatatype loc t
+lookupDatatype _ TyVoid = return []
 lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 
 lookupFunction :: Var -> Infer [Overload TypePat]
@@ -102,54 +107,92 @@ prog :: Infer TypeEnv
 prog = foldM (\g -> withGlobals g . definition) Map.empty . progDefinitions =<< getProg
 
 definition :: Definition -> Infer [(Var,TypeVal)]
-definition d@(Def vl e) =
+definition d@(Def st vl e) =
   withFrame (V $ intercalate "," $ map (\(L _ (V s)) -> s) vl) [] l $ do
-  t <- expr Map.empty l e
+  t <- expr st Map.empty l e
   tl <- case (vl,t) of
           (_, TyVoid) -> return $ map (const TyVoid) vl
           ([_],_) -> return [t]
-          (_, TyCons c tl) | isDatatypeTuple c, length vl == length tl -> return tl
+          (_, TyStatic (TyCons c tl) d) | isDatatypeTuple c, length vl == length tl ->
+            return $ zipWith TyStatic tl dl
+            where dl = unsafeUnvalConsN (length tl) d
+          (_, TyCons c tl) | isDatatypeTuple c, length vl == length tl -> 
+            return tl
           ([],_) -> inferError l $ "expected (), got" <+> quoted t
           _ -> inferError l $ "expected" <+> length vl <> "-tuple, got" <+> quoted t
   return (zip (map unLoc vl) tl)
   where l = loc d
 
-expr :: Locals -> SrcLoc -> Exp -> Infer TypeVal
-expr env loc = exp where
-  exp (ExpAtom a) = atom env loc a
+unStatic :: TypeVal -> Maybe (TypeVal, Value)
+unStatic (TyStatic t d) = Just (t, d)
+unStatic _ = Nothing
+
+isStatic :: TypeVal -> Bool
+isStatic (TyStatic{}) = True
+isStatic _ = False
+
+reStatic :: TypeVal -> TypeVal -> TypeVal
+reStatic (TyStatic _ d) t = TyStatic t d
+reStatic _ t = t
+
+expr :: Bool -> Locals -> SrcLoc -> Exp -> Infer TypeVal
+expr static env loc e = checkStatic =<< exp e where
+  exp (ExpAtom a) = atom static env loc a
   exp (ExpApply e1 e2) = do
     t1 <- exp e1
-    t2 <- exp e2
-    snd =.< apply loc t1 t2
+    st <- staticFunction t1
+    t2 <- expr (static || st) env loc e2
+    snd =.< apply static loc t1 t2
   exp (ExpLet v e body) = do
     t <- exp e
-    expr (Map.insert v t env) loc body
+    expr static (Map.insert v t env) loc body
   exp (ExpCase a pl def) = do
-    t <- atom env loc a
+    t <- checkStatic =<< atom static env loc a
+    conses <- lookupDatatype loc t
     case t of
       TyVoid -> return TyVoid
+      TyStatic t d -> do
+        let i = unsafeTag d
+            (L _ c, tl) = conses !! i
+            n = length tl
+        case find (\(c',_,_) -> c == c') pl of
+          Just (_,vl,e') 
+            | length vl == n -> do
+              let dl = unsafeUnvalConsN (length tl) d
+              expr static (insertVars env vl $ zipWith TyStatic tl dl) loc e'
+            | otherwise -> inferError loc $ "arity mismatch in static pattern:" <+> 
+              quoted c <+> "expected" <+> a <+> "argument"<>sPlural tl <+>
+              "but got" <+> quoted (hsep vl)
+          Nothing -> maybe
+            (inferError loc ("static pattern match failed: exp =" <+> quoted (pretty (t,d))))
+            exp def
       t -> do
-        conses <- lookupDatatype loc t
-        let caseType (c,vl,e') = case lookupCons conses c of
-              Just tl | length tl == length vl ->
-                expr (insertVars env vl tl) loc e'
-              Just tl | a <- length tl ->
-                inferError loc $ "arity mismatch in pattern:" <+> quoted c <+> "expected" <+> a <+> "argument"<>sPlural tl 
-                  <+>"but got" <+> quoted (hsep vl)
-              Nothing ->
-                inferError loc ("datatype" <+> quoted t <+> "has no constructor" <+> quoted c)
-            defaultType Nothing = return []
-            defaultType (Just e') = expr env loc e' >.= (:[])
         caseResults <- mapM caseType pl
         defaultResults <- defaultType def
-        joinList loc (caseResults ++ defaultResults)
+        unifyList loc (caseResults ++ defaultResults)
+        where
+        caseType (c,vl,e') = case lookupCons conses c of
+          Just tl | length tl == length vl ->
+            expr static (insertVars env vl tl) loc e'
+          Just tl ->
+            inferError loc $ "arity mismatch in pattern:" <+> 
+              quoted c <+> "expected" <+> length tl <+> "argument"<>sPlural tl <+>
+              "but got" <+> quoted (hsep vl)
+          Nothing ->
+            inferError loc ("datatype" <+> quoted t <+> "has no constructor" <+> quoted c)
+        defaultType Nothing = return []
+        defaultType (Just e') = expr static env loc e' >.= (:[])
   exp (ExpCons d c el) =
-    cons loc d c =<< mapM exp el
+    cons static loc d c =<< mapM exp el
   exp (ExpPrim op el) =
-    Base.primType loc op =<< mapM exp el
+    -- TODO: execute if static or non-IO and all args static
+    Base.primType loc op =<< mapM (deStatic .=< exp) el
   exp (ExpSpec e ts) =
     spec loc ts e =<< exp e
-  exp (ExpLoc l e) = expr env l e
+  exp (ExpLoc l e) = expr static env l e
+  checkStatic t
+    | not static || isStatic t = return t
+    | otherwise = inferError loc $ "non-static value in static expression:" <+> quoted e
 
 lookupVariable :: SrcLoc -> Var -> TypeEnv -> Infer TypeVal
 lookupVariable loc v env = 
@@ -157,13 +200,14 @@ lookupVariable loc v env =
     (inferError loc $ "unbound variable" <+> quoted v)
     return $ Map.lookup v env
 
-atom :: Locals -> SrcLoc -> Atom -> Infer TypeVal
-atom _ _ (AtomVal t _) = return t
-atom env loc (AtomLocal v) = lookupVariable loc v env
-atom _ loc (AtomGlobal v) = lookupVariable loc v . progGlobalTypes =<< getProg
+atom :: Bool -> Locals -> SrcLoc -> Atom -> Infer TypeVal
+atom False _ _ (AtomVal t _) = return t
+atom True _ _ (AtomVal t v) = return $ TyStatic t v
+atom _ env loc (AtomLocal v) = lookupVariable loc v env
+atom _ _ loc (AtomGlobal v) = lookupVariable loc v . progGlobalTypes =<< getProg
 
-cons :: SrcLoc -> Datatype -> Int -> [TypeVal] -> Infer TypeVal
-cons loc d c args = do
+cons :: Bool -> SrcLoc -> Datatype -> Int -> [TypeVal] -> Infer TypeVal
+cons static loc d c args = do
   conses <- case dataInfo d of
     DataAlgebraic conses -> return conses
     DataPrim _ -> typeError loc ("expected algebraic datatype, got" <+> quoted d)
@@ -172,7 +216,10 @@ cons loc d c args = do
     checkLeftovers noLoc () =<<
     subsetList args tl
   let targs = map (\v -> Map.findWithDefault TyVoid v tenv) (dataTyVars d)
-  return $ TyCons d targs
+      t = TyCons d targs
+  return $ maybe t
+    (TyStatic t . valCons c)
+    (Control.Monad.guard static >> mapM (snd .=< unStatic) args)
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do
@@ -181,33 +228,42 @@ spec loc ts e t = do
       subset t ts)
   return $ substVoid tenv ts
 
-join :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
-join loc t1 t2 =
+unify :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
+unify loc t1 t2 =
   typeReError loc ("failed to unify types" <+> quoted t1 <+> "and" <+> quoted t2) $
     union t1 t2
 
 -- In future, we might want this to produce more informative error messages
-joinList :: SrcLoc -> [TypeVal] -> Infer TypeVal
-joinList loc = foldM1 (join loc)
+unifyList :: SrcLoc -> [TypeVal] -> Infer TypeVal
+unifyList loc = foldM1 (unify loc)
 
-apply :: SrcLoc -> TypeVal -> TypeVal -> Infer (Trans, TypeVal)
-apply _ TyVoid _ = return (NoTrans, TyVoid)
-apply loc (TyFun fl) t2 = do
+apply :: Bool -> SrcLoc -> TypeVal -> TypeVal -> Infer (Trans, TypeVal)
+apply _ _ TyVoid _ = return (NoTrans, TyVoid)
+apply static loc (TyFun fl) t2 = do
   (t:tt, l) <- mapAndUnzipM fun fl
   unless (all (t ==) tt) $
     inferError loc ("conflicting transforms applying" <+> quoted fl <+> "to" <+> quoted t2)
-  (,) t =.< joinList loc l
+  (,) t =.< unifyList loc l
   where
   fun f@(FunArrow t a r) = do
     typeReError loc ("cannot apply" <+> quoted f <+> "to" <+> quoted t2) $
       subset'' t2 a
     return (t, r)
-  fun (FunClosure f args) = do
+  fun ft@(FunClosure f args) = do
+    st <- staticFunction (TyFun [ft])
+    let tl = args ++ [if st then t2 else deStatic t2]
     o <- maybe (withFrame f tl loc $ resolve f tl)
       return =<< lookupOver f tl
-    return (fst $ overArgs o !! length args, overRet o)
-    where tl = args ++ [t2]
-apply loc t1 t2 = liftM ((,) NoTrans) $
+    r <- maybe 
+      (return $ overRet o)
+      -- if static we need to reevaluate the whole thing statically to get a static result:
+      (withFrame f tl loc .
+        expr static (Map.fromList $ zipWith3 
+          (\v (t,_) a -> (v, transType (t,a)))
+          (overVars o) (overArgs o) (args ++ [t2])) (overLoc o))
+      (guard static >> overBody o)
+    return (fst $ overArgs o !! length args, r)
+apply _ loc t1 t2 = liftM ((,) NoTrans) $
   app Infer.isTypeType appty $
   app Infer.isTypeDelay appdel $
   typeError loc ("cannot apply" <+> quoted t1 <+> "to" <+> quoted t2)
@@ -242,7 +298,7 @@ isTypeDelay :: TypeVal -> Infer (Maybe TypeVal)
 isTypeDelay = isTypeC1 datatypeDelay
 
 instance TypeMonad Infer where
-  typeApply f = apply noLoc f
+  typeApply f = apply False noLoc f
 
 overDesc :: Overload TypePat -> Doc'
 overDesc o = o { overBody = Nothing } <+> parens ("at" <+> show (overLoc o))
@@ -255,21 +311,24 @@ leasts (<) (x:l)
   | otherwise = x:r
   where r = leasts (<) $ filter (not . (x <)) l
 
--- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
-resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
-resolve f args = do
+-- |Deterine applicable overloads.
+-- This information could be cached in the Ptrie.
+overload :: Var -> [TypeVal] -> Infer [(Overload TypePat, Either [Var] TypeEnv)]
+overload f args = do
   allovers <- lookupFunction f
   let prune o = tryError $ ((,) o) =.< subsetList args (overTypes o)
   pruned <- mapM prune allovers
-  matches <- case partitionEithers pruned of
+  case partitionEithers pruned of
     (errs,[]) -> typeError noLoc $
       nestedPunct ':' ("no matching overload for" <+> quoted f <> ", tried") $
         vcat $ zipWith (nestedPunct ':' . overDesc) allovers errs
-    (_,os) -> return os
+    (_,os) -> return $ leasts (specializationList `on` overTypes . fst) os
 
-  -- prune away overloads which are more general than some other overload
-  let overs = leasts (specializationList `on` overTypes . fst) matches
-      options = vcat $ map (overDesc . fst) overs
+-- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
+resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
+resolve f args = do
+  overs <- overload f args
+  let options = vcat $ map (overDesc . fst) overs
 
   -- determine applicable argument type transform annotations
   tt <- maybe
@@ -279,7 +338,7 @@ resolve f args = do
 
   over <- case partition ((length args ==) . length . overVars . fst) overs of
     ([(o,tenv)],[]) -> -- exactly one fully applied option: evaluate
-      cache f args o =<< 
+      cache f at o =<< 
         checkLeftovers noLoc ("invalid overload" <+> overDesc o) tenv
     ([],_) -> -- all overloads are still partially applied, so create a closure overload
       return $ partialOver f tt args
@@ -297,31 +356,39 @@ resolve f args = do
 --
 -- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
-cache :: Var -> [TypeVal] -> Overload TypePat -> TypeEnv -> Infer (Overload TypeVal)
-cache f args (Over oloc atypes rt vl ~(Just e)) tenv = do
-  let tt = map fst atypes
-      al = zip tt args
-      tl = map (transType . fmap (substVoid tenv)) atypes
-      rs = substVoid tenv rt
-      or r = Over oloc (zip tt tl) r vl (Just e)
-      eval = do
-        r <- expr (Map.fromList (zip vl tl)) oloc e
-        typeReError noLoc ("failed to unify result" <+> quoted r <+>"with return signature" <+> quoted rs) $
-          union r rs
-      fix final prev = do
-        insertOver final f al (or prev)
-        r <- eval
-        if r == prev
-          then return (or r)
-          else if final
-            then inferError noLoc "internal error: type convergence failed"
-            else fix final r
+cache :: Var -> [TransType TypeVal] -> Overload TypePat -> TypeEnv -> Infer (Overload TypeVal)
+cache f al (Over oloc atypes rt vl ~(Just e)) tenv = do
   s <- get -- fork state to do speculative fixpoint
-  o <- fix False TyVoid -- recursive function calls are initially assumed to be void
+  r <- fix False TyVoid -- recursive function calls are initially assumed to be void
   put s -- restore state
-  fix True (overRet o) -- and finalize with correct type
+  r' <- fix True r -- and finalize with correct type
+  when (r /= r') $ inferError noLoc "internal error: type convergence failed"
+  return (or r)
+  where
+  tf (r, arg) (_r, a) = (r, reStatic arg $ substVoid tenv a)
+  tl = zipWith tf al atypes
+  rs = substVoid tenv rt
+  or r = Over oloc tl r vl (Just e)
+  eval = do
+    r <- expr False (Map.fromList (zip vl (map transType tl))) oloc e
+    typeReError noLoc ("failed to unify result" <+> quoted r <+>"with return signature" <+> quoted rs) $
+      union r rs
+  fix final prev = do
+    insertOver final f al (or prev)
+    r <- eval
+    if final || r == prev
+      then return r
+      else fix final r
 
 checkLeftovers :: Pretty m => SrcLoc -> m -> Either [Var] a -> Infer a
 checkLeftovers loc m = either 
   (\l -> inferError loc (m <> "; cannot overload on contravariant variable"<>sPlural l <+> quoted (hsep l)))
   return
+
+-- |Determine if a given type, when used as a function, takes a static argument
+-- TODO: improve error message, and ideally avoid the re-overload (should be in ptrie during exec)
+staticFunction :: TypeVal -> Infer Bool
+staticFunction (TyFun fl) = maybe (inferError noLoc "ambiguous staticness") return . unique . concat =<< mapM sf fl where
+  sf (FunArrow tr _ _) = return $ [Static == tr]
+  sf (FunClosure f al) = map ((Static ==) . fst . (!! length al) . overArgs . fst) =.< overload f al
+staticFunction _ = return False
