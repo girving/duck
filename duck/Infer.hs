@@ -37,6 +37,7 @@ import Data.Either
 import Data.Function
 import Data.List hiding (lookup, union)
 import qualified Data.List as List
+import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Maybe
 
@@ -94,7 +95,7 @@ lookupFunction f = getProg >>= \prog ->
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 
-withGlobals :: TypeEnv -> Infer [(Var,TypeVal)] -> Infer TypeEnv
+withGlobals :: GlobalTypes -> Infer [(Var,GlobalType)] -> Infer GlobalTypes
 withGlobals g f =
   foldr (uncurry insertVar) g =.< 
     Reader.local (first (\p -> p{ progGlobalTypes = g })) f
@@ -103,10 +104,10 @@ withGlobals g f =
 -- The global environment is threaded through function calls, so that
 -- functions are allowed to refer to variables defined later on as long
 -- as the variables are defined before the function is executed.
-prog :: Infer TypeEnv
+prog :: Infer GlobalTypes
 prog = foldM (\g -> withGlobals g . definition) Map.empty . progDefinitions =<< getProg
 
-definition :: Definition -> Infer [(Var,TypeVal)]
+definition :: Definition -> Infer [(Var,GlobalType)]
 definition d@(Def st vl e) =
   withFrame (V $ intercalate "," $ map (\(L _ (V s)) -> s) vl) [] l $ do
   t <- expr st Map.empty l e
@@ -120,7 +121,8 @@ definition d@(Def st vl e) =
             return tl
           ([],_) -> inferError l $ "expected (), got" <+> quoted t
           _ -> inferError l $ "expected" <+> length vl <> "-tuple, got" <+> quoted t
-  return (zip (map unLoc vl) tl)
+  return $ zipWith3 (\v t i -> (unLoc v,(t,(e,i)))) vl tl $
+    case tl of { [_] -> [Nothing] ; _ -> map Just [0..] }
   where l = loc d
 
 unStatic :: TypeVal -> Maybe (TypeVal, Value)
@@ -194,7 +196,7 @@ expr static env loc e = checkStatic =<< exp e where
     | not static || isStatic t = return t
     | otherwise = inferError loc $ "non-static value in static expression:" <+> quoted e
 
-lookupVariable :: SrcLoc -> Var -> TypeEnv -> Infer TypeVal
+lookupVariable :: SrcLoc -> Var -> Map Var a -> Infer a
 lookupVariable loc v env = 
   maybe 
     (inferError loc $ "unbound variable" <+> quoted v)
@@ -204,7 +206,19 @@ atom :: Bool -> Locals -> SrcLoc -> Atom -> Infer TypeVal
 atom False _ _ (AtomVal t _) = return t
 atom True _ _ (AtomVal t v) = return $ TyStatic t v
 atom _ env loc (AtomLocal v) = lookupVariable loc v env
-atom _ _ loc (AtomGlobal v) = lookupVariable loc v . progGlobalTypes =<< getProg
+atom False _ loc (AtomGlobal v) = fst =.< lookupVariable loc v . progGlobalTypes =<< getProg
+atom True _ loc (AtomGlobal v) = do
+  (t, (e, i)) <- lookupVariable loc v . progGlobalTypes =<< getProg
+  if isStatic t
+    then return t
+    else maybe return pick i =<< expr True Map.empty loc e
+  where
+  pick i (TyStatic (TyCons c tl) d) | isDatatypeTuple c =
+    return $ TyStatic (tl !! i) (dl !! i)
+    where dl = unsafeUnvalConsN (succ i) d
+  pick i (TyCons c tl) | isDatatypeTuple c = -- this is probably an error if not impossible
+    return $ tl !! i
+  pick _ t = inferError loc $ "expected static tuple, got" <+> t
 
 cons :: Bool -> SrcLoc -> Datatype -> Int -> [TypeVal] -> Infer TypeVal
 cons static loc d c args = do

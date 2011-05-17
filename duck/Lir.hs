@@ -12,6 +12,7 @@ module Lir
   , ProgMonad(..)
   , Overload(..), Definition(..)
   , Overloads
+  , GlobalType, GlobalTypes
   , Exp(..)
   , Atom(..)
   , Kind(..), Globals
@@ -55,7 +56,7 @@ data Prog = Prog
   , progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
   , progFunctions :: Map Var [Overload TypePat] -- ^ original overload definitions by function name
   , progOverloads :: Map Var Overloads -- ^ all overloads inferred to be needed, set after inference
-  , progGlobalTypes :: TypeEnv -- ^ set after inference
+  , progGlobalTypes :: GlobalTypes -- ^ set after inference
   , progDefinitions :: [Definition] -- ^ list of top-level definitions
   }
 
@@ -80,6 +81,9 @@ data Definition = Def
   , defBody :: Exp -- definition
   }
 instance HasLoc Definition where loc = loc . defVars
+
+type GlobalType = (TypeVal, (Exp, Maybe Int))
+type GlobalTypes = Map Var GlobalType
 
 class Monad m => ProgMonad m where
   getProg :: m Prog
@@ -229,8 +233,7 @@ complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datat
     cons :: (Int, (Loc CVar, [TypePat])) -> State Prog ()
     cons (i,(c,tyl)) = do
       case tyl of
-        -- The static == True on the next line is sort of a hack, but probably a safe one
-        [] -> modify $ \p -> p { progDefinitions = Def True [c] (ExpCons d i []) : progDefinitions p }
+        [] -> modify $ \p -> p { progDefinitions = Def False [c] (ExpCons d i []) : progDefinitions p }
         _ -> overload c tl r vl (ExpCons d i (map expLocal vl)) where
           vl = take (length tyl) standardVars
           (tl,r) = generalType vl

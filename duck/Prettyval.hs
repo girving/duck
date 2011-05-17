@@ -110,3 +110,8 @@ instance Pretty Atom where
   pretty' (AtomLocal v) = pretty' v
   pretty' (AtomGlobal v) = pretty' v
   pretty' (AtomVal t v) = prettyval t v
+
+instance Pretty TypeVal where
+  pretty' (TyStatic t v) = prettyap Static [(t,v)]
+  pretty' t = pretty' $ singleton t
+

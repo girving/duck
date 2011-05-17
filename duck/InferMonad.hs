@@ -29,6 +29,7 @@ import Stage
 import Type
 import Lir
 import SrcLoc
+import Prettyval ()
 
 type InferStack = CallStack TypeVal
 
@@ -65,7 +66,7 @@ runInfer ps@(prog,_) f =
   either (fatalIO . msg) return =<<
     runErrorT (runStateT (runReaderT (unInfer f) ps) (progOverloads prog))
 
-runInferProg :: Infer TypeEnv -> Prog -> IO Prog
+runInferProg :: Infer GlobalTypes -> Prog -> IO Prog
 runInferProg f prog = do
   (g,o) <- runInfer (prog,[]) f
   return $ prog { progGlobalTypes = g, progOverloads = o }

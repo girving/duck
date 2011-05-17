@@ -152,7 +152,7 @@ apply static global loc ft@(TyFun _) fun ae at
     -- lookup appropriate overload (parallels Infer.apply/resolve)
     let tl = types ++ [if tt == Static then at else deStatic at]
     o <- maybe
-      (execError loc ("unresolved overload:" <+> quoted (prettyap f tl) $$ ft <+> at))
+      (execError loc $ "unresolved overload:" <+> quoted (prettyap f tl))
       return =<< liftInfer (Infer.lookupOver f tl)
     -- we throw away the type because we can reconstruct it later with argType
     a <- ae tt

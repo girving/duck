@@ -120,7 +120,7 @@ main = do
   lir <- phase StageInfer id (runInferProg Infer.prog lir)
 
   unless (compileOnly flags) $ do
-  _ <- phase StageExec (\v -> (Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
+  _ <- phase StageExec (\v -> (Map.map fst $ Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
   return ()
 
 -- for ghci use

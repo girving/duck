@@ -222,10 +222,6 @@ instance Pretty TypePat where
   pretty' (TsFun f) = pretty' f
   pretty' TsVoid = pretty' "Void"
 
-instance Pretty TypeVal where
-  pretty' (TyStatic t _) = prettyap Static [t]
-  pretty' t = pretty' $ singleton t
-
 instance (Pretty t, IsType t) => Pretty (TypeFun t) where
   pretty' (FunClosure f []) = pretty' f
   pretty' (FunClosure f tl) = prettyap f tl
