@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances, FlexibleInstances, TypeSynonymInstances, StandaloneDeriving #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck Ir Types
 
 -- These are the same as the later Lir types in the Type module, except that Datatypes

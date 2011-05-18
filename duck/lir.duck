@@ -19,6 +19,6 @@ data Exp of
   ExpSpec Exp TypePat
 
 data Atom of
-  AtomVal TypeVal Value
+  AtomVal TypedValue
   AtomLocal Var
   AtomGlobal Var

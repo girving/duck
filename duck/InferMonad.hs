@@ -1,5 +1,4 @@
 {-# LANGUAGE MultiParamTypeClasses, GeneralizedNewtypeDeriving, ScopedTypeVariables, Rank2Types, PatternGuards, TypeSynonymInstances, FlexibleContexts #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Duck type inference monad
 
 module InferMonad
@@ -29,7 +28,7 @@ import Stage
 import Type
 import Lir
 import SrcLoc
-import Prettyval ()
+import TypedValue ()
 
 type InferStack = CallStack TypeVal
 

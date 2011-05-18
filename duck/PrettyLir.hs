@@ -1,57 +1,20 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances, StandaloneDeriving #-}
-{-# OPTIONS -fno-warn-orphans #-}
--- | Pretty printing for duck values and Lir
+{-# LANGUAGE PatternGuards, FlexibleInstances, StandaloneDeriving #-}
 
-module Prettyval
-  ( prettyval
-  ) where
+module PrettyLir
+ (
+ ) where
 
-import Prelude hiding (lookup)
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Var
-import Type
-import Prims
-import Pretty
-import ParseOps
-import SrcLoc
-import Memory
-import Value
 import Lir
+import ParseOps
 import qualified Ptrie
-
--- | Pretty printing for values
-
-prettyval :: TypeVal -> Value -> Doc'
-prettyval t v | t == typeInt = pretty' (unsafeUnvalue v :: Int)
-prettyval t v | t == typeChar = pretty' (show (unsafeUnvalue v :: Char))
-prettyval (TyCons d [t]) v | V "List" == dataName d && t == typeChar =
-  pretty' (show (unsafeUnvalue v :: [Char]))
-prettyval (TyCons d [t]) v | V "List" == dataName d = pretty' $
-  brackets $ 3 #> punctuate ',' (map (prettyval t) v')
-  where v' = unsafeUnvalue v :: [Value]
-prettyval (TyFun _) v 
-  | ValClosure v types args <- unsafeUnvalue v
-  = prettyop v (zipWith prettyval types args)
-prettyval (TyCons d [t]) v
-  | d == datatypeType = pretty' t
-  | d == datatypeDelay, ValDelay e _ <- unsafeUnvalue v = prettyop "delay" [e]
-prettyval (TyCons d args) v = case dataInfo d of
-  DataAlgebraic conses -> prettyop c (zipWith prettyval tl' values) where
-    (L _ c,tl) = conses !! unsafeTag v
-    tenv = Map.fromList (zip (dataTyVars d) args)
-    tl' = map (substVoid tenv) tl
-    values = unsafeUnvalConsN (length tl) v
-  DataPrim _ -> error ("don't know how to print primitive datatype "++show (quoted d))
-prettyval (TyStatic t _) d = prettyval t d
-prettyval TyVoid _ = error "found an impossible Void value in prettyval"
-
-instance Pretty (TypeVal, Value) where
-  pretty' (t,v) = 2 #> prettyval t v <+> "::" <+> t
-
-instance (Ord k, Pretty k) => Pretty (Map k TypeVal, Map k Value) where
-  pretty' (t,v) = pretty' $ Map.intersectionWith (,) t v
+import Pretty
+import Prims
+import Type
+import TypedValue
+import Var
 
 -- Pretty printing for Lir
 
@@ -109,9 +72,4 @@ instance Pretty Exp where
 instance Pretty Atom where
   pretty' (AtomLocal v) = pretty' v
   pretty' (AtomGlobal v) = pretty' v
-  pretty' (AtomVal t v) = prettyval t v
-
-instance Pretty TypeVal where
-  pretty' (TyStatic t v) = prettyap Static [(t,v)]
-  pretty' t = pretty' $ singleton t
-
+  pretty' (AtomVal (TV t v)) = prettyval t v

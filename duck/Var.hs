@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternGuards, TypeSynonymInstances, StandaloneDeriving, BangPatterns #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck Variables
 
 module Var 

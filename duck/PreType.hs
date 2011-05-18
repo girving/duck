@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances, StandaloneDeriving #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck Type precursors
 
 module PreType

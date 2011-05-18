@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternGuards, FlexibleInstances, StandaloneDeriving #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck Lifted Intermediate Representation
 --
 -- "Lir" is the same as "Ir" except that:
@@ -29,20 +28,21 @@ module Lir
   ) where
 
 import Prelude hiding (mapM)
+
+import Control.Monad.State hiding (mapM, guard)
 import Data.List hiding (union)
-import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Monad.State hiding (mapM, guard)
+import qualified Data.Set as Set
 
-import Util
-import Var
-import SrcLoc
-import Ptrie (Ptrie)
 import Memory
 import Pretty
+import Ptrie (Ptrie)
+import SrcLoc
 import Stage
 import Type
+import Util
+import Var
 
 -- Pull in definition of Exp and add a Show instance
 import Gen.Lir
@@ -91,7 +91,7 @@ class Monad m => ProgMonad m where
 instance HasVar Atom where
   unVar (AtomLocal v) = Just v
   unVar (AtomGlobal v) = Just v
-  unVar (AtomVal _ _) = Nothing
+  unVar (AtomVal _) = Nothing
 
 instance HasVar Exp where
   unVar (ExpAtom a) = unVar a
@@ -115,7 +115,7 @@ expGlobal :: Var -> Exp
 expGlobal = ExpAtom . AtomGlobal
 
 expVal :: TypeVal -> Value -> Exp
-expVal t v = ExpAtom $ AtomVal t v
+expVal t v = ExpAtom $ AtomVal $ TV t v
 
 -- |Type of arguments an overload expects to be passed (as opposed to expects to recieve)
 overTypes :: Overload t -> [t]
@@ -206,7 +206,7 @@ freeAtom s l (AtomLocal v)
   | Set.notMember v s = [(v,l)]
   | otherwise = []
 freeAtom _ _ (AtomGlobal _) = []
-freeAtom _ _ (AtomVal _ _) = []
+freeAtom _ _ (AtomVal _) = []
 
 -- |Merge two programs into one
 

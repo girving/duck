@@ -41,14 +41,14 @@ lookupGlobal global loc v = case Map.lookup v global of
   Nothing -> execError loc ("unbound global variable" <+> quoted v)
 
 -- | Pack up the free variables of an expression into a packed environment
-packEnv :: InScopeSet -> LocalTypes -> Locals -> Exp -> [(Var, TypeVal, Value)]
+packEnv :: InScopeSet -> LocalTypes -> Locals -> Exp -> [(Var, TypedValue)]
 packEnv s tenv env e = map grab (free s e) where
-  grab v = (v, fromJust (Map.lookup v tenv), fromJust (Map.lookup v env))
+  grab v = (v, TV (fromJust (Map.lookup v tenv)) (fromJust (Map.lookup v env)))
 
-unpackEnv :: [(Var, TypeVal, Value)] -> (LocalTypes, Locals)
+unpackEnv :: [(Var, TypedValue)] -> (LocalTypes, Locals)
 unpackEnv penv = (tenv,env) where
-  tenv = foldl' (\e (v,t,_) -> Map.insert v t e) Map.empty penv
-  env = foldl' (\e (v,_,d) -> Map.insert v d e) Map.empty penv
+  tenv = foldl' (\e (v,TV t _) -> Map.insert v t e) Map.empty penv
+  env = foldl' (\e (v,TV _ d) -> Map.insert v d e) Map.empty penv
 
 -- |Process a list of definitions into the global environment.
 prog :: Exec Globals
@@ -97,7 +97,7 @@ expr static global tenv env loc = exp where
                  else unsafeUnvalConsN (length vl) d
         cast ct $ expr static global (insertVars tenv vl tl) (insertVars env vl dl) loc e'
       Nothing -> case def of
-        Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (pretty (t,d)) <> cases pl) where
+        Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (TV t d) <> cases pl) where
           cases [] = ", no cases"
           cases pl = ", cases = "++show pl -- TODO: use pretty printing
         Just e' -> cast ct $ expr static global tenv env loc e'
@@ -109,7 +109,7 @@ expr static global tenv env loc = exp where
   exp (ExpLoc l e) = expr static global tenv env l e
 
 atom :: Globals -> Locals -> SrcLoc -> Atom -> Exec Value
-atom _ _ _ (AtomVal _ v) = return v
+atom _ _ _ (AtomVal (TV _ v)) = return v
 atom _ env loc (AtomLocal v) = case Map.lookup v env of
   Just v -> return v
   Nothing -> execError loc ("internal error: unbound local variable" <+> quoted v)
@@ -130,7 +130,7 @@ emptyType loc = empty Set.empty where
       return $ and empties
     DataAlgebraic (_:_:_) -> return False
   empty' _ (TyFun _) = return False
-  empty' seen (TyStatic t _) = empty seen t
+  empty' seen (TyStatic (TV t _)) = empty seen t
   empty' _ TyVoid = execError loc "Void is neither empty nor nonempty"
 
 -- |Evaluate an argument acording to the given transform
@@ -166,7 +166,7 @@ apply static global loc ft@(TyFun _) fun ae at
 apply static global loc t1 v1 e2 t2 = 
   app Infer.isTypeType appty $
   app Infer.isTypeDelay appdel $
-  e2 NoTrans >>= \v2 -> execError loc ("can't apply" <+> quoted (t1,v1) <+> "to" <+> quoted (t2,v2)) where
+  e2 NoTrans >>= \v2 -> execError loc ("can't apply" <+> quoted (TV t1 v1) <+> "to" <+> quoted (TV t2 v2)) where
   app t f r = maybe r f =<< liftInfer (t t1)
   appty _ = return valEmpty
   appdel _ = do

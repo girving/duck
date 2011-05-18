@@ -9,7 +9,7 @@ Description:	Duck is (will be) a functional, semi-typed, JIT-compiled language d
 Category:	Compilers/Interpreters
 Build-Type:	Simple
 Cabal-Version:	>= 1.2
-tested-with:    GHC == 6.10.3
+tested-with:    GHC == 6.10.3, GHC == 7.0.2
 extra-source-files: README, duck/*.duck, duck/test/*.duck
 
 Flag debug
@@ -50,7 +50,8 @@ Executable duck
         InferMonad
         Gen.Value
         Value
-        Prettyval
+        TypedValue
+        PrettyLir
         ExecMonad
         Base
         TypeSet
@@ -62,7 +63,7 @@ Executable duck
     hs-source-dirs:	duck
     c-sources:          duck/runtime.c
     if flag(debug)
-        ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing
+        ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -fno-warn-orphans
         if impl(ghc >= 7)
             ghc-options: -rtsopts -debug -auto-all
     if flag(boehm)

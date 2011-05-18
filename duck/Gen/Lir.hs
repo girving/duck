@@ -76,14 +76,14 @@ instance Convert Exp where
                 _ -> error "bad tag in unsafeUnvalue Exp"
  
 {-# LINE 21 "lir.duck" #-}
-data Atom = AtomVal !TypeVal !Value
+data Atom = AtomVal !TypedValue
           | AtomLocal !Var
           | AtomGlobal !Var
  
 {-# LINE 21 "lir.duck" #-}
 instance Convert Atom where
         {-# LINE 21 "lir.duck" #-}
-        value (AtomVal a b) = valCons 0 [value a, value b]
+        value (AtomVal a) = valCons 0 [value a]
         {-# LINE 21 "lir.duck" #-}
         value (AtomLocal a) = valCons 1 [value a]
         {-# LINE 21 "lir.duck" #-}
@@ -91,10 +91,7 @@ instance Convert Atom where
         {-# LINE 21 "lir.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
-                0
-                  -> let {-# LINE 22 "lir.duck" #-}
-                         (a, b) = unsafeUnvalCons val
-                       in AtomVal (unsafeUnvalue a) (unsafeUnvalue b)
+                0 -> AtomVal (unsafeUnvalue (unsafeUnvalCons val))
                 1 -> AtomLocal (unsafeUnvalue (unsafeUnvalCons val))
                 2 -> AtomGlobal (unsafeUnvalue (unsafeUnvalCons val))
                 _ -> error "bad tag in unsafeUnvalue Atom"

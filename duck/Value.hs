@@ -1,10 +1,9 @@
 {-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances, StandaloneDeriving #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck interpreter values
 
 module Value
   ( Env
-  , FunValue(..), DelayValue(..)
+  , module Gen.Value
   , valEmpty
   ) where
 

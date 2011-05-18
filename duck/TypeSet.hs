@@ -149,8 +149,8 @@ union (TyCons c tl) (TyCons c' tl') = do
 union (TyFun f) (TyFun f') = TyFun =.< reduceFuns (f ++ f')
 union TyVoid t = return t
 union t TyVoid = return t
-union (TyStatic x _) y = union x y
-union x (TyStatic y _) = union x y
+union (TyStatic (TV x _)) y = union x y
+union x (TyStatic (TV y _)) = union x y
 union x y = typeMismatch x "|" y
 
 -- |The equivalent of 'union' for lists.  The two lists must have the same size.
@@ -294,7 +294,7 @@ constrain v op t = success << c op =<< Map.lookup v =.< get where
   set op t = modify (Map.insert v (op,t))
 
 subset' :: forall m. TypeMonad m => TypeVal -> TypePat -> Env m
-subset' (TyStatic x _) y = subset' x y
+subset' (TyStatic (TV x _)) y = subset' x y
 subset' t (TsVar v) = constrain v Superset t
 subset' (TyCons c tl) (TsCons c' tl') = do
   (c,tl,tl') <- unifyCons c tl c' tl'
@@ -307,7 +307,7 @@ subset' TyVoid _ = success
 subset' x y = typeMismatch x "<=" y
 
 equal' :: TypeMonad m => TypeVal -> TypePat -> Env m
-equal' (TyStatic x _) y = equal' x y
+equal' (TyStatic (TV x _)) y = equal' x y
 equal' t (TsVar v) = constrain v Equal t
 equal' (TyCons c tl) (TsCons c' tl') = do
   (c,tl,tl') <- unifyCons c tl c' tl'
@@ -323,7 +323,7 @@ subset'' (TyCons c tl) (TyCons c' tl') = do
   (_,tl,tl') <- unifyCons c tl c' tl'
   subsetList'' tl tl'
 subset'' (TyFun f) (TyFun f') = subsetFun'' f f'
-subset'' (TyStatic x _) y = subset'' x y
+subset'' (TyStatic (TV x _)) y = subset'' x y
 subset'' TyVoid _ = success
 subset'' x y = typeMismatch x "<=" y
 

@@ -35,7 +35,7 @@ instance (Convert t) => Convert (TypeFun t) where
 {-# LINE 28 "type.duck" #-}
 data TypeVal = TyCons !(Box Datatype) ![TypeVal]
              | TyFun ![TypeFun TypeVal]
-             | TyStatic !TypeVal !Value
+             | TyStatic !TypedValue
              | TyVoid
  
 {-# LINE 28 "type.duck" #-}
@@ -45,7 +45,7 @@ instance Convert TypeVal where
         {-# LINE 28 "type.duck" #-}
         value (TyFun a) = valCons 1 [value a]
         {-# LINE 28 "type.duck" #-}
-        value (TyStatic a b) = valCons 2 [value a, value b]
+        value (TyStatic a) = valCons 2 [value a]
         {-# LINE 28 "type.duck" #-}
         value (TyVoid) = valCons 3 []
         {-# LINE 28 "type.duck" #-}
@@ -56,10 +56,7 @@ instance Convert TypeVal where
                          (a, b) = unsafeUnvalCons val
                        in TyCons (unsafeUnvalue a) (unsafeUnvalue b)
                 1 -> TyFun (unsafeUnvalue (unsafeUnvalCons val))
-                2
-                  -> let {-# LINE 31 "type.duck" #-}
-                         (a, b) = unsafeUnvalCons val
-                       in TyStatic (unsafeUnvalue a) (unsafeUnvalue b)
+                2 -> TyStatic (unsafeUnvalue (unsafeUnvalCons val))
                 3 -> TyVoid
                 _ -> error "bad tag in unsafeUnvalue TypeVal"
  
@@ -91,37 +88,50 @@ instance Convert TypePat where
                 3 -> TsVoid
                 _ -> error "bad tag in unsafeUnvalue TypePat"
  
-{-# LINE 61 "type.duck" #-}
+{-# LINE 43 "type.duck" #-}
+data TypedValue = TV !TypeVal !Value
+ 
+{-# LINE 43 "type.duck" #-}
+instance Convert TypedValue where
+        {-# LINE 43 "type.duck" #-}
+        value (TV a b) = valCons 0 [value a, value b]
+        {-# LINE 43 "type.duck" #-}
+        unsafeUnvalue val
+          = let {-# LINE 43 "type.duck" #-}
+                (a, b) = unsafeUnvalCons val
+              in TV (unsafeUnvalue a) (unsafeUnvalue b)
+ 
+{-# LINE 63 "type.duck" #-}
 data Variance = Covariant
               | Invariant
  
-{-# LINE 61 "type.duck" #-}
+{-# LINE 63 "type.duck" #-}
 instance Convert Variance where
-        {-# LINE 61 "type.duck" #-}
+        {-# LINE 63 "type.duck" #-}
         value (Covariant) = valCons 0 []
-        {-# LINE 61 "type.duck" #-}
+        {-# LINE 63 "type.duck" #-}
         value (Invariant) = valCons 1 []
-        {-# LINE 61 "type.duck" #-}
+        {-# LINE 63 "type.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
                 0 -> Covariant
                 1 -> Invariant
                 _ -> error "bad tag in unsafeUnvalue Variance"
  
-{-# LINE 64 "type.duck" #-}
+{-# LINE 66 "type.duck" #-}
 data Trans = NoTrans
            | Delay
            | Static
  
-{-# LINE 64 "type.duck" #-}
+{-# LINE 66 "type.duck" #-}
 instance Convert Trans where
-        {-# LINE 64 "type.duck" #-}
+        {-# LINE 66 "type.duck" #-}
         value (NoTrans) = valCons 0 []
-        {-# LINE 64 "type.duck" #-}
+        {-# LINE 66 "type.duck" #-}
         value (Delay) = valCons 1 []
-        {-# LINE 64 "type.duck" #-}
+        {-# LINE 66 "type.duck" #-}
         value (Static) = valCons 2 []
-        {-# LINE 64 "type.duck" #-}
+        {-# LINE 66 "type.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
                 0 -> NoTrans
@@ -129,34 +139,34 @@ instance Convert Trans where
                 2 -> Static
                 _ -> error "bad tag in unsafeUnvalue Trans"
  
-{-# LINE 71 "type.duck" #-}
+{-# LINE 73 "type.duck" #-}
 data Datatype = Data !CVar !SrcLoc ![Var] ![Variance] !DataInfo
  
-{-# LINE 71 "type.duck" #-}
+{-# LINE 73 "type.duck" #-}
 instance Convert Datatype where
-        {-# LINE 71 "type.duck" #-}
+        {-# LINE 73 "type.duck" #-}
         value (Data a b c d e)
           = valCons 0 [value a, value b, value c, value d, value e]
-        {-# LINE 71 "type.duck" #-}
+        {-# LINE 73 "type.duck" #-}
         unsafeUnvalue val
-          = let {-# LINE 71 "type.duck" #-}
+          = let {-# LINE 73 "type.duck" #-}
                 (a, b, c, d, e) = unsafeUnvalCons val
               in
               Data (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
                 (unsafeUnvalue d)
                 (unsafeUnvalue e)
  
-{-# LINE 80 "type.duck" #-}
+{-# LINE 82 "type.duck" #-}
 data DataInfo = DataAlgebraic ![(Loc CVar, [TypePat])]
               | DataPrim !Int
  
-{-# LINE 80 "type.duck" #-}
+{-# LINE 82 "type.duck" #-}
 instance Convert DataInfo where
-        {-# LINE 80 "type.duck" #-}
+        {-# LINE 82 "type.duck" #-}
         value (DataAlgebraic a) = valCons 0 [value a]
-        {-# LINE 80 "type.duck" #-}
+        {-# LINE 82 "type.duck" #-}
         value (DataPrim a) = valCons 1 [value a]
-        {-# LINE 80 "type.duck" #-}
+        {-# LINE 82 "type.duck" #-}
         unsafeUnvalue val
           = case unsafeTag val of
                 0 -> DataAlgebraic (unsafeUnvalue (unsafeUnvalCons val))

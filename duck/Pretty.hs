@@ -1,5 +1,4 @@
 {-# LANGUAGE FlexibleInstances, OverlappingInstances, TypeSynonymInstances #-}
-{-# OPTIONS_GHC -fno-warn-orphans #-}
 -- | Pretty printing typeclass
 --
 -- Mostly a class-based re-export of "Text.PrettyPrint", with a few conveniences such as precedence.

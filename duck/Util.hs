@@ -27,7 +27,7 @@ module Util
   , (++.)
   , splitStack
   -- * Functionals
-  , uncurry3
+  , (...), uncurry3
   , first, second
   , left, right
   -- * Monad
@@ -97,6 +97,9 @@ zipCheck _ _ = mzero
 
 zipWithCheck :: MonadPlus m => (a -> b -> c) -> [a] -> [b] -> m [c]
 zipWithCheck f x y = map (uncurry f) =.< zipCheck x y
+
+(...) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
+(...) f g x y = f (g x y)
 
 uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
 uncurry3 f (a,b,c) = f a b c

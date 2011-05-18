@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances, StandaloneDeriving, ForeignFunctionInterface #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck interpreter values
 
 -- For now, duck values are layed out in the following naive manner:

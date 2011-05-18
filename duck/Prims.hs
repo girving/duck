@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternGuards, StandaloneDeriving #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck primitive operation declarations
 
 module Prims 

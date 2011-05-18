@@ -11,21 +11,21 @@ import Type
 {-# LINE 5 "value.duck" #-}
 import Lir
  
-{-# LINE 12 "value.duck" #-}
+{-# LINE 7 "value.duck" #-}
 data FunValue = ValClosure !Var ![TypeVal] ![Value]
  
-{-# LINE 12 "value.duck" #-}
+{-# LINE 7 "value.duck" #-}
 instance Convert FunValue where
-        {-# LINE 12 "value.duck" #-}
+        {-# LINE 7 "value.duck" #-}
         value (ValClosure a b c) = valCons 0 [value a, value b, value c]
-        {-# LINE 12 "value.duck" #-}
+        {-# LINE 7 "value.duck" #-}
         unsafeUnvalue val
-          = let {-# LINE 13 "value.duck" #-}
+          = let {-# LINE 8 "value.duck" #-}
                 (a, b, c) = unsafeUnvalCons val
               in ValClosure (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
  
 {-# LINE 15 "value.duck" #-}
-data DelayValue = ValDelay !Exp ![(Var, TypeVal, Value)]
+data DelayValue = ValDelay !Exp ![(Var, TypedValue)]
  
 {-# LINE 15 "value.duck" #-}
 instance Convert DelayValue where

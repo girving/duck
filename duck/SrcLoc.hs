@@ -1,4 +1,3 @@
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Source file location annotations for reporting
 
 module SrcLoc

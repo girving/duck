@@ -1,5 +1,4 @@
 {-# LANGUAGE PatternGuards, FlexibleInstances, StandaloneDeriving #-}
-{-# OPTIONS -fno-warn-orphans #-}
 -- | Duck Ir to Lir Conversion
 --
 -- Processes "Ir" into its final representation for processing.
@@ -262,14 +261,14 @@ var _ (loc,_) v = do
   case Map.lookup v globals of
     Just GlobalKind   -> return $ AtomGlobal v
     Just DatatypeKind | Just d <- Map.lookup v (progDatatypes prog) 
-                      -> return $ AtomVal (typeType (TyCons d [])) valEmpty
+                      -> return $ AtomVal $ TV (typeType (TyCons d [])) valEmpty
           | otherwise -> lirError loc $ "internal error: unexpected unbound datatype" <+> quoted v
-    Just VoidKind     -> return $ AtomVal (typeType TyVoid) valEmpty
+    Just VoidKind     -> return $ AtomVal $ TV (typeType TyVoid) valEmpty
     Just FunctionKind -> return $ closure v
     Nothing -> lirError loc $ "unbound variable" <+> quoted v
 
 closure :: Var -> Atom
-closure v = AtomVal (typeClosure v []) (value $ ValClosure v [] [])
+closure v = AtomVal $ TV (typeClosure v []) (value $ ValClosure v [] [])
 
 -- |Lift a single lambda expression
 lambda :: InScopeSet -> (SrcLoc,Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp
