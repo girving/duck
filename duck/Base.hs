@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards #-}
+{-# LANGUAGE PatternGuards, DeriveDataTypeable #-}
 -- | Duck primitive operations
 --
 -- This module provides the implementation for the primitive operations
@@ -9,14 +9,16 @@ module Base
   , primType
   , runPrimIO
   , base
+  , Exception
   ) where
 
 import Control.Monad
 import Control.Monad.Trans (liftIO)
 import qualified Control.Exception as Exn
 import qualified Data.Char as Char
-import qualified Data.Map as Map
 import Data.List
+import qualified Data.Map as Map
+import Data.Typeable (Typeable)
 
 import Util
 import Var
@@ -30,12 +32,15 @@ import Lir
 import ExecMonad
 import InferMonad
 
+data Exception = Exception deriving (Show, Typeable)
+instance Exn.Exception Exception
+
 data PrimOp = PrimOp
   { primPrim :: Prim
   , primName :: String
   , primArgs :: [TypeVal]
   , primRet :: TypeVal
-  , primBody :: [Value] -> Exec Value
+  , primBody :: [Value] -> IO Value
   }
 
 intOp :: Binop -> TypeVal -> (Int -> Int -> Value) -> PrimOp
@@ -62,7 +67,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
   , PrimOp CharIntOrd "ord" [typeChar] typeInt $ \ ~[c] -> return $ value (Char.ord $ unsafeUnvalue c)
   , PrimOp IntCharChr "chr" [typeInt] typeChar $ \ ~[c] -> return $ value (Char.chr $ unsafeUnvalue c)
   , PrimOp Exit "exit" [typeInt] typeVoid $ \ ~[i] -> liftIO $ exit (unsafeUnvalue i :: Int)
-  , PrimOp Throw "throw" [typeUnit] typeVoid $ \ _ -> execError noLoc "uncaught exception"
+  , PrimOp Throw "throw" [typeUnit] typeVoid $ \ _ -> Exn.throw Exception
   , PrimOp IOPutChar "put" [typeChar] typeUnit $ \ ~[c] -> valEmpty .< liftIO (putChar (unsafeUnvalue c :: Char))
   ]
 
@@ -72,8 +77,9 @@ invalidPrim p a = "invalid primitive arguments" <:> quoted (prettyap (V (primStr
 -- |Actually execute a primitive, called with the specified arguments at run time
 prim :: SrcLoc -> Prim -> [Value] -> Exec Value
 prim loc prim args
-  | Just primop <- Map.lookup prim primOps = do
-    join $ liftIO $ (Exn.catch . Exn.evaluate) (primBody primop args) $
+  | Just primop <- Map.lookup prim primOps =
+    handleE (\Exception -> execError loc "uncaught exception") $
+    join $ liftIO $ (Exn.catch . Exn.evaluate) (liftIO $ primBody primop args) $
       \(Exn.PatternMatchFail _) -> return $ execError loc $ invalidPrim prim args
   | otherwise = execError loc $ invalidPrim prim args
 
@@ -81,7 +87,12 @@ prim loc prim args
 primType :: SrcLoc -> Prim -> [TypeVal] -> Infer TypeVal
 primType loc prim args
   | Just primop <- Map.lookup prim primOps
-  , args == primArgs primop = return $ primRet primop
+  , map deStatic args == primArgs primop = do
+    let rt = primRet primop
+        vl = mapM unStatic args
+    maybe
+      (return rt)
+      (TyStatic . TV rt .=< liftIO . primBody primop) vl
   | otherwise = typeError loc $ invalidPrim prim args
 
 -- |Execute an IO primitive

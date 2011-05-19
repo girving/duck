@@ -10,7 +10,7 @@ module Type
   , unsingleton, unsingleton'
   , freeVars
   , generalType
-  , deStatic
+  , deStatic, unStatic
   -- * Transformation annotations
   , TransType
   -- * Datatypes
@@ -206,6 +206,10 @@ generalType vl = (tl,r) where
 deStatic :: TypeVal -> TypeVal
 deStatic (TyStatic (TV t _)) = t
 deStatic t = t
+
+unStatic :: TypeVal -> Maybe Value
+unStatic (TyStatic (TV _ v)) = Just v
+unStatic _ = Nothing
 
 -- Pretty printing
 

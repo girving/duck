@@ -12,7 +12,7 @@ module Memory
   ( Value
   , Convert(..)
   , valCons
-  , unsafeTag, UnsafeUnvalCons(..), unsafeUnvalConsN
+  , unsafeTag, UnsafeUnvalCons(..), unsafeUnvalConsN, unsafeUnvalConsNth
   , Box, unbox, box, unsafeCastBox
   , Vol, ToVol(..), readVol
   , Ref, newRef, readRef, writeRef, unsafeCastRef, unsafeFreeze
@@ -49,6 +49,9 @@ unsafeTag p = fromIntegral $ unsafePerformIO $ peek p
 
 unsafeUnvalConsN :: Int -> Value -> [Value]
 unsafeUnvalConsN n p = unsafePerformIO $ mapM (\i -> peekElemOff p i >.= wordPtrToPtr) [1..n]
+
+unsafeUnvalConsNth :: Value -> Int -> Value
+unsafeUnvalConsNth p n = unsafePerformIO $ peekElemOff p (succ n) >.= wordPtrToPtr
 
 class UnsafeUnvalCons t where
   unsafeUnvalCons' :: Value -> IO t

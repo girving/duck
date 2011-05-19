@@ -101,6 +101,7 @@ instance HasVar Exp where
 -- |Information about global variables
 data Kind
   = GlobalKind
+  | StaticKind
   | FunctionKind
   | DatatypeKind
   | VoidKind
@@ -171,14 +172,15 @@ globals prog = foldl' (Map.unionWithKey kindConflict) Map.empty
   [Map.singleton (V "Void") VoidKind,
    Map.map (const DatatypeKind) $ progDatatypes prog,
    Map.map (const FunctionKind) $ progFunctions prog,
-   foldl' (\g v -> insertVar v GlobalKind g) Map.empty $ concatMap (map unLoc . defVars) $ progDefinitions prog]
-  where 
+   foldl' (\g (s, v) -> insertVar v (if s then StaticKind else GlobalKind) g) Map.empty $ 
+    concatMap (\d -> map (((,) (defStatic d)) . unLoc) $ defVars d) $ progDefinitions prog]
 
 kindConflict :: Var -> Kind -> Kind -> Kind
 kindConflict v DatatypeKind k | isTuple v = k
 kindConflict v k k' | k == k' = k
                     | otherwise = lirError noLoc $ quoted v <+> "is declared as both a" <+> s k <+> "and a" <+> s k'
   where s GlobalKind   = "global"
+        s StaticKind   = "static"
         s FunctionKind = "function"
         s DatatypeKind = "datatype"
         s VoidKind     = "datatype"

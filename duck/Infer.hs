@@ -125,12 +125,11 @@ definition d@(Def st vl e) =
     case tl of { [_] -> [Nothing] ; _ -> map Just [0..] }
   where l = loc d
 
-unStatic :: TypeVal -> Maybe Value
-unStatic (TyStatic (TV _ v)) = Just v
-unStatic _ = Nothing
-
 isStatic :: TypeVal -> Bool
 isStatic (TyStatic{}) = True
+isStatic (TyFun fl) = all sf fl where
+  sf (FunArrow{}) = False
+  sf (FunClosure _ tl) = all isStatic tl
 isStatic _ = False
 
 reStatic :: TypeVal -> TypeVal -> TypeVal
@@ -188,13 +187,13 @@ expr static env loc e = checkStatic =<< exp e where
     cons static loc d c =<< mapM exp el
   exp (ExpPrim op el) =
     -- TODO: execute if static or non-IO and all args static
-    Base.primType loc op =<< mapM (deStatic .=< exp) el
+    Base.primType loc op =<< mapM exp el
   exp (ExpSpec e ts) =
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr static env l e
   checkStatic t
     | not static || isStatic t = return t
-    | otherwise = inferError loc $ "non-static value in static expression:" <+> quoted e
+    | otherwise = inferError loc $ "non-static value in static expression:" <+> quoted (show e) <+> "=>" <+> quoted (show t)
 
 lookupVariable :: SrcLoc -> Var -> Map Var a -> Infer a
 lookupVariable loc v env = 
@@ -214,8 +213,8 @@ atom True _ loc (AtomGlobal v) = do
     else maybe return pick i =<< expr True Map.empty loc e
   where
   pick i (TyStatic (TV (TyCons c tl) d)) | isDatatypeTuple c =
-    return $ TyStatic $ TV (tl !! i) (dl !! i)
-    where dl = unsafeUnvalConsN (succ i) d
+    return $ TyStatic $ TV (tl !! i) di
+    where di = unsafeUnvalConsNth d i
   pick i (TyCons c tl) | isDatatypeTuple c = -- this is probably an error if not impossible
     return $ tl !! i
   pick _ t = inferError loc $ "expected static tuple, got" <+> t
@@ -243,6 +242,11 @@ spec loc ts e t = do
   return $ substVoid tenv ts
 
 unify :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
+unify loc (TyStatic (TV t1 v1)) (TyStatic (TV t2 v2)) = do
+  t <- unify loc t1 t2
+  unless (TV t v1 == TV t v2) $ inferError loc $ "indeterminate static values in return"
+  return $ TyStatic (TV t v1)
+-- if only one static, it's dropped:
 unify loc t1 t2 =
   typeReError loc ("failed to unify types" <+> quoted t1 <+> "and" <+> quoted t2) $
     union t1 t2
@@ -253,10 +257,12 @@ unifyList loc = foldM1 (unify loc)
 
 apply :: Bool -> SrcLoc -> TypeVal -> TypeVal -> Infer (Trans, TypeVal)
 apply _ _ TyVoid _ = return (NoTrans, TyVoid)
+apply static loc (TyStatic (TV t _)) t2 = apply static loc t t2
 apply static loc (TyFun fl) t2 = do
   (t:tt, l) <- mapAndUnzipM fun fl
   unless (all (t ==) tt) $
     inferError loc ("conflicting transforms applying" <+> quoted fl <+> "to" <+> quoted t2)
+  -- FIXME static
   (,) t =.< unifyList loc l
   where
   fun f@(FunArrow t a r) = do
@@ -268,14 +274,18 @@ apply static loc (TyFun fl) t2 = do
     let tl = args ++ [if st then t2 else deStatic t2]
     o <- maybe (withFrame f tl loc $ resolve f tl)
       return =<< lookupOver f tl
-    r <- maybe 
-      (return $ overRet o)
-      -- if static we need to reevaluate the whole thing statically to get a static result:
-      (withFrame f tl loc .
-        expr static (Map.fromList $ zipWith3 
-          (\v (t,_) a -> (v, transType (t,a)))
-          (overVars o) (overArgs o) (args ++ [t2])) (overLoc o))
-      (guard static >> overBody o)
+    debugInfer $ "got" <+> prettyap f tl <+> "=>" <+> o
+    r <- if static
+      then maybe
+        (return $ typeClosure f (args ++ [t2]))
+        -- if static we need to reevaluate the whole thing statically to get a static result:
+        (withFrame f tl loc .
+          expr static (Map.fromList $ zipWith3 
+            (\v (t,_) a -> (v, transType (t,a)))
+            (overVars o) (overArgs o) (args ++ [t2])) (overLoc o))
+        (overBody o)
+      else return $ overRet o
+    when static $ debugInfer $ "evaled" <+> r
     return (fst $ overArgs o !! length args, r)
 apply _ loc t1 t2 = liftM ((,) NoTrans) $
   app Infer.isTypeType appty $
