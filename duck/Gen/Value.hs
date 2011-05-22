@@ -25,7 +25,7 @@ instance Convert FunValue where
               in ValClosure (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
  
 {-# LINE 15 "value.duck" #-}
-data DelayValue = ValDelay !Exp ![(Var, TypedValue)]
+data DelayValue = ValDelay !Exp ![(Var, Any)]
  
 {-# LINE 15 "value.duck" #-}
 instance Convert DelayValue where

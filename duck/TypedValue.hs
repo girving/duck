@@ -1,13 +1,13 @@
 {-# LANGUAGE PatternGuards, FlexibleInstances, StandaloneDeriving #-}
 
 module TypedValue
-  ( TypedValue(..)
+  ( Any(..)
   , prettyval
   ) where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Monoid
+import Data.Monoid hiding (Any)
 
 import Memory
 import ParseOps
@@ -41,14 +41,14 @@ prettyval (TyCons d args) v = case dataInfo d of
     tl' = map (substVoid tenv) tl
     values = unsafeUnvalConsN (length tl) v
   DataPrim _ -> error ("don't know how to print primitive datatype "++show (quoted d))
-prettyval (TyStatic (TV t _)) d = prettyval t d
+prettyval (TyStatic (Any t _)) d = prettyval t d
 prettyval TyVoid _ = error "found an impossible Void value in prettyval"
 
-instance Pretty TypedValue where
-  pretty' (TV t v) = 2 #> prettyval t v <+> "::" <+> t
+instance Pretty Any where
+  pretty' (Any t v) = 2 #> prettyval t v <+> "::" <+> t
 
 instance (Ord k, Pretty k) => Pretty (Map k TypeVal, Map k Value) where
-  pretty' (t, v) = pretty' $ Map.intersectionWith TV t v
+  pretty' (t, v) = pretty' $ Map.intersectionWith Any t v
 
 compareval :: TypeVal -> Value -> Value -> Ordering
 compareval (TyCons d args) v1 v2 = cmpd (dataInfo d) where
@@ -68,18 +68,18 @@ compareval (TyCons d args) v1 v2 = cmpd (dataInfo d) where
 compareval (TyFun _) v1 v2 = 
   compare f1 f2 `mappend` 
     mconcat (zipWith compare (tv tl1 vl1) (tv tl2 vl2)) where
-  tv = zipWith TV
+  tv = zipWith Any
   ValClosure f1 tl1 vl1 = unsafeUnvalue v1
   ValClosure f2 tl2 vl2 = unsafeUnvalue v2
-compareval (TyStatic (TV t _)) v1 v2 = compareval t v1 v2
+compareval (TyStatic (Any t _)) v1 v2 = compareval t v1 v2
 compareval TyVoid _ _ = error $ "compare: impossible Void value"
 
-instance Ord TypedValue where
-  compare (TV t1 v1) (TV t2 v2) =
+instance Ord Any where
+  compare (Any t1 v1) (Any t2 v2) =
     compare t1 t2 `mappend` compareval t1 v1 v2
 
-instance Eq TypedValue where
-  TV t1 v1 == TV t2 v2 = t1 == t2 && compareval t1 v1 v2 == EQ
+instance Eq Any where
+  Any t1 v1 == Any t2 v2 = t1 == t2 && compareval t1 v1 v2 == EQ
 
 -- now we can do these:
 

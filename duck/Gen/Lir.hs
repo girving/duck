@@ -76,7 +76,7 @@ instance Convert Exp where
                 _ -> error "bad tag in unsafeUnvalue Exp"
  
 {-# LINE 21 "lir.duck" #-}
-data Atom = AtomVal !TypedValue
+data Atom = AtomVal !Any
           | AtomLocal !Var
           | AtomGlobal !Var
  

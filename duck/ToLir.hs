@@ -279,14 +279,14 @@ var _ (loc,_) v = do
     Just GlobalKind   -> return $ (AtomGlobal v, False)
     Just StaticKind   -> return $ (AtomGlobal v, True)
     Just DatatypeKind | Just d <- Map.lookup v (progDatatypes prog) 
-                      -> return $ (AtomVal $ TV (typeType (TyCons d [])) valEmpty, False)
+                      -> return $ (AtomVal $ Any (typeType (TyCons d [])) valEmpty, False)
           | otherwise -> lirError loc $ "internal error: unexpected unbound datatype" <+> quoted v
-    Just VoidKind     -> return $ (AtomVal $ TV (typeType TyVoid) valEmpty, False)
+    Just VoidKind     -> return $ (AtomVal $ Any (typeType TyVoid) valEmpty, False)
     Just FunctionKind -> return $ (closure v, False)
     Nothing -> lirError loc $ "unbound variable" <+> quoted v
 
 closure :: Var -> Atom
-closure v = AtomVal $ TV (typeClosure v []) (value $ ValClosure v [] [])
+closure v = AtomVal $ Any (typeClosure v []) (value $ ValClosure v [] [])
 
 -- |Lift a single lambda expression
 lambda :: Locals -> (SrcLoc,Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp

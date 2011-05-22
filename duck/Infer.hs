@@ -82,7 +82,7 @@ lookupDatatype loc (TyCons d [t]) | d == datatypeType = case t of
 lookupDatatype loc (TyCons d types) = case dataInfo d of
   DataAlgebraic conses -> return $ map (second $ map $ substVoid $ Map.fromList $ zip (dataTyVars d) types) conses
   DataPrim _ -> typeError loc ("expected algebraic datatype, got" <+> quoted d)
-lookupDatatype loc (TyStatic (TV t _)) = lookupDatatype loc t
+lookupDatatype loc (TyStatic (Any t _)) = lookupDatatype loc t
 lookupDatatype _ TyVoid = return []
 lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 
@@ -114,8 +114,8 @@ definition d@(Def st vl e) =
   tl <- case (vl,t) of
           (_, TyVoid) -> return $ map (const TyVoid) vl
           ([_],_) -> return [t]
-          (_, TyStatic (TV (TyCons c tl) d)) | isDatatypeTuple c, length vl == length tl ->
-            return $ zipWith (TyStatic ... TV) tl dl
+          (_, TyStatic (Any (TyCons c tl) d)) | isDatatypeTuple c, length vl == length tl ->
+            return $ zipWith (TyStatic ... Any) tl dl
             where dl = unsafeUnvalConsN (length tl) d
           (_, TyCons c tl) | isDatatypeTuple c, length vl == length tl -> 
             return tl
@@ -133,7 +133,7 @@ isStatic (TyFun fl) = all sf fl where
 isStatic _ = False
 
 reStatic :: TypeVal -> TypeVal -> TypeVal
-reStatic (TyStatic (TV _ d)) t = TyStatic (TV t d)
+reStatic (TyStatic (Any _ d)) t = TyStatic (Any t d)
 reStatic _ t = t
 
 expr :: Bool -> Locals -> SrcLoc -> Exp -> Infer TypeVal
@@ -152,7 +152,7 @@ expr static env loc e = checkStatic =<< exp e where
     conses <- lookupDatatype loc t
     case t of
       TyVoid -> return TyVoid
-      TyStatic tv@(TV _ d) -> do
+      TyStatic tv@(Any _ d) -> do
         let i = unsafeTag d
             (L _ c, tl) = conses !! i
             n = length tl
@@ -160,7 +160,7 @@ expr static env loc e = checkStatic =<< exp e where
           Just (_,vl,e') 
             | length vl == n -> do
               let dl = unsafeUnvalConsN (length tl) d
-              expr static (insertVars env vl $ zipWith (TyStatic ... TV) tl dl) loc e'
+              expr static (insertVars env vl $ zipWith (TyStatic ... Any) tl dl) loc e'
             | otherwise -> inferError loc $ "arity mismatch in static pattern:" <+> 
               quoted c <+> "expected" <+> a <+> "argument"<>sPlural tl <+>
               "but got" <+> quoted (hsep vl)
@@ -202,7 +202,7 @@ lookupVariable loc v env =
     return $ Map.lookup v env
 
 atom :: Bool -> Locals -> SrcLoc -> Atom -> Infer TypeVal
-atom False _ _ (AtomVal (TV t _)) = return t
+atom False _ _ (AtomVal (Any t _)) = return t
 atom True _ _ (AtomVal tv) = return $ TyStatic tv
 atom _ env loc (AtomLocal v) = lookupVariable loc v env
 atom False _ loc (AtomGlobal v) = fst =.< lookupVariable loc v . progGlobalTypes =<< getProg
@@ -212,8 +212,8 @@ atom True _ loc (AtomGlobal v) = do
     then return t
     else maybe return pick i =<< expr True Map.empty loc e
   where
-  pick i (TyStatic (TV (TyCons c tl) d)) | isDatatypeTuple c =
-    return $ TyStatic $ TV (tl !! i) di
+  pick i (TyStatic (Any (TyCons c tl) d)) | isDatatypeTuple c =
+    return $ TyStatic $ Any (tl !! i) di
     where di = unsafeUnvalConsNth d i
   pick i (TyCons c tl) | isDatatypeTuple c = -- this is probably an error if not impossible
     return $ tl !! i
@@ -231,7 +231,7 @@ cons static loc d c args = do
   let targs = map (\v -> Map.findWithDefault TyVoid v tenv) (dataTyVars d)
       t = TyCons d targs
   return $ maybe t
-    (TyStatic . TV t . valCons c)
+    (TyStatic . Any t . valCons c)
     (Control.Monad.guard static >> mapM unStatic args)
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
@@ -242,10 +242,10 @@ spec loc ts e t = do
   return $ substVoid tenv ts
 
 unify :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
-unify loc (TyStatic (TV t1 v1)) (TyStatic (TV t2 v2)) = do
+unify loc (TyStatic (Any t1 v1)) (TyStatic (Any t2 v2)) = do
   t <- unify loc t1 t2
-  unless (TV t v1 == TV t v2) $ inferError loc $ "indeterminate static values in return"
-  return $ TyStatic (TV t v1)
+  unless (Any t v1 == Any t v2) $ inferError loc $ "indeterminate static values in return"
+  return $ TyStatic (Any t v1)
 -- if only one static, it's dropped:
 unify loc t1 t2 =
   typeReError loc ("failed to unify types" <+> quoted t1 <+> "and" <+> quoted t2) $
@@ -257,7 +257,7 @@ unifyList loc = foldM1 (unify loc)
 
 apply :: Bool -> SrcLoc -> TypeVal -> TypeVal -> Infer (Trans, TypeVal)
 apply _ _ TyVoid _ = return (NoTrans, TyVoid)
-apply static loc (TyStatic (TV t _)) t2 = apply static loc t t2
+apply static loc (TyStatic (Any t _)) t2 = apply static loc t t2
 apply static loc (TyFun fl) t2 = do
   (t:tt, l) <- mapAndUnzipM fun fl
   unless (all (t ==) tt) $

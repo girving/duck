@@ -116,7 +116,7 @@ expGlobal :: Var -> Exp
 expGlobal = ExpAtom . AtomGlobal
 
 expVal :: TypeVal -> Value -> Exp
-expVal t v = ExpAtom $ AtomVal $ TV t v
+expVal t v = ExpAtom $ AtomVal $ Any t v
 
 -- |Type of arguments an overload expects to be passed (as opposed to expects to recieve)
 overTypes :: Overload t -> [t]

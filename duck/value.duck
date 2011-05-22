@@ -9,9 +9,9 @@ data FunValue of
 
 -- |Delayed thunks.  This representation is specific to this interpreter.
 -- In order to simplify the low level representation, the type and variable
--- environments in ValDelay are stored lists of (Var,TypedValue).
+-- environments in ValDelay are stored lists of (Var,Any).
 -- The set of variables is exactly the free variables of the expression
 -- as computed by Lir.free.
 data DelayValue of
-  ValDelay Exp (List (Var, TypedValue)) -- ^ Delay (lazy) evaluation.
+  ValDelay Exp (List (Var, Any)) -- ^ Delay (lazy) evaluation.
 

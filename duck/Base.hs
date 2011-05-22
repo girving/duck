@@ -92,7 +92,7 @@ primType loc prim args
         vl = mapM unStatic args
     maybe
       (return rt)
-      (TyStatic . TV rt .=< liftIO . primBody primop) vl
+      (TyStatic . Any rt .=< liftIO . primBody primop) vl
   | otherwise = typeError loc $ invalidPrim prim args
 
 -- |Execute an IO primitive

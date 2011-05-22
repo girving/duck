@@ -35,7 +35,7 @@ import qualified Gen.Type
 deriving instance Eq t => Eq (TypeFun t)
 deriving instance Ord t => Ord (TypeFun t)
 deriving instance Show t => Show (TypeFun t)
-deriving instance Show TypedValue
+deriving instance Show Any
 deriving instance Show TypeVal
 deriving instance Eq TypePat
 deriving instance Ord TypePat
@@ -161,7 +161,7 @@ class Singleton a b | a -> b where
 instance Singleton TypeVal TypePat where
   singleton (TyCons c tl) = TsCons c (singleton tl)
   singleton (TyFun f) = TsFun (singleton f)
-  singleton (TyStatic (TV t _)) = singleton t
+  singleton (TyStatic (Any t _)) = singleton t
   singleton TyVoid = TsVoid
 
 instance Singleton a b => Singleton [a] [b] where
@@ -204,11 +204,11 @@ generalType vl = (tl,r) where
 
 -- TODO: closures?
 deStatic :: TypeVal -> TypeVal
-deStatic (TyStatic (TV t _)) = t
+deStatic (TyStatic (Any t _)) = t
 deStatic t = t
 
 unStatic :: TypeVal -> Maybe Value
-unStatic (TyStatic (TV _ v)) = Just v
+unStatic (TyStatic (Any _ v)) = Just v
 unStatic _ = Nothing
 
 -- Pretty printing

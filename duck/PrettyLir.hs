@@ -72,4 +72,4 @@ instance Pretty Exp where
 instance Pretty Atom where
   pretty' (AtomLocal v) = pretty' v
   pretty' (AtomGlobal v) = pretty' v
-  pretty' (AtomVal (TV t v)) = prettyval t v
+  pretty' (AtomVal (Any t v)) = prettyval t v

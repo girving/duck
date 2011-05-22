@@ -28,7 +28,7 @@ data TypeFun t of
 data TypeVal of
   TyCons (Box Datatype) (List TypeVal)
   TyFun (List (TypeFun TypeVal))
-  TyStatic TypedValue
+  TyStatic Any
   TyVoid
 
 -- |A polymorphic set of concrete types (used for function overloads).  This is the same
@@ -40,7 +40,7 @@ data TypePat of
   TsFun (List (TypeFun TypePat))
   TsVoid
 
-data TypedValue of TV TypeVal Value
+data Any of Any TypeVal Value
 
 -- |Variance of type constructor arguments.
 --

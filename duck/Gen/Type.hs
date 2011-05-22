@@ -35,7 +35,7 @@ instance (Convert t) => Convert (TypeFun t) where
 {-# LINE 28 "type.duck" #-}
 data TypeVal = TyCons !(Box Datatype) ![TypeVal]
              | TyFun ![TypeFun TypeVal]
-             | TyStatic !TypedValue
+             | TyStatic !Any
              | TyVoid
  
 {-# LINE 28 "type.duck" #-}
@@ -89,17 +89,17 @@ instance Convert TypePat where
                 _ -> error "bad tag in unsafeUnvalue TypePat"
  
 {-# LINE 43 "type.duck" #-}
-data TypedValue = TV !TypeVal !Value
+data Any = Any !TypeVal !Value
  
 {-# LINE 43 "type.duck" #-}
-instance Convert TypedValue where
+instance Convert Any where
         {-# LINE 43 "type.duck" #-}
-        value (TV a b) = valCons 0 [value a, value b]
+        value (Any a b) = valCons 0 [value a, value b]
         {-# LINE 43 "type.duck" #-}
         unsafeUnvalue val
           = let {-# LINE 43 "type.duck" #-}
                 (a, b) = unsafeUnvalCons val
-              in TV (unsafeUnvalue a) (unsafeUnvalue b)
+              in Any (unsafeUnvalue a) (unsafeUnvalue b)
  
 {-# LINE 63 "type.duck" #-}
 data Variance = Covariant
