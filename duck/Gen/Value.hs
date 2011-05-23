@@ -8,31 +8,16 @@ import Memory
 import Var
 {-# LINE 4 "value.duck" #-}
 import Type
-{-# LINE 5 "value.duck" #-}
-import Lir
  
-{-# LINE 7 "value.duck" #-}
+{-# LINE 6 "value.duck" #-}
 data FunValue = ValClosure !Var ![TypeVal] ![Value]
  
-{-# LINE 7 "value.duck" #-}
+{-# LINE 6 "value.duck" #-}
 instance Convert FunValue where
-        {-# LINE 7 "value.duck" #-}
+        {-# LINE 6 "value.duck" #-}
         value (ValClosure a b c) = valCons 0 [value a, value b, value c]
-        {-# LINE 7 "value.duck" #-}
+        {-# LINE 6 "value.duck" #-}
         unsafeUnvalue val
-          = let {-# LINE 8 "value.duck" #-}
+          = let {-# LINE 7 "value.duck" #-}
                 (a, b, c) = unsafeUnvalCons val
               in ValClosure (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
- 
-{-# LINE 15 "value.duck" #-}
-data DelayValue = ValDelay !Exp ![(Var, Any)]
- 
-{-# LINE 15 "value.duck" #-}
-instance Convert DelayValue where
-        {-# LINE 15 "value.duck" #-}
-        value (ValDelay a b) = valCons 0 [value a, value b]
-        {-# LINE 15 "value.duck" #-}
-        unsafeUnvalue val
-          = let {-# LINE 16 "value.duck" #-}
-                (a, b) = unsafeUnvalCons val
-              in ValDelay (unsafeUnvalue a) (unsafeUnvalue b)

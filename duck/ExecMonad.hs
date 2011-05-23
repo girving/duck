@@ -15,6 +15,7 @@ module ExecMonad
   , runExec
   , execError
   , liftInfer
+  , liftIO
   ) where
 
 import Prelude hiding (catch)

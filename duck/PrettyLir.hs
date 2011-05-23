@@ -23,7 +23,7 @@ instance Pretty Prog where
        [pretty "-- datatypes"]
     ++ [datatype (dataName d) (dataTyVars d) (dataInfo d) 0 | d <- Map.elems (progDatatypes prog)]
     ++ [pretty "-- functions"]
-    ++ [pretty $ function v o | (v,os) <- Map.toList (progFunctions prog), o <- os]
+    ++ [pretty $ function v o | (v,os) <- Map.toList (progOverloads prog), let Left ol = Ptrie.get os, o <- ol]
     ++ [pretty "-- overloads"]
     ++ [pretty (progOverloads prog)]
     ++ [pretty "-- definitions"]
@@ -41,7 +41,7 @@ instance Pretty Prog where
 
 instance Pretty (Map Var Overloads) where
   pretty' info = vcat [pr f tl o | (f,p) <- Map.toList info, (tl,o) <- Ptrie.toList p] where
-    pr f tl o = nested (f <+> "::") (o{ overArgs = tl })
+    pr f tl o = nested (f <+> "::") (o{ overArgs = zip (map fst (overArgs o)) tl })
 
 instance (IsType t, Pretty t) => Pretty (Overload t) where
   pretty' (Over _ a r _ Nothing) = 1 #> hsep (map (<+> "->") a) <+> r

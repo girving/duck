@@ -25,6 +25,7 @@ module Lir
   , kindConflict
   , lirError, dupError
   , complete
+  , addOverload
   ) where
 
 import Prelude hiding (mapM)
@@ -38,9 +39,11 @@ import qualified Data.Set as Set
 import Memory
 import Pretty
 import Ptrie (Ptrie)
+import qualified Ptrie as Ptrie
 import SrcLoc
 import Stage
 import Type
+import TypedValue ()
 import Util
 import Var
 
@@ -54,8 +57,7 @@ deriving instance Show Atom
 data Prog = Prog
   { progName :: ModuleName
   , progDatatypes :: Map CVar Datatype -- ^ all datatypes by type constructor
-  , progFunctions :: Map Var [Overload TypePat] -- ^ original overload definitions by function name
-  , progOverloads :: Map Var Overloads -- ^ all overloads inferred to be needed, set after inference
+  , progOverloads :: Map Var Overloads -- ^ all overloads definitions and inferred expansions
   , progGlobalTypes :: GlobalTypes -- ^ set after inference
   , progDefinitions :: [Definition] -- ^ list of top-level definitions
   }
@@ -67,12 +69,12 @@ data Overload t = Over
   , overRet :: !t -- ^ Type of return value
   , overVars :: [Var] -- ^ Names of arguments
   , overBody :: Maybe Exp -- ^ Definition of function, or 'Nothing' if not a fully applied function
-  }
+  } deriving (Show)
 instance HasLoc (Overload t) where loc = overLoc
 
 -- |The main overload table of specific overload resolutions used by the program.
 -- Note that there may be many more entries than actual overload definitions, since every specific set of argument types creates a new overload.
-type Overloads = Ptrie TypeVal Trans (Overload TypeVal)
+type Overloads = Ptrie TypeVal [Overload TypePat] (Overload TypeVal)
 
 -- |Top-level variable definition: @(VARs) = EXP@
 data Definition = Def
@@ -131,14 +133,14 @@ dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
 dupError v n o = lirError n $ "duplicate definition of" <+> quoted v <> (", previously declared at" <&+> o)
 
 empty :: ModuleName -> Prog
-empty n = Prog n Map.empty Map.empty Map.empty Map.empty []
+empty n = Prog n Map.empty Map.empty Map.empty []
 
 -- |A few consistency checks on Lir programs
 check :: Prog -> ()
 check prog = runSequence $ do
-  let fs = Map.map loc (progFunctions prog)
+  let fs = Map.map (either loc loc . Ptrie.get) (progOverloads prog)
   fds <- foldM def fs (progDefinitions prog)
-  mapM_ (funs (Set.union (Map.keysSet fds) types)) $ Map.toList (progFunctions prog)
+  mapM_ (funs (Set.union (Map.keysSet fds) types)) $ Map.toList $ (progOverloads prog)
   mapM_ datatype (Map.toList $ progDatatypes prog)
   where
   types = Map.keysSet (progDatatypes prog)
@@ -150,7 +152,7 @@ check prog = runSequence $ do
     s <- foldM add s vl
     expr (Set.union (Map.keysSet s) types) body
     return s
-  funs s (f,fl) = mapM_ fun fl where
+  funs s (f,fl) = either (mapM_ fun) (const nop) $ Ptrie.get fl where
     fun (Over l _ _ vl body) = do
       when (vl == []) $ lirError l $ "overload" <+> quoted f <+> "has no arguments"
       vs <- foldM (\s v -> do
@@ -171,7 +173,7 @@ globals :: Prog -> Globals
 globals prog = foldl' (Map.unionWithKey kindConflict) Map.empty
   [Map.singleton (V "Void") VoidKind,
    Map.map (const DatatypeKind) $ progDatatypes prog,
-   Map.map (const FunctionKind) $ progFunctions prog,
+   Map.map (const FunctionKind) $ progOverloads prog,
    foldl' (\g (s, v) -> insertVar v (if s then StaticKind else GlobalKind) g) Map.empty $ 
     concatMap (\d -> map (((,) (defStatic d)) . unLoc) $ defVars d) $ progDefinitions prog]
 
@@ -215,13 +217,14 @@ freeAtom _ _ (AtomVal _) = []
 union :: Prog -> Prog -> Prog
 union p1 p2 = Prog
   { progName = progName p2 -- use the second module's name
-  , progDatatypes   = Map.unionWithKey conflictLoc (progDatatypes   p2) (progDatatypes   p1)
-  , progFunctions   = Map.unionWith    (++)        (progFunctions   p1) (progFunctions   p2)
-  , progOverloads   = Map.unionWithKey conflict    (progOverloads   p2) (progOverloads   p1) -- XXX cross-module overloads?
-  , progGlobalTypes = Map.unionWithKey conflict    (progGlobalTypes p2) (progGlobalTypes p1)
+  , progDatatypes   = Map.unionWithKey conflictLoc          (progDatatypes   p2) (progDatatypes   p1)
+  , progOverloads = Map.unionWithKey (Ptrie.unionWith . uf) (progOverloads   p1) (progOverloads   p2)
+  , progGlobalTypes = Map.unionWithKey conflict             (progGlobalTypes p2) (progGlobalTypes p1)
   , progDefinitions = progDefinitions p1 ++ progDefinitions p2
   }
   where
+  uf _ (Left l1) (Left l2) = Left $ l1 ++ l2
+  uf k v1 v2 = conflict k v1 v2
   conflictLoc v n o = dupError v (loc n) (loc o)
   conflict v _ _ = dupError v noLoc noLoc
 
@@ -240,7 +243,12 @@ complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datat
           vl = take (length tyl) standardVars
           (tl,r) = generalType vl
 
+addOverload :: Var -> Overload TypePat -> Prog -> Prog
+addOverload f o p = p { progOverloads = Map.insertWith 
+  (const $ Ptrie.modify $ \ ~(Left l) -> Left (l ++ [o])) 
+  f (Ptrie.empty $ Left [o]) (progOverloads p) }
+
 -- |Add a global overload
 overload :: Loc Var -> [TypePat] -> TypePat -> [Var] -> Exp -> State Prog ()
-overload (L l v) tl r vl e | length vl == length tl = modify $ \p -> p { progFunctions = Map.insertWith (++) v [Over l (map ((,) NoTrans) tl) r vl (Just e)] (progFunctions p) }
+overload (L l f) tl r vl e | length vl == length tl = modify $ addOverload f $ Over l (map ((,) NoTrans) tl) r vl (Just e)
 overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)

@@ -13,7 +13,6 @@ module Base
   ) where
 
 import Control.Monad
-import Control.Monad.Trans (liftIO)
 import qualified Control.Exception as Exn
 import qualified Data.Char as Char
 import Data.List
@@ -102,9 +101,8 @@ runPrimIO IOPutChar [c] = liftIO (putChar (unsafeUnvalue c :: Char)) >. valEmpty
 runPrimIO p args = execError noLoc $ invalidPrim p args
 
 -- |Add a undelayed, unlocated overload
-overload :: Prog -> Var -> [TypePat] -> TypePat -> [Var] -> Exp -> Prog
-overload prog name tl r args body = prog{ progFunctions = Map.insertWith (++) name [over] $ progFunctions prog } where
-  over = Over noLoc tl' r args (Just body)
+overload :: Var -> [TypePat] -> TypePat -> [Var] -> Exp -> Prog -> Prog
+overload name tl r args body = addOverload name $ Over noLoc tl' r args (Just body) where
   tl' = map ((,) NoTrans) tl
 
 -- |The internal, implicit declarations giving names to primitive operations.
@@ -112,7 +110,7 @@ overload prog name tl r args body = prog{ progFunctions = Map.insertWith (++) na
 base :: Prog
 base = (complete datatypes . types . prims) (empty "") where
   primop prog p | [] <- primArgs p = prog{ progDefinitions = Def False [L noLoc name] exp : progDefinitions prog }
-                | otherwise = overload prog name tyargs ret args exp where
+                | otherwise = overload name tyargs ret args exp prog where
     name = V (primName p)
     tyargs = map singleton $ primArgs p
     ret = singleton $ primRet p

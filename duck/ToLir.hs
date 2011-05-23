@@ -194,8 +194,7 @@ definition vl e = modify $ first $ \p -> p { progDefinitions = Def False vl e : 
 
 -- |Add a global overload
 overload :: Loc Var -> [TransType TypePat] -> TypePat -> [Var] -> Exp -> State (Prog, Globals) ()
-overload (L l v) tl r vl e | length vl == length tl = modify $ first $ \p -> p 
-  { progFunctions = Map.insertWith (++) v [Over l tl r vl (Just e)] (progFunctions p) }
+overload (L l v) tl r vl e | length vl == length tl = modify $ first $ addOverload v (Over l tl r vl (Just e))
 overload (L l v) tl _ vl _ = lirError l $ "overload arity mismatch for" <+> quoted v <:> "argument types" <+> quoted (hsep tl) <> ", variables" <+> quoted (hsep vl)
 
 -- |Add an unoverloaded global function

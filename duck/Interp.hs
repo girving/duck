@@ -28,6 +28,8 @@ import qualified Infer
 import qualified Base
 import Prims
 
+import Gen.Interp
+
 -- Environments
 
 -- Some aliases for documentation purposes
@@ -67,7 +69,9 @@ cast :: TypeVal -> Exec Value -> Exec Value
 cast _ x = x
 
 inferExpr :: Bool -> LocalTypes -> SrcLoc -> Exp -> Exec TypeVal
-inferExpr static env loc = liftInfer . Infer.expr static env loc
+inferExpr static env loc e = do
+  --liftIO $ putStrLn $ pout $ "infer" <+> show e
+  liftInfer $ Infer.expr static env loc e
 
 expr :: Bool -> Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
 expr static global tenv env loc = exp where
@@ -148,21 +152,20 @@ apply :: Bool -> Globals -> SrcLoc -> TypeVal -> Value -> (Trans -> Exec Value) 
 apply static global loc ft@(TyFun _) fun ae at 
   | ValClosure f types args <- unsafeUnvalue fun = do
     -- infer return type
+    --liftIO $ putStrLn $ pout $ "apply" <+> prettyap ft [at]
     (tt, rt) <- liftInfer $ Infer.apply static loc ft at
     -- lookup appropriate overload (parallels Infer.apply/resolve)
-    let tl = types ++ [if tt == Static then at else deStatic at]
-    o <- maybe
-      (execError loc $ "unresolved overload:" <+> quoted (prettyap f tl))
-      return =<< liftInfer (Infer.lookupOver f tl)
+    let tl = types ++ [at]
+    o <- liftInfer $ Infer.resolve f tl
     -- we throw away the type because we can reconstruct it later with argType
     a <- ae tt
     let dl = args ++ [a]
-    case o of
+    cast rt $ case o of
       Over _ _ _ _ Nothing -> -- partially applied
         return $ value $ ValClosure f tl dl
       Over oloc tl' _ vl (Just e) -> do -- full function call (parallels Infer.cache)
         let tl = map transType tl'
-        cast rt $ withFrame f tl dl loc $ expr static global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
+        withFrame f tl dl loc $ expr static global (Map.fromList $ zip vl tl) (Map.fromList $ zip vl dl) oloc e
 apply static global loc t1 v1 e2 t2 = 
   app Infer.isTypeType appty $
   app Infer.isTypeDelay appdel $

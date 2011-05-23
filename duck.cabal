@@ -27,24 +27,24 @@ Executable duck
         Util
         Pretty
         Memory
-        Gen.Var
         Gen.SrcLoc
         SrcLoc
+        Gen.Var
         Var
         Token
         Stage
         ParseMonad
         ParseOps
         Gen.Type
-        Gen.Prims
         Type
         IrType
         Ast
         ToHaskell
+        Gen.Prims
         Prims
         Ir
-        Gen.Lir
         Ptrie
+        Gen.Lir
         Lir
         ToLir
         InferMonad
@@ -56,6 +56,7 @@ Executable duck
         Base
         TypeSet
         Infer
+        Gen.Interp
         Interp
         Lex
         Layout

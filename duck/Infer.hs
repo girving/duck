@@ -18,13 +18,13 @@ module Infer
   , cons
   , spec
   , apply
+  , resolve
   , isTypeType
   , isTypeDelay
   , staticFunction
   -- * Environment access
   , lookupDatatype
   , lookupCons
-  , lookupOver
   ) where
 
 import Prelude hiding (lookup)
@@ -38,7 +38,6 @@ import Data.List hiding (lookup, union)
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Data.Maybe
 
 import Util
 import Pretty hiding (guard)
@@ -61,18 +60,10 @@ type Locals = TypeEnv
 -- Utility functions
 
 -- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
-insertOver :: Bool -> Var -> [TransType TypeVal] -> Overload TypeVal -> Infer ()
+insertOver :: Bool -> Var -> [TypeVal] -> Either [Overload TypePat] (Overload TypeVal) -> Infer ()
 insertOver _final f a o = do
-  --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> overRet o
+  --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> either (const $ pretty "<closure>") (pretty . overRet) o
   modify $ Ptrie.mapInsert f a o
-
-partialOver :: Var -> [Trans] -> [TypeVal] -> Overload TypeVal
-partialOver f tt tl = Over noLoc (zip tt tl) (typeClosure f tl) [] Nothing
-
--- |Lookup an overload from the table, or make one if it's partial
-lookupOver :: Var -> [TypeVal] -> Infer (Maybe (Overload TypeVal))
-lookupOver f tl = (uncurry over .=< uncurry (fmap . (,)) . Ptrie.lookup tl <=< Map.lookup f) =.< get where
-  over tt = fromMaybe (partialOver f tt tl) . Ptrie.unLeaf
 
 lookupDatatype :: SrcLoc -> TypeVal -> Infer [(Loc CVar, [TypeVal])]
 lookupDatatype loc (TyCons d [t]) | d == datatypeType = case t of
@@ -86,11 +77,10 @@ lookupDatatype loc (TyStatic (Any t _)) = lookupDatatype loc t
 lookupDatatype _ TyVoid = return []
 lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 
-lookupFunction :: Var -> Infer [Overload TypePat]
-lookupFunction f = getProg >>= \prog ->
-  case Map.lookup f (progFunctions prog) of
-    Just o -> return o
-    _ -> inferError noLoc ("unbound function" <+> quoted f)
+lookupFunction :: Var -> Infer Overloads
+lookupFunction f =
+  maybe (inferError noLoc ("unbound function" <+> quoted f))
+    return . Map.lookup f =<< get 
 
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
@@ -161,7 +151,7 @@ expr static env loc e = checkStatic =<< exp e where
             | length vl == n -> do
               let dl = unsafeUnvalConsN (length tl) d
               expr static (insertVars env vl $ zipWith (TyStatic ... Any) tl dl) loc e'
-            | otherwise -> inferError loc $ "arity mismatch in static pattern:" <+> 
+            | otherwise -> inferError loc $ "arity mismatch in static pattern" <:> 
               quoted c <+> "expected" <+> a <+> "argument"<>sPlural tl <+>
               "but got" <+> quoted (hsep vl)
           Nothing -> maybe
@@ -176,7 +166,7 @@ expr static env loc e = checkStatic =<< exp e where
           Just tl | length tl == length vl ->
             expr static (insertVars env vl tl) loc e'
           Just tl ->
-            inferError loc $ "arity mismatch in pattern:" <+> 
+            inferError loc $ "arity mismatch in pattern" <:> 
               quoted c <+> "expected" <+> length tl <+> "argument"<>sPlural tl <+>
               "but got" <+> quoted (hsep vl)
           Nothing ->
@@ -193,7 +183,7 @@ expr static env loc e = checkStatic =<< exp e where
   exp (ExpLoc l e) = expr static env l e
   checkStatic t
     | not static || isStatic t = return t
-    | otherwise = inferError loc $ "non-static value in static expression:" <+> quoted (show e) <+> "=>" <+> quoted (show t)
+    | otherwise = inferError loc $ "non-static value in static expression" <:> quoted (show e) <+> "=>" <+> quoted (show t)
 
 lookupVariable :: SrcLoc -> Var -> Map Var a -> Infer a
 lookupVariable loc v env = 
@@ -239,7 +229,7 @@ spec loc ts e t = do
   tenv <- checkLeftovers loc ("type specification" <+> quoted ts <+> "is invalid") =<<
     (typeReError loc (quoted e <+> "has type" <+> quoted t <> ", which is incompatible with type specification" <+> quoted ts) $
       subset t ts)
-  return $ substVoid tenv ts
+  return $ reStatic t $ substVoid tenv ts
 
 unify :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
 unify loc (TyStatic (Any t1 v1)) (TyStatic (Any t2 v2)) = do
@@ -262,19 +252,16 @@ apply static loc (TyFun fl) t2 = do
   (t:tt, l) <- mapAndUnzipM fun fl
   unless (all (t ==) tt) $
     inferError loc ("conflicting transforms applying" <+> quoted fl <+> "to" <+> quoted t2)
-  -- FIXME static
   (,) t =.< unifyList loc l
   where
   fun f@(FunArrow t a r) = do
     typeReError loc ("cannot apply" <+> quoted f <+> "to" <+> quoted t2) $
       subset'' t2 a
     return (t, r)
-  fun ft@(FunClosure f args) = do
-    st <- staticFunction (TyFun [ft])
-    let tl = args ++ [if st then t2 else deStatic t2]
-    o <- maybe (withFrame f tl loc $ resolve f tl)
-      return =<< lookupOver f tl
-    debugInfer $ "got" <+> prettyap f tl <+> "=>" <+> o
+  fun (FunClosure f args) = do
+    let tl = args ++ [t2]
+    o <- withFrame f tl loc $ resolve f tl
+    --debugInfer $ "got" <+> prettyap f tl <+> "=>" <+> o
     r <- if static
       then maybe
         (return $ typeClosure f (args ++ [t2]))
@@ -285,7 +272,7 @@ apply static loc (TyFun fl) t2 = do
             (overVars o) (overArgs o) (args ++ [t2])) (overLoc o))
         (overBody o)
       else return $ overRet o
-    when static $ debugInfer $ "evaled" <+> r
+    --when static $ debugInfer $ "evaled" <+> r
     return (fst $ overArgs o !! length args, r)
 apply _ loc t1 t2 = liftM ((,) NoTrans) $
   app Infer.isTypeType appty $
@@ -335,44 +322,58 @@ leasts (<) (x:l)
   | otherwise = x:r
   where r = leasts (<) $ filter (not . (x <)) l
 
--- |Deterine applicable overloads.
--- This information could be cached in the Ptrie.
-overload :: Var -> [TypeVal] -> Infer [(Overload TypePat, Either [Var] TypeEnv)]
-overload f args = do
-  allovers <- lookupFunction f
-  let prune o = tryError $ ((,) o) =.< subsetList args (overTypes o)
-  pruned <- mapM prune allovers
-  case partitionEithers pruned of
-    (errs,[]) -> typeError noLoc $
-      nestedPunct ':' ("no matching overload for" <+> quoted f <> ", tried") $
-        vcat $ zipWith (nestedPunct ':' . overDesc) allovers errs
-    (_,os) -> return $ leasts (specializationList `on` overTypes . fst) os
+-- |An overload representing a closure (partial application)
+partialOver :: Var -> [Trans] -> [TypeVal] -> Overload TypeVal
+partialOver f tt tl = Over noLoc (zip tt tl) (typeClosure f tl) [] Nothing
+
+-- |Determine possible overload(s) for an application, returning Left for partial applications and Right for complete ones.
+overload :: Var -> [TypeVal] -> Infer (Either [Overload TypePat] (Overload TypeVal))
+overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
+  lookup _ [] p = return p
+  lookup args (t:tl) ~(Left ol) = do
+    st <- maybe (inferError noLoc "ambiguous staticness") 
+      return $ unique $ map ((Static ==) . fst . (!! length args) . overArgs) ol
+    let t' = if st then t else deStatic t
+        args' = args++[t']
+    maybe (resolve args' tl ol)
+      (lookup args' tl . Ptrie.get) . Ptrie.lookup args' =<< lookupFunction f
+
+  resolve args tl ol = do
+    let prune o = tryError $ ((,) o) =.< subsetList args (overTypes o)
+    pruned <- mapM prune ol
+    overs <- case partitionEithers pruned of
+      (errs,[]) -> typeError noLoc $
+        nestedPunct ':' ("no matching overload for" <+> quoted f <> ", tried") $
+          vcat $ zipWith (nestedPunct ':' . overDesc) ol errs
+      (_,ol) -> return ol
+    let bests = leasts (specializationList `on` overTypes . fst) overs
+        options = vcat $ map (overDesc . fst) overs
+
+    -- determine applicable argument type transform annotations
+    tt <- maybe
+      (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") options)
+      return $ unique $ map (map fst . take (length args) . overArgs . fst) overs
+    let at = zip tt args
+
+    ent <- case map ((length args ==) . length . overVars . fst) bests of
+      [True] | [(o,tenv)] <- bests -> -- exactly one fully applied option: evaluate
+          Right =.< cache f at o =<< 
+            checkLeftovers noLoc ("invalid overload" <+> overDesc o) tenv
+      a | not (or a) -> -- all overloads are still partially applied, so create a closure overload
+          return $ Left $ map fst overs
+        | any ((TyVoid ==) . transType) at -> do -- ambiguous with void arguments
+          return $ Right $ Over noLoc at TyVoid [] Nothing
+        | otherwise -> -- ambiguous
+          inferError noLoc $ nested ("ambiguous overloads for" <+> quoted f <> ", possibilities are:") options
+
+    insertOver True f args ent
+    lookup args tl ent
+  resolve _ _ _ = return $ Left []
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
-resolve f args = do
-  overs <- overload f args
-  let options = vcat $ map (overDesc . fst) overs
-
-  -- determine applicable argument type transform annotations
-  tt <- maybe
-    (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") options)
-    return $ unique $ map (map fst . take (length args) . overArgs . fst) overs
-  let at = zip tt args
-
-  over <- case partition ((length args ==) . length . overVars . fst) overs of
-    ([(o,tenv)],[]) -> -- exactly one fully applied option: evaluate
-      cache f at o =<< 
-        checkLeftovers noLoc ("invalid overload" <+> overDesc o) tenv
-    ([],_) -> -- all overloads are still partially applied, so create a closure overload
-      return $ partialOver f tt args
-    _ | any ((TyVoid ==) . transType) at -> -- ambiguous with void arguments
-      return (Over noLoc at TyVoid [] Nothing)
-    _ -> -- ambiguous
-      inferError noLoc $ nested ("ambiguous overloads for" <+> quoted f <> ", possibilities are:") options
-
-  insertOver True f at over
-  return over
+resolve f args = either (\ ~(o:_) -> partialOver f (map fst $ overArgs o) args) id =.< 
+  overload f args
 
 -- |Type infer a function call and cache the results
 --
@@ -398,7 +399,7 @@ cache f al (Over oloc atypes rt vl ~(Just e)) tenv = do
     typeReError noLoc ("failed to unify result" <+> quoted r <+>"with return signature" <+> quoted rs) $
       union r rs
   fix final prev = do
-    insertOver final f al (or prev)
+    insertOver final f (map snd al) (Right (or prev))
     r <- eval
     if final || r == prev
       then return r
@@ -413,6 +414,7 @@ checkLeftovers loc m = either
 -- TODO: improve error message, and ideally avoid the re-overload (should be in ptrie during exec)
 staticFunction :: TypeVal -> Infer Bool
 staticFunction (TyFun fl) = maybe (inferError noLoc "ambiguous staticness") return . unique . concat =<< mapM sf fl where
-  sf (FunArrow tr _ _) = return $ [Static == tr]
-  sf (FunClosure f al) = map ((Static ==) . fst . (!! length al) . overArgs . fst) =.< overload f al
+  sf (FunArrow tr _ _) = return [Static == tr]
+  sf (FunClosure f al) = either (map st) (return . st) =.< overload f al where
+    st o = Static == fst (overArgs o !! length al)
 staticFunction _ = return False

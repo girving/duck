@@ -55,7 +55,7 @@ withFrame f args loc e = do
   let frame = CallFrame f args loc
       r = local $ second (frame :)
   s <- snd =.< ask
-  when (length s > 16) $ r $ inferError loc "stack overflow"
+  when (length s > 32) $ r $ inferError loc "stack overflow"
   handleE (\(e :: AsyncException) -> r $ inferError loc (show e)) $ -- catch real errors
     catchError (r e) $ \e ->
       throwError (e { msgStack = frame : msgStack e }) -- preprend frame to resolve errors

@@ -44,6 +44,7 @@ gen:
 	$(GEN) prims.duck > Gen/Prims.hs
 	$(GEN) lir.duck > Gen/Lir.hs
 	$(GEN) value.duck > Gen/Value.hs
+	$(GEN) interp.duck > Gen/Interp.hs
 
 ### Test
 

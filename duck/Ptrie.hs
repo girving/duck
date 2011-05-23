@@ -3,64 +3,69 @@
 --
 -- A prefix trie represents a partial map @[k] -> v@ with the property that no
 -- key is a proper prefix of any other key.  This version additionaly maps
--- every non-empty prefix @[k] -> a@.
+-- every prefix @[k] -> a@.
 -- 
 -- For example, a prefix trie can be used to represent the types of overloaded
 -- curried functions.
---
--- In order to represent argument transformation macros, Ptries have an
--- additional field on each edge that describes something about that node.
--- This is the middle @a@ type argument to Ptrie.
 
 module Ptrie
   ( Ptrie
   , empty
-  , unLeaf
-  , mapInsert
+  , get
+  , modify
   , lookup
   , toList
+  , unionWith
+  , mapInsert
   ) where
 
 import Prelude hiding (lookup)
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Util
-
--- In order to make the representation canonical, the Maps in a Ptrie are never empty
 data Ptrie k a v
   = Leaf !v
-  | Node (Map k (a, Ptrie k a v))
-  deriving (Eq)
+  | Node a (Map k (Ptrie k a v))
+  deriving (Eq, Show)
 
--- |A very special Ptrie that is an exception to the nonempty rule.
-empty :: Ptrie k a v
-empty = Node Map.empty
+empty :: Either a v -> Ptrie k a v
+empty (Right v) = Leaf v
+empty (Left a) = Node a Map.empty
 
-unLeaf :: Ptrie k a v -> Maybe v
-unLeaf (Node _) = Nothing
-unLeaf (Leaf v) = Just v
+get :: Ptrie k a v -> Either a v
+get (Leaf v) = Right v
+get (Node a _) = Left a
 
-singleton :: [(a,k)] -> v -> Ptrie k a v
-singleton [] v = Leaf v
-singleton ((a,x):k) v = Node (Map.singleton x (a, singleton k v))
+set :: Either a v -> Ptrie k a v -> Ptrie k a v
+set (Left a) (Node _ m) = Node a m
+set n _ = empty n
 
--- |Insertion is purely destructive, both of existing prefixes of k and
--- of existing associated @a@ values.
-insert :: Ord k => [(a,k)] -> v -> Ptrie k a v -> Ptrie k a v
-insert [] v _ = Leaf v
-insert ((a,x):k) v (Node m) = Node $ Map.insertWith (const $ (,) a . insert k v . snd) x (a, singleton k v) m
-insert k v _ = singleton k v
+modify :: (Either a v -> Either a v) -> Ptrie k a v -> Ptrie k a v
+modify f p = set (f (get p)) p
 
-mapInsert :: (Ord f, Ord k) => f -> [(a,k)] -> v -> Map f (Ptrie k a v) -> Map f (Ptrie k a v)
--- I'm so lazy
-mapInsert f k v m = Map.insertWith (const $ insert k v) f (singleton k v) m
+lookup :: Ord k => [k] -> Ptrie k a v -> Maybe (Ptrie k a v)
+lookup [] t = Just t
+lookup (x:k) (Node _ m) = lookup k =<< Map.lookup x m
+lookup _ _ = Nothing
 
-lookup :: Ord k => [k] -> Ptrie k a v -> ([a], Maybe (Ptrie k a v))
-lookup [] t = ([], Just t)
-lookup (_:_) (Leaf _) = ([], Nothing)
-lookup (x:k) (Node t) = maybe ([], Nothing) (\(a,m) -> first (a:) $ lookup k m) $ Map.lookup x t
+singleton :: Ord k => [k] -> Either a v -> Ptrie k a v
+singleton [] = empty
+singleton (x:k) = Node (error "Ptrie.singleton") . Map.singleton x . singleton k
 
-toList :: Ptrie k a v -> [([(a,k)],v)]
+insert :: Ord k => [k] -> Either a v -> Ptrie k a v -> Ptrie k a v
+insert [] n p = set n p
+insert (x:k) n (Node a m) = Node a $ Map.insertWith (const $ insert k n) x (singleton k n) m
+insert k n _ = singleton k n
+
+toList :: Ptrie k a v -> [([k],v)]
 toList (Leaf v) = [([],v)]
-toList (Node t) = [((a,x):k,v) | (x,(a,p)) <- Map.toList t, (k,v) <- toList p]
+toList (Node _ t) = [(x:k,v) | (x,p) <- Map.toList t, (k,v) <- toList p]
+
+unionWith :: Ord k => (Either a v -> Either a v -> Either a v) -> Ptrie k a v -> Ptrie k a v -> Ptrie k a v
+unionWith f p1 p2 = uw (f (get p1) (get p2)) p1 p2 where
+  uw n (Node _ m1) (Node _ m2) = set n $ Node undefined $ Map.unionWith (unionWith f) m1 m2
+  uw n p@(Node _ _) _ = set n p
+  uw n _ p = set n p
+
+mapInsert :: (Ord f, Ord k) => f -> [k] -> Either a v -> Map f (Ptrie k a v) -> Map f (Ptrie k a v)
+mapInsert f k v m = Map.insertWith (const $ insert k v) f (singleton k v) m
