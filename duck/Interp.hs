@@ -69,8 +69,7 @@ cast :: TypeVal -> Exec Value -> Exec Value
 cast _ x = x
 
 inferExpr :: Bool -> LocalTypes -> SrcLoc -> Exp -> Exec TypeVal
-inferExpr static env loc e = do
-  --liftIO $ putStrLn $ pout $ "infer" <+> show e
+inferExpr static env loc e =
   liftInfer $ Infer.expr static env loc e
 
 expr :: Bool -> Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Exec Value
@@ -81,14 +80,15 @@ expr static global tenv env loc = exp where
     v1 <- exp e1
     st <- liftInfer $ Infer.staticFunction t1
     t2 <- inferExpr (static || st) tenv loc e2
-    apply static global loc t1 v1 (transExpr global tenv env loc e2) t2
-  exp (ExpLet v e body) = do
-    t <- inferExpr static tenv loc e
-    d <- exp e
-    expr static global (Map.insert v t tenv) (Map.insert v d env) loc body
-  exp ce@(ExpCase a pl def) = do
+    apply static global loc t1 v1 (transExpr static global tenv env loc e2) t2
+  exp (ExpLet tr v e body) = do
+    t <- inferExpr (static || Static == tr) tenv loc e
+    let t' = transType (tr, t)
+    d <- transExpr static global tenv env loc e tr
+    expr static global (Map.insert v t' tenv) (Map.insert v d env) loc body
+  exp ce@(ExpCase st a pl def) = do
     ct <- inferExpr static tenv loc ce
-    t <- liftInfer $ Infer.atom static tenv loc a
+    t <- liftInfer $ Infer.atom (static || st) tenv loc a
     conses <- liftInfer $ Infer.lookupDatatype loc t
     d <- atom global env loc a
     let i = unsafeTag d
@@ -99,7 +99,8 @@ expr static global tenv env loc = exp where
         let Just tl = Infer.lookupCons conses c
             dl = if empty then map (const valEmpty) vl
                  else unsafeUnvalConsN (length vl) d
-        cast ct $ expr static global (insertVars tenv vl tl) (insertVars env vl dl) loc e'
+            tl' = if st then zipWith (TyStatic ... Any) tl dl else tl
+        cast ct $ expr static global (insertVars tenv vl tl') (insertVars env vl dl) loc e'
       Nothing -> case def of
         Nothing -> execError loc ("pattern match failed: exp =" <+> quoted (Any t d) <> cases pl) where
           cases [] = ", no cases"
@@ -138,10 +139,10 @@ emptyType loc = empty Set.empty where
   empty' _ TyVoid = execError loc "Void is neither empty nor nonempty"
 
 -- |Evaluate an argument acording to the given transform
-transExpr :: Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Trans -> Exec Value
-transExpr global tenv env loc e NoTrans = expr False global tenv env loc e
-transExpr _ tenv env _ e Delay = return $ value $ ValDelay e (packEnv Set.empty tenv env e)
-transExpr global tenv env loc e Static = expr True global tenv env loc e
+transExpr :: Bool -> Globals -> LocalTypes -> Locals -> SrcLoc -> Exp -> Trans -> Exec Value
+transExpr static global tenv env loc e NoTrans = expr static global tenv env loc e
+transExpr _ _ tenv env _ e Delay = return $ value $ ValDelay e (packEnv Set.empty tenv env e)
+transExpr _ global tenv env loc e Static = expr True global tenv env loc e
 
 -- Because of the delay mechanism, we pass in two things related to the argument
 -- "a".  The first argument provides the argument itself, whose evaluation must
@@ -149,6 +150,7 @@ transExpr global tenv env loc e Static = expr True global tenv env loc e
 -- "at" is the type of the value which was passed in, and is the type used for
 -- type inference/overload resolution.
 apply :: Bool -> Globals -> SrcLoc -> TypeVal -> Value -> (Trans -> Exec Value) -> TypeVal -> Exec Value
+apply static global loc (TyStatic (Any t _)) fun ae at = apply static global loc t fun ae at
 apply static global loc ft@(TyFun _) fun ae at 
   | ValClosure f types args <- unsafeUnvalue fun = do
     -- infer return type
@@ -169,7 +171,7 @@ apply static global loc ft@(TyFun _) fun ae at
 apply static global loc t1 v1 e2 t2 = 
   app Infer.isTypeType appty $
   app Infer.isTypeDelay appdel $
-  e2 NoTrans >>= \v2 -> execError loc ("can't apply" <+> quoted (Any t1 v1) <+> "to" <+> quoted (Any t2 v2)) where
+  e2 NoTrans >>= \v2 -> execError loc ("cannot apply" <+> quoted (Any t1 v1) <+> "to" <+> quoted (Any t2 v2)) where
   app t f r = maybe r f =<< liftInfer (t t1)
   appty _ = return valEmpty
   appdel _ = do

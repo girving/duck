@@ -109,6 +109,10 @@ instance Convert Char where
   value = value . ord
   unsafeUnvalue = chr . unsafeUnvalue
 
+instance Convert Bool where
+  value v = valCons (fromEnum v) []
+  unsafeUnvalue = toEnum . unsafeTag
+
 instance Convert a => Convert [a] where
   value [] = valCons 0 []
   value (x:l) = valCons 1 [value x,value l]

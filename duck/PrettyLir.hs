@@ -50,10 +50,10 @@ instance (IsType t, Pretty t) => Pretty (Overload t) where
 
 instance Pretty Exp where
   pretty' (ExpSpec e t) = 2 #> guard 2 e <+> "::" <+> t
-  pretty' (ExpLet v e body) = 1 #>
-    "let" <+> v <+> '=' <+> pretty e <+> "in" $$ pretty body
-  pretty' (ExpCase v pl d) = 1 #>
-    nested ("case" <+> v <+> "of")
+  pretty' (ExpLet tr v e body) = 1 #>
+    "let" <+> (tr, v) <+> '=' <+> pretty e <+> "in" $$ pretty body
+  pretty' (ExpCase st v pl d) = 1 #>
+    nested ("case" <+> (if st then Static else NoTrans, v) <+> "of")
       (vcat (map arm pl ++ def d)) where
     arm (c, vl, e) = prettyop c vl <+> "->" <+> pretty e
     def Nothing = []

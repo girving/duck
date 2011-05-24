@@ -17,9 +17,9 @@ import Prims
 data Exp = ExpLoc !SrcLoc !Exp
          | ExpAtom !Atom
          | ExpApply !Exp !Exp
-         | ExpLet !Var !Exp !Exp
+         | ExpLet !Trans !Var !Exp !Exp
          | ExpCons !Datatype !Int ![Exp]
-         | ExpCase !Atom ![(Var, [Var], Exp)] !(Maybe Exp)
+         | ExpCase !Bool !Atom ![(Var, [Var], Exp)] !(Maybe Exp)
          | ExpPrim !Prim ![Exp]
          | ExpSpec !Exp !TypePat
  
@@ -32,11 +32,13 @@ instance Convert Exp where
         {-# LINE 11 "lir.duck" #-}
         value (ExpApply a b) = valCons 2 [value a, value b]
         {-# LINE 11 "lir.duck" #-}
-        value (ExpLet a b c) = valCons 3 [value a, value b, value c]
+        value (ExpLet a b c d)
+          = valCons 3 [value a, value b, value c, value d]
         {-# LINE 11 "lir.duck" #-}
         value (ExpCons a b c) = valCons 4 [value a, value b, value c]
         {-# LINE 11 "lir.duck" #-}
-        value (ExpCase a b c) = valCons 5 [value a, value b, value c]
+        value (ExpCase a b c d)
+          = valCons 5 [value a, value b, value c, value d]
         {-# LINE 11 "lir.duck" #-}
         value (ExpPrim a b) = valCons 6 [value a, value b]
         {-# LINE 11 "lir.duck" #-}
@@ -55,16 +57,20 @@ instance Convert Exp where
                        in ExpApply (unsafeUnvalue a) (unsafeUnvalue b)
                 3
                   -> let {-# LINE 15 "lir.duck" #-}
-                         (a, b, c) = unsafeUnvalCons val
-                       in ExpLet (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                         (a, b, c, d) = unsafeUnvalCons val
+                       in
+                       ExpLet (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                         (unsafeUnvalue d)
                 4
                   -> let {-# LINE 16 "lir.duck" #-}
                          (a, b, c) = unsafeUnvalCons val
                        in ExpCons (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
                 5
                   -> let {-# LINE 17 "lir.duck" #-}
-                         (a, b, c) = unsafeUnvalCons val
-                       in ExpCase (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                         (a, b, c, d) = unsafeUnvalCons val
+                       in
+                       ExpCase (unsafeUnvalue a) (unsafeUnvalue b) (unsafeUnvalue c)
+                         (unsafeUnvalue d)
                 6
                   -> let {-# LINE 18 "lir.duck" #-}
                          (a, b) = unsafeUnvalCons val

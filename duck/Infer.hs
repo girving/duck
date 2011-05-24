@@ -134,15 +134,16 @@ expr static env loc e = checkStatic =<< exp e where
     st <- staticFunction t1
     t2 <- expr (static || st) env loc e2
     snd =.< apply static loc t1 t2
-  exp (ExpLet v e body) = do
-    t <- exp e
-    expr static (Map.insert v t env) loc body
-  exp (ExpCase a pl def) = do
-    t <- checkStatic =<< atom static env loc a
+  exp (ExpLet tr v e body) = do
+    t <- expr (static || Static == tr) env loc e
+    let t' = transType (tr, t)
+    expr static (Map.insert v t' env) loc body
+  exp (ExpCase st a pl def) = do
+    t <- atom (static || st) env loc a
     conses <- lookupDatatype loc t
     case t of
       TyVoid -> return TyVoid
-      TyStatic tv@(Any _ d) -> do
+      TyStatic tv@(Any _ d) | st -> do
         let i = unsafeTag d
             (L _ c, tl) = conses !! i
             n = length tl
@@ -176,14 +177,13 @@ expr static env loc e = checkStatic =<< exp e where
   exp (ExpCons d c el) =
     cons static loc d c =<< mapM exp el
   exp (ExpPrim op el) =
-    -- TODO: execute if static or non-IO and all args static
-    Base.primType loc op =<< mapM exp el
+    Base.primType static loc op =<< mapM exp el
   exp (ExpSpec e ts) =
     spec loc ts e =<< exp e
   exp (ExpLoc l e) = expr static env l e
   checkStatic t
     | not static || isStatic t = return t
-    | otherwise = inferError loc $ "non-static value in static expression" <:> quoted (show e) <+> "=>" <+> quoted (show t)
+    | otherwise = inferError loc $ "non-static value in static expression" <:> quoted e
 
 lookupVariable :: SrcLoc -> Var -> Map Var a -> Infer a
 lookupVariable loc v env = 
@@ -261,7 +261,6 @@ apply static loc (TyFun fl) t2 = do
   fun (FunClosure f args) = do
     let tl = args ++ [t2]
     o <- withFrame f tl loc $ resolve f tl
-    --debugInfer $ "got" <+> prettyap f tl <+> "=>" <+> o
     r <- if static
       then maybe
         (return $ typeClosure f (args ++ [t2]))
@@ -272,7 +271,6 @@ apply static loc (TyFun fl) t2 = do
             (overVars o) (overArgs o) (args ++ [t2])) (overLoc o))
         (overBody o)
       else return $ overRet o
-    --when static $ debugInfer $ "evaled" <+> r
     return (fst $ overArgs o !! length args, r)
 apply _ loc t1 t2 = liftM ((,) NoTrans) $
   app Infer.isTypeType appty $
@@ -357,7 +355,7 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
 
     ent <- case map ((length args ==) . length . overVars . fst) bests of
       [True] | [(o,tenv)] <- bests -> -- exactly one fully applied option: evaluate
-          Right =.< cache f at o =<< 
+          Right =.< cache f args o =<< 
             checkLeftovers noLoc ("invalid overload" <+> overDesc o) tenv
       a | not (or a) -> -- all overloads are still partially applied, so create a closure overload
           return $ Left $ map fst overs
@@ -381,7 +379,7 @@ resolve f args = either (\ ~(o:_) -> partialOver f (map fst $ overArgs o) args) 
 --
 -- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
-cache :: Var -> [TransType TypeVal] -> Overload TypePat -> TypeEnv -> Infer (Overload TypeVal)
+cache :: Var -> [TypeVal] -> Overload TypePat -> TypeEnv -> Infer (Overload TypeVal)
 cache f al (Over oloc atypes rt vl ~(Just e)) tenv = do
   s <- get -- fork state to do speculative fixpoint
   r <- fix False TyVoid -- recursive function calls are initially assumed to be void
@@ -390,7 +388,7 @@ cache f al (Over oloc atypes rt vl ~(Just e)) tenv = do
   when (r /= r') $ inferError noLoc "internal error: type convergence failed"
   return (or r)
   where
-  tf (r, arg) (_r, a) = (r, reStatic arg $ substVoid tenv a)
+  tf arg (r, a) = (r, reStatic arg $ substVoid tenv a)
   tl = zipWith tf al atypes
   rs = substVoid tenv rt
   or r = Over oloc tl r vl (Just e)
@@ -399,7 +397,7 @@ cache f al (Over oloc atypes rt vl ~(Just e)) tenv = do
     typeReError noLoc ("failed to unify result" <+> quoted r <+>"with return signature" <+> quoted rs) $
       union r rs
   fix final prev = do
-    insertOver final f (map snd al) (Right (or prev))
+    insertOver final f al (Right (or prev))
     r <- eval
     if final || r == prev
       then return r

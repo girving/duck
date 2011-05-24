@@ -236,6 +236,6 @@ instance Pretty Trans where
   pretty' Delay = pretty' "delay"
   pretty' Static = pretty' "static"
 
-instance (Pretty t, IsType t) => Pretty (TransType t) where
+instance Pretty t => Pretty (TransType t) where
   pretty' (NoTrans, t) = pretty' t
   pretty' (c, t) = prettyap c [t]

@@ -194,9 +194,9 @@ free s e = Set.toList $ Set.fromList $ map fst $ (free' s (noLoc :: SrcLoc) e ::
 free' :: InScopeSet -> SrcLoc -> Exp -> [(Var,SrcLoc)]
 free' s l (ExpAtom a) = freeAtom s l a
 free' s l (ExpApply e1 e2) = free' s l e1 ++ free' s l e2
-free' s l (ExpLet v e c) = free' s l e ++ free' (addVar v s) l c
+free' s l (ExpLet _ v e c) = free' s l e ++ free' (addVar v s) l c
 free' s l (ExpCons _ _ el) = concatMap (free' s l) el
-free' s l (ExpCase a al d) =
+free' s l (ExpCase _ a al d) =
   freeAtom s l a
   ++ concatMap (\(_,vl,e) -> free' (foldr addVar s vl) l e) al
   ++ maybe [] (free' s l) d

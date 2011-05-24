@@ -102,7 +102,7 @@ typeBool = typeC datatypeBool
 transType :: IsType t => TransType t -> t
 transType (NoTrans, t) = t
 transType (Delay, t) = typeCons datatypeDelay [t]
-transType (Static, t) = t -- really depends on value
+transType (Static, t) = t -- really TyStatic
 
 
 -- Pretty printing

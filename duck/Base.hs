@@ -26,7 +26,7 @@ import Memory
 import Value
 import Prims
 import SrcLoc
-import Pretty
+import Pretty hiding (guard)
 import Lir
 import ExecMonad
 import InferMonad
@@ -83,12 +83,12 @@ prim loc prim args
   | otherwise = execError loc $ invalidPrim prim args
 
 -- |Determine the type of a primitive when called with the given arguments
-primType :: SrcLoc -> Prim -> [TypeVal] -> Infer TypeVal
-primType loc prim args
+primType :: Bool -> SrcLoc -> Prim -> [TypeVal] -> Infer TypeVal
+primType static loc prim args
   | Just primop <- Map.lookup prim primOps
   , map deStatic args == primArgs primop = do
     let rt = primRet primop
-        vl = mapM unStatic args
+        vl = guard static >> mapM unStatic args
     maybe
       (return rt)
       (TyStatic . Any rt .=< liftIO . primBody primop) vl

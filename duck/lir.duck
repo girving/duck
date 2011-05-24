@@ -12,9 +12,9 @@ data Exp of
   ExpLoc SrcLoc Exp
   ExpAtom Atom
   ExpApply Exp Exp
-  ExpLet Var Exp Exp
+  ExpLet Trans Var Exp Exp
   ExpCons Datatype Int (List Exp)
-  ExpCase Atom (List (Var, List Var, Exp)) (Maybe Exp)
+  ExpCase Bool Atom (List (Var, List Var, Exp)) (Maybe Exp)
   ExpPrim Prim (List Exp)
   ExpSpec Exp TypePat
 
