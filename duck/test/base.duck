@@ -46,9 +46,6 @@ force x = x ()
 delay :: delay a -> Delay a
 delay x = x
 
-static :: static a -> a
-static x = x
-
 --------- basic types and related functions
 
 ---- unit

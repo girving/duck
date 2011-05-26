@@ -200,9 +200,10 @@ prog pprec p = (precs, decls p) where
       [] -> LetD (L l ignored) $ body $ Var (V "()")
       [(v,l)] -> LetD (L l v) $ body $ Var v
       vl -> LetM (map (\(v,l) -> L l v) vl) $ body $ foldl' Apply (Var $ tupleCons vl) (map (Var . fst) vl)
-    body r = match globals [Switch [(Nothing, e)] [CaseMatch [p] id (CaseBody r)]] Nothing
+    body r = match globals [Switch [(tr, e)] [CaseMatch [p] id (CaseBody r)]] Nothing
     e = expr globals l ae
-    (p,vm) = pattern' Map.empty l ap
+    (tr,ap') = unPatTrans ap
+    (p,vm) = pattern' Map.empty l ap'
   decls (L l (Ast.ExpD e) : rest) = ExpD (expr globals l e) : decls rest
   decls (L _ (Ast.Data t args cons) : rest) = Data t args cons : decls rest
   decls (L _ (Ast.Infix _ _) : rest) = decls rest
@@ -305,11 +306,15 @@ prog pprec p = (precs, decls p) where
   switches :: InScopeSet -> SrcLoc -> [Ast.Switch] -> (InScopeSet, [Switch])
   switches s0 loc = switchs Set.empty where
     switchs s = mapss (switch s)
-    switch s (e,c) = second (Switch [(Nothing, expr s0 loc e)]) $ caseline s c
-    caseline s (Ast.CaseGuard r) = second ((:[]) . CaseMatch [consPat (V "True") []] id) $ casetail s r
+    switch s (e,c) = second (switchl e) $ caseline s c
+    switchl e tl = Switch [(tr, expr s0 loc e)] l where
+      tr = fromMaybe (irError loc "cases apply inconsistent transforms") $ unique trs
+      (trs, l) = unzip tl
+    caseline s (Ast.CaseGuard r) = second ((:[]) . ((,) Nothing) . CaseMatch [consPat (V "True") []] id) $ casetail s r
     caseline s (Ast.CaseMatch ml) = mapss (casematch s) ml
-    casematch s (p,r) = (s',CaseMatch p' id r') where 
-      (p',ps) = patterns loc [p]
+    casematch s (p,r) = (s', (tr, CaseMatch p' id r')) where 
+      (tr,pp) = unPatTrans p
+      (p',ps) = patterns loc [pp]
       (s',r') = casetail (Set.union s ps) r
     casetail s (Ast.CaseGroup l) = second CaseGroup $ switchs s l
     casetail s (Ast.CaseBody e) = (s, CaseBody $ expr (Set.union s0 s) loc e)
