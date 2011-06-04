@@ -2,7 +2,7 @@
 -- vim:filetype=haskell
 
 {
-{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches -fno-warn-unused-binds -fno-warn-lazy-unlifted-bindings #-}
+{-# OPTIONS_GHC -fno-warn-tabs -fno-warn-unused-matches -fno-warn-unused-binds #-}
 {-# LANGUAGE PatternGuards #-}
 
 module Lex 

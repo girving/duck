@@ -29,7 +29,6 @@ module Infer
 
 import Prelude hiding (lookup)
 
-import Control.Monad
 import qualified Control.Monad.Reader as Reader
 import Control.Monad.State
 import Data.Either
@@ -222,7 +221,7 @@ cons static loc d c args = do
       t = TyCons d targs
   return $ maybe t
     (TyStatic . Any t . valCons c)
-    (Control.Monad.guard static >> mapM unStatic args)
+    (guard static >> mapM unStatic args)
 
 spec :: SrcLoc -> TypePat -> Exp -> TypeVal -> Infer TypeVal
 spec loc ts e t = do
@@ -366,7 +365,6 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
 
     insertOver True f args ent
     lookup args tl ent
-  resolve _ _ _ = return $ Left []
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)

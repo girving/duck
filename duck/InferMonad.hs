@@ -43,6 +43,7 @@ instance Error TypeError where
 
 newtype Infer a = Infer { unInfer :: ReaderT (Prog, InferStack) (StateT FunctionInfo (ErrorT TypeError IO)) a }
   deriving (Monad, MonadIO, MonadReader (Prog, InferStack), MonadState FunctionInfo, MonadError TypeError, MonadInterrupt)
+_unused = Infer
 
 -- |Indicate a fatal error in inference (one that cannot be resolved by a different overload path)
 inferError :: Pretty s => SrcLoc -> s -> Infer a

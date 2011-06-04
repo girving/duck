@@ -66,7 +66,7 @@ Executable duck
     if flag(debug)
         ghc-options:	-Wall -fwarn-tabs -fno-warn-missing-signatures -fno-warn-name-shadowing -fno-warn-orphans
         if impl(ghc >= 7)
-            ghc-options: -rtsopts -debug -auto-all
+            ghc-options: -rtsopts -debug -auto-all -fno-warn-lazy-unlifted-bindings
     if flag(boehm)
         cpp-options:     -DUSE_BOEHM
         extra-libraries: gc
