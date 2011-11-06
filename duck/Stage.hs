@@ -1,4 +1,4 @@
-{-# LANGUAGE DeriveDataTypeable, TypeSynonymInstances, GeneralizedNewtypeDeriving, PatternGuards #-}
+{-# LANGUAGE DeriveDataTypeable, TypeSynonymInstances, GeneralizedNewtypeDeriving, PatternGuards, FlexibleInstances #-}
 -- | Compilation top-level staging tools
 
 module Stage

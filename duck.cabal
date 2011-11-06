@@ -9,7 +9,7 @@ Description:	Duck is (will be) a functional, semi-typed, JIT-compiled language d
 Category:	Compilers/Interpreters
 Build-Type:	Simple
 Cabal-Version:	>= 1.2
-tested-with:    GHC == 6.10.3, GHC == 7.0.2
+tested-with:    GHC == 6.10.3, GHC == 7.0.2, GHC == 7.2.1
 extra-source-files: README, duck/*.duck, duck/test/*.duck
 
 Flag debug

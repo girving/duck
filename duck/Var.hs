@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances, StandaloneDeriving, BangPatterns #-}
+{-# LANGUAGE PatternGuards, TypeSynonymInstances, StandaloneDeriving, BangPatterns, FlexibleInstances #-}
 -- | Duck Variables
 
 module Var 

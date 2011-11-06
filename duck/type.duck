@@ -26,7 +26,7 @@ data TypeFun t of
 --
 -- 
 data TypeVal of
-  TyCons (Box Datatype) (List TypeVal)
+  TyCons (Box DataType) (List TypeVal)
   TyFun (List (TypeFun TypeVal))
   TyStatic Any
   TyVoid
@@ -36,7 +36,7 @@ data TypeVal of
 -- IMPORTANT: If you change this, PreTypePat in preType.duck must be changed as well.
 data TypePat of
   TsVar Var
-  TsCons (Box Datatype) (List TypePat)
+  TsCons (Box DataType) (List TypePat)
   TsFun (List (TypeFun TypePat))
   TsVoid
 
@@ -68,9 +68,9 @@ data Trans of
   Delay -- :: Delay
   Static -- Const might be a better name
 
--- |Datatype definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
+-- |DataType definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
 -- IMPORTANT: If you change this, PreDatatype in preType.duck must be changed as well.
-data Datatype of Data
+data DataType of Data
   CVar -- ^ Name
   SrcLoc -- ^ Location
   (List Var) -- ^ Type variable arguments

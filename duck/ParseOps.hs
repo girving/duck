@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances #-}
+{-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances #-}
 -- | Duck Operator Tree Parsing
 --
 -- Since the precedence of operators is adjustable, we parse expressions

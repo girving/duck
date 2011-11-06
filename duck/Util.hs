@@ -53,7 +53,6 @@ import Control.Exception
 import Control.Monad.Error
 import Control.Monad.State
 import Control.Monad.Reader
-import Control.Monad.Trans
 import Debug.Trace
 import Foreign.C.String
 

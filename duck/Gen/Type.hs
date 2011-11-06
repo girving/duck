@@ -33,7 +33,7 @@ instance (Convert t) => Convert (TypeFun t) where
                 _ -> error "bad tag in unsafeUnvalue TypeFun"
  
 {-# LINE 28 "type.duck" #-}
-data TypeVal = TyCons !(Box Datatype) ![TypeVal]
+data TypeVal = TyCons !(Box DataType) ![TypeVal]
              | TyFun ![TypeFun TypeVal]
              | TyStatic !Any
              | TyVoid
@@ -62,7 +62,7 @@ instance Convert TypeVal where
  
 {-# LINE 37 "type.duck" #-}
 data TypePat = TsVar !Var
-             | TsCons !(Box Datatype) ![TypePat]
+             | TsCons !(Box DataType) ![TypePat]
              | TsFun ![TypeFun TypePat]
              | TsVoid
  
@@ -140,10 +140,10 @@ instance Convert Trans where
                 _ -> error "bad tag in unsafeUnvalue Trans"
  
 {-# LINE 73 "type.duck" #-}
-data Datatype = Data !CVar !SrcLoc ![Var] ![Variance] !DataInfo
+data DataType = Data !CVar !SrcLoc ![Var] ![Variance] !DataInfo
  
 {-# LINE 73 "type.duck" #-}
-instance Convert Datatype where
+instance Convert DataType where
         {-# LINE 73 "type.duck" #-}
         value (Data a b c d e)
           = valCons 0 [value a, value b, value c, value d, value e]
