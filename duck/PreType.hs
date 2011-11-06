@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances, StandaloneDeriving #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances #-}
 -- | Duck Type precursors
 
 module PreType

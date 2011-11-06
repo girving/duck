@@ -281,7 +281,7 @@ prog pprec p = (precs, decls p) where
   -- |process a multi-argument multi-case function set
   lambdacases :: InScopeSet -> SrcLoc -> Int -> [([Ast.Pattern], Ast.Exp)] -> Exp
   lambdacases s loc n arms = foldr (uncurry Lambda) body tvl where
-    (s',vl) = patsNames (Set.union s ps) n b
+    (s',vl) = patsNames (s `Set.union` ps) n b
     ((ps,[b]),body) = matcher cases s' loc (tvl,arms')
     tvl = zip tl vl
     (tls, arms') = unzip $ map transarm arms
@@ -294,13 +294,13 @@ prog pprec p = (precs, decls p) where
     (tr,pv) = unPatTrans p
     (p',ps) = patterns loc [pv]
     e' = expr s0 loc e
-    c' = expr (Set.union s0 ps) loc c
+    c' = expr (s0 `Set.union` ps) loc c
 
   cases :: InScopeSet -> SrcLoc -> ([(Trans, Var)], [([Ast.Pattern], Ast.Exp)]) -> (InScopeSet, [Switch])
   cases s0 loc (vals,arms) = second (\b -> [Switch (map (second Var) vals) b]) $ mapss arm arms where
     arm (p,e) = (ps,CaseMatch p' id (CaseBody e')) where
       (p',ps) = patterns loc p
-      e' = expr (Set.union s0 ps) loc e
+      e' = expr (s0 `Set.union` ps) loc e
 
   -- Convert all the patterns and expressions in a Case Switch list (but not the switches themselves) and collect all the pattern variables.
   switches :: InScopeSet -> SrcLoc -> [Ast.Switch] -> (InScopeSet, [Switch])
@@ -310,20 +310,20 @@ prog pprec p = (precs, decls p) where
     switchl e tl = Switch [(tr, expr s0 loc e)] l where
       tr = fromMaybe (irError loc "cases apply inconsistent transforms") $ unique trs
       (trs, l) = unzip tl
-    caseline s (Ast.CaseGuard r) = second ((:[]) . ((,) Nothing) . CaseMatch [consPat (V "True") []] id) $ casetail s r
+    caseline s (Ast.CaseGuard r) = second ((:[]) . (,) Nothing . CaseMatch [consPat (V "True") []] id) $ casetail s r
     caseline s (Ast.CaseMatch ml) = mapss (casematch s) ml
     casematch s (p,r) = (s', (tr, CaseMatch p' id r')) where 
       (tr,pp) = unPatTrans p
       (p',ps) = patterns loc [pp]
-      (s',r') = casetail (Set.union s ps) r
+      (s',r') = casetail (s `Set.union` ps) r
     casetail s (Ast.CaseGroup l) = second CaseGroup $ switchs s l
-    casetail s (Ast.CaseBody e) = (s, CaseBody $ expr (Set.union s0 s) loc e)
+    casetail s (Ast.CaseBody e) = (s, CaseBody $ expr (s0 `Set.union` s) loc e)
 
   doMatch :: (InScopeSet -> SrcLoc -> a -> (InScopeSet, [Switch])) -> InScopeSet -> SrcLoc -> a -> Exp
   doMatch f s l = snd . matcher f s l
 
   matcher :: (InScopeSet -> SrcLoc -> a -> (InScopeSet, [Switch])) -> InScopeSet -> SrcLoc -> a -> ((InScopeSet, [[[Pattern]]]), Exp)
-  matcher f s l x = ((s', map (map casePat . switchCases) y), match (Set.union s s') y Nothing) where (s',y) = f s l x
+  matcher f s l x = ((s', map (map casePat . switchCases) y), match (s `Set.union` s') y Nothing) where (s',y) = f s l x
 
   -- |match takes n unmatched expressions and a list of n-tuples (lists) of patterns, and
   -- iteratively reduces the list of possibilities by matching each expression in turn.  This is
@@ -346,7 +346,7 @@ prog pprec p = (precs, decls p) where
     withFall f s [x] fall = f s x fall
     withFall f s (x:l) fall = letf $ f s' x (Just callf) where
       (s',fv) = freshen s (V "fall")
-      letf = Let Nothing fv $ (Lambda Nothing) ignored $ withFall f s' l fall
+      letf = Let Nothing fv $ Lambda Nothing ignored $ withFall f s' l fall
       callf = Apply (Var fv) (Var $ V "()")
 
     switch :: InScopeSet -> Switch -> Maybe Exp -> Exp
@@ -364,13 +364,13 @@ prog pprec p = (precs, decls p) where
         Nothing -> switch s (Switch vals (map snd alts)) fall
         Just _ -> Case tr var (map cons alts') fall
       where
-        alts = map (\(CaseMatch ~(p@(Pat{ patCons = c }):pl) f e) -> (c,(CaseMatch pl (patLets tr var p . f) (checknext p e)))) group
+        alts = map (\(CaseMatch ~(p@(Pat{ patCons = c }):pl) f e) -> (c,CaseMatch pl (patLets tr var p . f) (checknext p e))) group
         -- sort alternatives by toplevel tag (along with arity)
         alts' = groupPairs $ sortBy (on compare fst) $
               map (\ ~(Just (c,cp), CaseMatch p pf pe) -> ((c,length cp), CaseMatch (cp++p) pf pe)) alts
         checknext (Pat{ patCheck = Just c }) e = CaseGroup [Switch [(tr, c var)] [CaseMatch [consPat (V "True") []] id e]]
         checknext _ e = e
-        cons ((c,arity),alts) = (c,vl, switch s' (Switch (map (((,) tr) . Var) vl ++ vals) alts) fall) where
+        cons ((c,arity),alts) = (c,vl, switch s' (Switch (map ((,) tr . Var) vl ++ vals) alts) fall) where
           (s',vl) = patsNames s arity (map casePat alts)
 
     matchTail :: InScopeSet -> CaseTail -> Maybe Exp -> Exp

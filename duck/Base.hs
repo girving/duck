@@ -52,7 +52,7 @@ intBinOp :: Binop -> (Int -> Int -> Int) -> PrimOp
 intBinOp op fun = intOp op typeInt $ \i -> value . fun i
 
 primOps :: Map.Map Prim PrimOp
-primOps = Map.fromList $ map (\o -> (primPrim o, o)) $
+primOps = Map.fromList $ map (\o -> (primPrim o, o))
   [ intBinOp IntAddOp (+)
   , intBinOp IntSubOp (-)
   , intBinOp IntMulOp (*)
@@ -119,6 +119,6 @@ base = (complete datatypes . types . prims) (empty "") where
   prims prog = foldl' primop prog $ Map.elems primOps
 
   types prog = prog { progDatatypes = datatypes }
-  datatypes = Map.fromList $ map expand $ map ((!!) datatypeTuples) (0:[2..5]) ++
+  datatypes = Map.fromList $ map expand $ map (datatypeTuples !!) (0:[2..5]) ++
     [ datatypeInt, datatypeChar, datatypeDelay, datatypeType, datatypeBool ]
     where expand d = (dataName d,d)

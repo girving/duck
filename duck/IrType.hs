@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, MultiParamTypeClasses, FunctionalDependencies, UndecidableInstances, FlexibleInstances, TypeSynonymInstances, StandaloneDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses, UndecidableInstances, FlexibleInstances, TypeSynonymInstances #-}
 -- | Duck Ir Types
 
 -- These are the same as the later Lir types in the Type module, except that Datatypes

@@ -1,7 +1,7 @@
 TOPDIR=..
 SETUP=cd $(TOPDIR) ; $(if $(wildcard $(TOPDIR)/Setup),./Setup,runhaskell ./Setup.hs)
 CONFIG_DONE=$(TOPDIR)/dist/setup-config
-CONFIGFLAGS=-O --enable-executable-profiling --ghc-options=-Werror
+CONFIGFLAGS=-O --enable-executable-profiling --enable-executable-dynamic --ghc-options=-Werror
 DUCK=$(TOPDIR)/dist/build/duck/duck
 
 TESTS = basic layout curry delay match io tyfun success types base-test expseq fac

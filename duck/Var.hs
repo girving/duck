@@ -93,7 +93,7 @@ freshVars s n = (s'', v : vl) where
 standardVars :: [Var]
 standardVars = letters ++ others where
   letters = [V [x] | x <- ['a'..'z']]
-  others = [V ("t" ++ show i) | i <- [1..] :: [Int]]
+  others = [V ('t' : show i) | i <- [1..] :: [Int]]
 
 moduleVar :: ModuleName -> Var -> Var
 moduleVar m (V v) = V (m ++ '.' : v)
@@ -104,7 +104,7 @@ ignored = V "_"
 tupleCons :: [a] -> Var
 tupleCons [] = V "()"
 tupleCons [_] = error "no singleton tuples"
-tupleCons (_:l) = V ([',' | _ <- l])
+tupleCons (_:l) = V [',' | _ <- l]
 
 isTuple :: Var -> Bool
 isTuple (V "()") = True

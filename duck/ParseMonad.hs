@@ -59,7 +59,7 @@ psError s = parseError (ps_loc s)
 
 runP :: P a -> String -> String -> a
 runP parse file input = r where
-  (r,_) = runState parse $ ParseState
+  (r,_) = runState parse ParseState
     { ps_loc = loc
     , ps_rest = input
     , ps_prev = '\n'

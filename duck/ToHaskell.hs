@@ -46,6 +46,7 @@ constructor f (L l c,tl) = HsConDecl (srcLoc l) (name c) (map (f . typep) tl)
 typep :: TypePat -> HsType
 typep (TsVar v) = HsTyVar (name v)
 typep (TsCons c tl) | isTuple c = HsTyTuple (map typep tl)
+typep (TsCons (V "List") [TsCons (V "Char") []]) = HsTyCon (UnQual (HsIdent "String"))
 typep (TsCons (V "List") [t]) = HsTyApp (HsTyCon (Special HsListCon)) (typep t)
 typep (TsCons c tl) = foldl HsTyApp (HsTyCon (UnQual (name c))) (map typep tl)
 typep (TsFun [FunArrow s t]) = HsTyFun (typep s) (typep t)

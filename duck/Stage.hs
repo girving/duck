@@ -122,7 +122,7 @@ mapStackArgs :: (a -> b) -> CallStack a -> CallStack b
 mapStackArgs f = map $ fmap f
 
 data StackMsg a = StackMsg
-  { msgStack :: (CallStack a) -- ^ This should be in call order: outside to in
+  { msgStack :: CallStack a -- ^ This should be in call order: outside to in
   , stackMsg :: Msg
   }
 

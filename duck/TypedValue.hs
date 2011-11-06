@@ -24,7 +24,7 @@ prettyval :: TypeVal -> Value -> Doc'
 prettyval t v | t == typeInt = pretty' (unsafeUnvalue v :: Int)
 prettyval t v | t == typeChar = pretty' (show (unsafeUnvalue v :: Char))
 prettyval (TyCons d [t]) v | V "List" == dataName d && t == typeChar =
-  pretty' (show (unsafeUnvalue v :: [Char]))
+  pretty' (show (unsafeUnvalue v :: String))
 prettyval (TyCons d [t]) v | V "List" == dataName d = pretty' $
   brackets $ 3 #> punctuate ',' (map (prettyval t) v')
   where v' = unsafeUnvalue v :: [Value]
@@ -72,7 +72,7 @@ compareval (TyFun _) v1 v2 =
   ValClosure f1 tl1 vl1 = unsafeUnvalue v1
   ValClosure f2 tl2 vl2 = unsafeUnvalue v2
 compareval (TyStatic (Any t _)) v1 v2 = compareval t v1 v2
-compareval TyVoid _ _ = error $ "compare: impossible Void value"
+compareval TyVoid _ _ = error "compare: impossible Void value"
 
 instance Ord Any where
   compare (Any t1 v1) (Any t2 v2) =

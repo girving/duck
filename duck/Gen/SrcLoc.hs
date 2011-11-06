@@ -6,9 +6,9 @@ module Gen.SrcLoc where
 import Memory
  
 {-# LINE 3 "srcLoc.duck" #-}
-data SrcLoc = SrcNone ![Char]
-            | SrcLoc ![Char] !Int !Int
-            | SrcRng ![Char] !Int !Int !Int !Int
+data SrcLoc = SrcNone !String
+            | SrcLoc !String !Int !Int
+            | SrcRng !String !Int !Int !Int !Int
  
 {-# LINE 3 "srcLoc.duck" #-}
 instance Convert SrcLoc where

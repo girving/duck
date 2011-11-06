@@ -233,7 +233,7 @@ spec loc ts e t = do
 unify :: SrcLoc -> TypeVal -> TypeVal -> Infer TypeVal
 unify loc (TyStatic (Any t1 v1)) (TyStatic (Any t2 v2)) = do
   t <- unify loc t1 t2
-  unless (Any t v1 == Any t v2) $ inferError loc $ "indeterminate static values in return"
+  unless (Any t v1 == Any t v2) $ inferError loc "indeterminate static values in return"
   return $ TyStatic (Any t v1)
 -- if only one static, it's dropped:
 unify loc t1 t2 =
@@ -306,7 +306,7 @@ isTypeDelay :: TypeVal -> Infer (Maybe TypeVal)
 isTypeDelay = isTypeC1 datatypeDelay
 
 instance TypeMonad Infer where
-  typeApply f = apply False noLoc f
+  typeApply = apply False noLoc
 
 overDesc :: Overload TypePat -> Doc'
 overDesc o = o { overBody = Nothing } <+> parens ("at" <+> show (overLoc o))
@@ -336,7 +336,7 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
       (lookup args' tl . Ptrie.get) . Ptrie.lookup args' =<< lookupFunction f
 
   resolve args tl ol = do
-    let prune o = tryError $ ((,) o) =.< subsetList args (overTypes o)
+    let prune o = tryError $ (,) o =.< subsetList args (overTypes o)
     pruned <- mapM prune ol
     overs <- case partitionEithers pruned of
       (errs,[]) -> typeError noLoc $
@@ -348,7 +348,7 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
 
     -- determine applicable argument type transform annotations
     tt <- maybe
-      (inferError noLoc $ nested ("ambiguous type transforms, possibilities are:") options)
+      (inferError noLoc $ nested "ambiguous type transforms, possibilities are:" options)
       return $ unique $ map (map fst . take (length args) . overArgs . fst) overs
     let at = zip tt args
 
@@ -358,7 +358,7 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
             checkLeftovers noLoc ("invalid overload" <+> overDesc o) tenv
       a | not (or a) -> -- all overloads are still partially applied, so create a closure overload
           return $ Left $ map fst overs
-        | any ((TyVoid ==) . transType) at -> do -- ambiguous with void arguments
+        | any ((TyVoid ==) . transType) at -> -- ambiguous with void arguments
           return $ Right $ Over noLoc at TyVoid [] Nothing
         | otherwise -> -- ambiguous
           inferError noLoc $ nested ("ambiguous overloads for" <+> quoted f <> ", possibilities are:") options

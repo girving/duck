@@ -140,7 +140,7 @@ check :: Prog -> ()
 check prog = runSequence $ do
   let fs = Map.map (either loc loc . Ptrie.get) (progOverloads prog)
   fds <- foldM def fs (progDefinitions prog)
-  mapM_ (funs (Set.union (Map.keysSet fds) types)) $ Map.toList $ (progOverloads prog)
+  mapM_ (funs (Map.keysSet fds `Set.union` types)) $ Map.toList (progOverloads prog)
   mapM_ datatype (Map.toList $ progDatatypes prog)
   where
   types = Map.keysSet (progDatatypes prog)
@@ -150,7 +150,7 @@ check prog = runSequence $ do
           maybe nop (dupError v l) $ Map.lookup v s
           return $ Map.insert v l s
     s <- foldM add s vl
-    expr (Set.union (Map.keysSet s) types) body
+    expr (Map.keysSet s `Set.union` types) body
     return s
   funs s (f,fl) = either (mapM_ fun) (const nop) $ Ptrie.get fl where
     fun (Over l _ _ vl body) = do
@@ -158,7 +158,7 @@ check prog = runSequence $ do
       vs <- foldM (\s v -> do
         when (Set.member v s) $ lirError l $ quoted v <+> "appears more than once in argument list for" <+> quoted f
         return $ addVar v s) Set.empty vl
-      maybe nop (expr (Set.union s vs)) body
+      maybe nop (expr (s `Set.union` vs)) body
   expr s = mapM_ (\(v,l) -> lirError l $ quoted v <+> "undefined") . free' s noLoc
   datatype (_, d) = info $ dataInfo d where
     info (DataAlgebraic conses) = mapM_ cons conses
@@ -175,7 +175,7 @@ globals prog = foldl' (Map.unionWithKey kindConflict) Map.empty
    Map.map (const DatatypeKind) $ progDatatypes prog,
    Map.map (const FunctionKind) $ progOverloads prog,
    foldl' (\g (s, v) -> insertVar v (if s then StaticKind else GlobalKind) g) Map.empty $ 
-    concatMap (\d -> map (((,) (defStatic d)) . unLoc) $ defVars d) $ progDefinitions prog]
+    concatMap (\d -> map ((,) (defStatic d) . unLoc) $ defVars d) $ progDefinitions prog]
 
 kindConflict :: Var -> Kind -> Kind -> Kind
 kindConflict v DatatypeKind k | isTuple v = k
@@ -189,7 +189,7 @@ kindConflict v k k' | k == k' = k
  
 -- |Compute the list of free variables in an expression given the set of in scope variables
 free :: InScopeSet -> Exp -> [Var]
-free s e = Set.toList $ Set.fromList $ map fst $ (free' s (noLoc :: SrcLoc) e :: [(Var,SrcLoc)])
+free s e = Set.toList $ Set.fromList $ map fst (free' s (noLoc :: SrcLoc) e :: [(Var,SrcLoc)])
 
 free' :: InScopeSet -> SrcLoc -> Exp -> [(Var,SrcLoc)]
 free' s l (ExpAtom a) = freeAtom s l a
@@ -236,12 +236,10 @@ complete datatypes prog = flip execState prog $ mapM_ datatype $ Map.elems datat
     info (DataAlgebraic conses) = mapM_ cons (zip [0..] conses)
     info (DataPrim _) = nop
     cons :: (Int, (Loc CVar, [TypePat])) -> State Prog ()
-    cons (i,(c,tyl)) = do
-      case tyl of
-        [] -> modify $ \p -> p { progDefinitions = Def False [c] (ExpCons d i []) : progDefinitions p }
-        _ -> overload c tl r vl (ExpCons d i (map expLocal vl)) where
-          vl = take (length tyl) standardVars
-          (tl,r) = generalType vl
+    cons (i,(c,[])) = modify $ \p -> p { progDefinitions = Def False [c] (ExpCons d i []) : progDefinitions p }
+    cons (i,(c,tyl)) = overload c tl r vl (ExpCons d i (map expLocal vl)) where
+      vl = take (length tyl) standardVars
+      (tl,r) = generalType vl
 
 addOverload :: Var -> Overload TypePat -> Prog -> Prog
 addOverload f o p = p { progOverloads = Map.insertWith 

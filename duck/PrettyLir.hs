@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances, StandaloneDeriving #-}
+{-# LANGUAGE FlexibleInstances #-}
 
 module PrettyLir
  (
@@ -29,13 +29,13 @@ instance Pretty Prog where
     ++ [pretty "-- definitions"]
     ++ [pretty $ definition d | d <- progDefinitions prog]
     where
-    function v o = nested (v <+> "::") o
+    function v = nested (v <+> "::")
     definition (Def _ vl e) = nestedPunct '=' (punctuate ',' vl) e
     datatype t args (DataAlgebraic []) =
       "data" <+> prettyap t args
     datatype t args (DataAlgebraic l) =
       nested ("data" <+> prettyap t args <+> "of") $
-        vcat $ map (\(c,args) -> prettyop c args) l
+        vcat $ map (uncurry prettyop) l
     datatype t args (DataPrim _) =
       "data" <+> prettyap t args <+> "of <opaque>"
 

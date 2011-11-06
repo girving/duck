@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances, TypeSynonymInstances #-}
+{-# LANGUAGE FlexibleInstances, TypeSynonymInstances #-}
 -- | Duck Abstract Syntax Tree
 --
 -- The parser ("Parse") turns the string contents of a single file into a 'Prog'
@@ -120,7 +120,7 @@ opsExp loc (OpBin o l r) = Apply (Var o) [opsExp loc l, opsExp loc r]
 -- |Convert 'PatOps' pattern into its 'PatCons' equivalents, without applying any precedences (see "ParseOps")
 opsPattern :: SrcLoc -> Ops Pattern -> Pattern
 opsPattern _ (OpAtom a) = a
-opsPattern loc (OpUn _ _) = fatal $ stageMsg StageParse loc $ "unary operator in pattern"
+opsPattern loc (OpUn _ _) = fatal $ stageMsg StageParse loc "unary operator in pattern"
 opsPattern loc (OpBin o l r) = PatCons o [opsPattern loc l, opsPattern loc r]
 
 instance HasVar Exp where
@@ -152,7 +152,7 @@ instance Pretty Decl where
     "data" <+> prettyap t args
   pretty' (Data t args l) =
     nested ("data" <+> prettyap t args <+> "of") $
-      vcat $ map (\(c,args) -> prettyop c args) l
+      vcat $ map (uncurry prettyop) l
   pretty' (Infix pf syms) =
     pf <+> punctuate ',' (map (guard (-1)) syms)
   pretty' (Import v) =

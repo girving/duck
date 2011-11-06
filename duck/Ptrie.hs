@@ -68,4 +68,4 @@ unionWith f p1 p2 = uw (f (get p1) (get p2)) p1 p2 where
   uw n _ p = set n p
 
 mapInsert :: (Ord f, Ord k) => f -> [k] -> Either a v -> Map f (Ptrie k a v) -> Map f (Ptrie k a v)
-mapInsert f k v m = Map.insertWith (const $ insert k v) f (singleton k v) m
+mapInsert f k v = Map.insertWith (const $ insert k v) f (singleton k v)

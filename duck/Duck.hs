@@ -77,10 +77,10 @@ findModule l s = do
 loadModule :: Set ModuleName -> [FilePath] -> ModuleName -> IO [(ModuleName, Ast.Prog)]
 loadModule s l m = do
   (f,c) <- case m of
-    "" -> ((,) "<stdin>") =.< getContents
+    "" -> (,) "<stdin>" =.< getContents
     m -> runMaybeT (findModule l m) >>= maybe 
       (fatalIO $ msg ("module" <+> quoted m <+> "not found"))
-      (\f -> ((,) (dropExtension f)) =.< readFile f)
+      (\f -> (,) (dropExtension f) =.< readFile f)
   let (d,f') = splitFileName f
       l' = l `union` [d]
       s' = Set.insert f' s
@@ -112,7 +112,7 @@ main = do
       phase' p pf = phase p pf . evaluate
 
   (names,ast) <- phase StageParse (concat . snd) (unzip =.< loadModule Set.empty (path flags) f)
-  when (toHaskell flags) $ (pout $ uncurry ToHaskell.prog $ head $ reverse $ zip names ast :: IO ()) >> exitSuccess
+  when (toHaskell flags) $ (pout $ uncurry ToHaskell.prog $ last $ zip names ast :: IO ()) >> exitSuccess
 
   ir <- phase' StageIr concat (snd $ mapAccumL Ir.prog Map.empty ast)
   lir <- phase' StageLir id (ToLir.progs Base.base (zip names ir))

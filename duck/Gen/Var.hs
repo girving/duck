@@ -6,7 +6,7 @@ module Gen.Var where
 import Memory
  
 {-# LINE 3 "var.duck" #-}
-newtype Var = V [Char]
+newtype Var = V String
  
 {-# LINE 3 "var.duck" #-}
 instance Convert Var where

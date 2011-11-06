@@ -279,7 +279,7 @@ subsetFix prev leftovers = do
     if any (changed cnstrs) (Map.toList env) then subsetFun' f f' else success
   changed cnstrs (v,t) = let Just (_,t') = Map.lookup v cnstrs in t /= t'
   contravariantVars :: Leftover -> [Var]
-  contravariantVars (Incomplete _ fl') = filter (\v -> Map.notMember v prev) (concatMap fun fl') where
+  contravariantVars (Incomplete _ fl') = filter (`Map.notMember` prev) (concatMap fun fl') where
     fun (FunArrow _ s _) = freeVars s
     fun (FunClosure _ _) = []
   contravariantVars _ = []
@@ -361,11 +361,11 @@ equalTrans' tr tr'
 subsetFun' :: TypeMonad m => [TypeFun TypeVal] -> [TypeFun TypePat] -> Env m
 subsetFun' fl fl' = sequenceS (map (fun fl') fl) where
   fun fl' f
-    | List.elem (singleton f) fl' = success -- succeed if f appears in fl'
+    | singleton f `List.elem` fl' = success -- succeed if f appears in fl'
   fun (FunArrow tr' s' t':_) f = do
     cnstrs <- get
     let vars = freeVars s'
-        cl = mapM (\v -> Map.lookup v cnstrs) vars
+        cl = mapM (`Map.lookup` cnstrs) vars
     case cl of
       Nothing -> return [Incomplete fl fl'] -- at least one variable is unbound, so try again later
       Just cl -> do
@@ -387,7 +387,7 @@ equalFun' x y = typeMismatch (TyFun x) "==" (TsFun y)
 -- |Subset for singleton function types.
 subsetFun'' :: forall m. TypeMonad m => [TypeFun TypeVal] -> [TypeFun TypeVal] -> m ()
 subsetFun'' fl fl' = mapM_ (fun fl') fl where
-  fun fl' f | List.elem f fl' = success -- succeed if f appears in fl'
+  fun fl' f | f `List.elem` fl' = success -- succeed if f appears in fl'
   fun (FunArrow tr' s' t':_) f = do
     (tr, t) <- typeApply (TyFun [f]) s'
     sequenceS

@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, TypeSynonymInstances, FlexibleInstances, StandaloneDeriving, ForeignFunctionInterface #-}
+{-# LANGUAGE TypeSynonymInstances, FlexibleInstances, ForeignFunctionInterface #-}
 -- | Duck interpreter values
 
 -- For now, duck values are layed out in the following naive manner:
@@ -69,25 +69,19 @@ instance UnsafeUnvalCons (Value,Value) where
 
 instance UnsafeUnvalCons (Value,Value,Value) where
   unsafeUnvalCons' p = do
-    a <- peekElemOff p 1 >.= wordPtrToPtr
-    b <- peekElemOff p 2 >.= wordPtrToPtr
+    (a,b) <- unsafeUnvalCons' p
     c <- peekElemOff p 3 >.= wordPtrToPtr
     return (a,b,c)
 
 instance UnsafeUnvalCons (Value,Value,Value,Value) where
   unsafeUnvalCons' p = do
-    a <- peekElemOff p 1 >.= wordPtrToPtr
-    b <- peekElemOff p 2 >.= wordPtrToPtr
-    c <- peekElemOff p 3 >.= wordPtrToPtr
+    (a,b,c) <- unsafeUnvalCons' p
     d <- peekElemOff p 4 >.= wordPtrToPtr
     return (a,b,c,d)
 
 instance UnsafeUnvalCons (Value,Value,Value,Value,Value) where
   unsafeUnvalCons' p = do
-    a <- peekElemOff p 1 >.= wordPtrToPtr
-    b <- peekElemOff p 2 >.= wordPtrToPtr
-    c <- peekElemOff p 3 >.= wordPtrToPtr
-    d <- peekElemOff p 4 >.= wordPtrToPtr
+    (a,b,c,d) <- unsafeUnvalCons' p
     e <- peekElemOff p 5 >.= wordPtrToPtr
     return (a,b,c,d,e)
 

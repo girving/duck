@@ -168,7 +168,7 @@ infixr 1 <<, .<, =.<, .=<
 (.=<) :: Monad m => (b -> c) -> (a -> m b) -> a -> m c
 
 (>.) e r = e >> return r
-(.<) r e = e >> return r
+(.<) r e = e >> return r -- <$
 (<<) r e = e >> r
 (>.=) e r = e >>= return . r
 (=.<) r e = e >>= return . r -- fmap, <$>, liftM

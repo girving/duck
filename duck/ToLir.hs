@@ -1,4 +1,4 @@
-{-# LANGUAGE PatternGuards, FlexibleInstances, StandaloneDeriving #-}
+{-# LANGUAGE PatternGuards, FlexibleInstances #-}
 -- | Duck Ir to Lir Conversion
 --
 -- Processes "Ir" into its final representation for processing.
@@ -38,10 +38,10 @@ import Value
 type Locals = Map Var Bool
 
 progs :: Prog -> [(ModuleName, [Ir.Decl])] -> Prog
-progs base progs = foldl' (\p (name,decls) -> prog p name decls) base progs
+progs = foldl' (\p (name,decls) -> prog p name decls)
 
 prog :: Prog -> ModuleName -> [Ir.Decl] -> Prog
-prog base name decls = complete denv . unreverse . fst $ flip execState start (mapM_ decl decls) where
+prog base name decls = complete denv . unreverse . fst $ execState (mapM_ decl decls) start where
   denv = unsafePerformIO $ datatypes (progDatatypes base) decls
   denv' = Map.unionWith (error "unexpected duplicate datatype in ToLir.prog") (progDatatypes base) denv
   globals = foldl declVars (Lir.globals base) decls
@@ -87,7 +87,7 @@ datatypes baseDenv decls = do
   variances datatypes = fixpoint grow where
     fixpoint f = do
       changed <- f
-      if changed then fixpoint f else return ()
+      when changed $ fixpoint f
     grow :: IO Bool
     grow = or =.< mapM growCons (Map.elems datatypes)
     growCons datatype = do
@@ -95,7 +95,7 @@ datatypes baseDenv decls = do
       case info of
         PreDataPrim _ -> error ("unexpected primitive datatype "++show (quoted c)++" seen in ToLir.variances")
         PreDataAlgebraic conses -> do
-          inv <- Set.fromList . concat =.< (mapM invVars $ snd =<< conses)
+          inv <- Set.fromList . concat =.< mapM invVars (snd =<< conses)
           let vars' = map (\v -> if Set.member v inv then Invariant else Covariant) args
           if vars /= vars' then do
             writeRef datatype (PreData c l args vars' $ PreDataAlgebraic conses) 
@@ -118,10 +118,10 @@ datatypes baseDenv decls = do
 
   -- Freeze the mutable PreDatatypes into Datatypes
   freeze :: Map CVar (Ref PreDatatype) -> IO (Map CVar Datatype)
-  freeze mutable = mapM (unsafeFreeze <=< unsafeCastRef) mutable
+  freeze = mapM (unsafeFreeze <=< unsafeCastRef)
 
 declVars :: Globals -> Ir.Decl -> Globals
-declVars g (Ir.LetD (L _ v) e) | ((_:_),_) <- unwrapLambda noLoc e = insertVarWithKey kindConflict v FunctionKind g
+declVars g (Ir.LetD (L _ v) e) | (_:_,_) <- unwrapLambda noLoc e = insertVarWithKey kindConflict v FunctionKind g
 declVars g (Ir.LetD (L _ v) _) = insertVarWithKey kindConflict v GlobalKind g
 declVars g (Ir.ExpD _) = g
 declVars g (Ir.LetM vl _) = foldl' (\g v -> insertVarWithKey kindConflict v GlobalKind g) g (map unLoc vl)
@@ -307,5 +307,5 @@ freshenM :: Var -> State (Prog, Globals) Var
 freshenM v = do
   (p,globals) <- get
   let (globals',v') = freshenKind globals (moduleVar (progName p) v) FunctionKind
-  put $ (p,globals')
+  put (p,globals')
   return v'
