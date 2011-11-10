@@ -41,7 +41,6 @@ facAcc :: Int -> Int -> Int
 facAcc a 0 = a
 facAcc a n = facAcc (n*a) (n-1)
 
--- XXX closure error when added to list:
 acc = facAcc 1
 
 
@@ -55,6 +54,6 @@ cps = facCps id
 -- to be continued...
 
 
-facs = [frosh, soph, junior, senior, iterative, iterative1, cps]
+facs = [frosh, soph, junior, senior, iterative, iterative1, acc, cps]
 
 assert \ and \ map (f -> f 5 == 120) facs
