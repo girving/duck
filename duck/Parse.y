@@ -56,7 +56,7 @@ import Util
   '}'  { L _ (TokRC _) }
   ';'  { L _ (TokSemi _) }
   '_'  { L _ (TokAny) }
-  '\\' { L _ (TokLambda) }
+  '\\' { L _ (TokGroup) }
   '->' { L _ (TokArrow) }
   '-'  { L _ (TokMinus) }
   import { L _ (TokImport) }

@@ -44,7 +44,6 @@ $white+    ;
   infixl  { c (TokInfix LeftFix) }
   infixr  { c (TokInfix RightFix) }
   infix   { c (TokInfix NonFix) }
-  def     { c TokDef }
   data    { c TokData }
   let     { c TokLet }
   in      { c TokIn }
@@ -85,7 +84,7 @@ sym :: String -> Token
 sym "=" = TokEq
 sym "->" = TokArrow
 sym "::" = TokDColon
-sym "\\" = TokLambda
+sym "\\" = TokGroup
 sym "-" = TokMinus
 sym s@(':':_) = TokCSym (V s)
 sym s = TokSym (V s)

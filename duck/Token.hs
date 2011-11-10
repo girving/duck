@@ -31,7 +31,6 @@ data Token
   | TokSemi { tokImplicit :: !(Maybe Token) }
   | TokDColon
   | TokComma
-  | TokDef
   | TokLet
   | TokData
   | TokIn
@@ -41,7 +40,7 @@ data Token
   | TokThen
   | TokElse
   | TokAny
-  | TokLambda
+  | TokGroup
   | TokArrow
   | TokMinus
   | TokImport
@@ -66,7 +65,6 @@ instance Pretty Token where
     TokInt i -> show i
     TokChar c -> show c
     TokString s -> show s
-    TokDef -> "def"
     TokLet -> "let"
     TokData -> "data"
     TokIn -> "in"
@@ -90,7 +88,7 @@ instance Pretty Token where
     TokDColon -> "::"
     TokComma -> ","
     TokAny -> "_"
-    TokLambda -> "\\"
+    TokGroup -> "\\"
     TokArrow -> "->"
     TokMinus -> "-"
     TokComment -> "{-"
