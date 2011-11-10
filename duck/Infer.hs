@@ -59,8 +59,8 @@ type Locals = TypeEnv
 -- Utility functions
 
 -- |Insert an overload into the table.  The first argument is meant to indicate whether this is a final resolution, or a temporary one before fixpoint convergance.
-insertOver :: Bool -> Var -> [TypeVal] -> Either [Overload TypePat] (Overload TypeVal) -> Infer ()
-insertOver _final f a o = do
+insertOver :: Var -> [TypeVal] -> Either [Overload TypePat] (Overload TypeVal) -> Infer ()
+insertOver f a o = do
   --debugInfer $ "recorded" <:> prettyap f a <+> '=' <+> either (const $ pretty "<closure>") (pretty . overRet) o
   modify $ Ptrie.mapInsert f a o
 
@@ -363,7 +363,7 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
         | otherwise -> -- ambiguous
           inferError noLoc $ nested ("ambiguous overloads for" <+> quoted f <> ", possibilities are:") options
 
-    insertOver True f args ent
+    insertOver f args ent
     lookup args tl ent
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
@@ -378,13 +378,8 @@ resolve f args = either (\ ~(o:_) -> partialOver f (map fst $ overArgs o) args) 
 -- * TODO: we should tweak this so that only intermediate (non-fixpoint) types are recorded into a separate map, so that
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
 cache :: Var -> [TypeVal] -> Overload TypePat -> TypeEnv -> Infer (Overload TypeVal)
-cache f al (Over oloc atypes rt vl ~(Just e)) tenv = do
-  s <- get -- fork state to do speculative fixpoint
-  r <- fix False TyVoid -- recursive function calls are initially assumed to be void
-  put s -- restore state
-  r' <- fix True r -- and finalize with correct type
-  when (r /= r') $ inferError noLoc "internal error: type convergence failed"
-  return (or r)
+cache f al (Over oloc atypes rt vl ~(Just e)) tenv =
+  or =.< fix TyVoid -- recursive function calls are initially assumed to be void
   where
   tf arg (r, a) = (r, reStatic arg $ substVoid tenv a)
   tl = zipWith tf al atypes
@@ -394,12 +389,12 @@ cache f al (Over oloc atypes rt vl ~(Just e)) tenv = do
     r <- expr False (Map.fromList (zip vl (map transType tl))) oloc e
     typeReError noLoc ("failed to unify result" <+> quoted r <+>"with return signature" <+> quoted rs) $
       union r rs
-  fix final prev = do
-    insertOver final f al (Right (or prev))
+  fix prev = do
+    insertOver f al (Right (or prev))
     r <- eval
-    if final || r == prev
+    if r == prev
       then return r
-      else fix final r
+      else fix r
 
 checkLeftovers :: Pretty m => SrcLoc -> m -> Either [Var] a -> Infer a
 checkLeftovers loc m = either 

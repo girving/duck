@@ -163,7 +163,7 @@ apply static global loc ft@(TyFun _) fun ae at
     a <- ae tt
     let dl = args ++ [a]
     cast rt $ case o of
-      Over _ _ _ _ Nothing -> -- partially applied
+      Over{ overBody = Nothing } -> -- partially applied
         return $ value $ ValClosure f tl dl
       Over oloc tl' _ vl (Just e) -> do -- full function call (parallels Infer.cache)
         let tl = map transType tl'

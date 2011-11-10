@@ -153,7 +153,7 @@ check prog = runSequence $ do
     expr (Map.keysSet s `Set.union` types) body
     return s
   funs s (f,fl) = either (mapM_ fun) (const nop) $ Ptrie.get fl where
-    fun (Over l _ _ vl body) = do
+    fun (Over{ overLoc = l, overVars = vl, overBody = body}) = do
       when (vl == []) $ lirError l $ "overload" <+> quoted f <+> "has no arguments"
       vs <- foldM (\s v -> do
         when (Set.member v s) $ lirError l $ quoted v <+> "appears more than once in argument list for" <+> quoted f

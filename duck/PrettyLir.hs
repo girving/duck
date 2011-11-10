@@ -44,8 +44,8 @@ instance Pretty (Map Var Overloads) where
     pr f tl o = nested (f <+> "::") (o{ overArgs = zip (map fst (overArgs o)) tl })
 
 instance (IsType t, Pretty t) => Pretty (Overload t) where
-  pretty' (Over _ a r _ Nothing) = 1 #> hsep (map (<+> "->") a) <+> r
-  pretty' o@(Over _ _ _ v (Just e)) = sep [pretty' o{ overBody = Nothing },
+  pretty' Over{ overArgs = a, overRet = r, overBody = Nothing } = 1 #> hsep (map (<+> "->") a) <+> r
+  pretty' o@Over{ overVars = v, overBody = Just e } = sep [pretty' o{ overBody = Nothing },
     '=' <+> (1 #> hsep (map (<+> "->") v)) <+> e]
 
 instance Pretty Exp where
