@@ -37,7 +37,6 @@ type ExecStack = CallStack Any
 
 newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
   deriving (Monad, MonadIO, MonadReader (Prog, ExecStack), MonadInterrupt)
-_unused = Exec
 
 -- Most runtime errors should never happen, since they should be caught by type
 -- inference and the like.  Therefore, we use exit status 3 so that they can be

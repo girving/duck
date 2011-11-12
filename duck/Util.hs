@@ -33,7 +33,7 @@ module Util
   , zipWith3M
   -- ** Error and Exception
   , tryError
-  , MonadInterrupt(..)
+  , MonadInterrupt, handleE
   -- ** Strict Identity
   , Sequence, runSequence
   ) where
@@ -48,6 +48,8 @@ import Control.Exception
 import Control.Monad.Error
 import Control.Monad.State
 import Control.Monad.Reader
+import qualified Control.Monad.Trans.Reader as Reader
+import qualified Control.Monad.Trans.State as State
 import Debug.Trace
 
 debug :: Show a => a -> b -> b
@@ -172,22 +174,24 @@ tryError f = catchError (Right =.< f) (return . Left)
 -- I.e., the equivalent of handle for general monads
 
 class Monad m => MonadInterrupt m where
-  handleE :: Exception e => (e -> m a) -> m a -> m a
+  catchE :: Exception e => m a -> (e -> m a) -> m a
 
-instance MonadInterrupt IO where
-  handleE = handle
+handleE :: (MonadInterrupt m, Exception e) => (e -> m a) -> m a -> m a
+handleE = flip catchE
 
-instance MonadInterrupt m => MonadInterrupt (ReaderT r m) where
-  handleE h m = ReaderT $ \r ->
-    handleE (\e -> runReaderT (h e) r) (runReaderT m r)
+instance MonadInterrupt IO where 
+  catchE = catchE
 
-instance MonadInterrupt m => MonadInterrupt (StateT s m) where
-  handleE h m = StateT $ \s ->
-    handleE (\e -> runStateT (h e) s) (runStateT m s)
+instance MonadInterrupt m => MonadInterrupt (ReaderT r m) where 
+  catchE = Reader.liftCatch catchE 
 
-instance (MonadInterrupt m, Error e) => MonadInterrupt (ErrorT e m) where
-  handleE h = mapErrorT (handleE (runErrorT . h))
+instance MonadInterrupt m => MonadInterrupt (StateT s m) where 
+  catchE = State.liftCatch catchE
 
+instance (MonadInterrupt m, Error e) => MonadInterrupt (ErrorT e m) where 
+  catchE = flip $ mapErrorT . handleE . (runErrorT .)
+
+-- |Strict identity monad, similar (but not identical) to Control.Parallel.Strategies.Eval
 newtype Sequence a = Sequence { runSequence :: a }
 
 instance Functor Sequence where
