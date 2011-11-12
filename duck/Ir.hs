@@ -178,8 +178,8 @@ mapss :: (a -> (InScopeSet, b)) -> [a] -> (InScopeSet, [b])
 --mapss f = first Set.unions . unzipWith f l
 mapss f = mapAccumL (\s -> first (Set.union s) . f) Set.empty
 
-prog :: PrecEnv -> Ast.Prog -> (PrecEnv, [Decl])
-prog pprec p = (precs, decls p) where
+prog :: PrecEnv -> ModuleName -> Ast.Prog -> (PrecEnv, (ModuleName, [Decl]))
+prog pprec name p = (precs, (name, decls p)) where
   precs = prog_precs pprec p
   globals = prog_vars p
 

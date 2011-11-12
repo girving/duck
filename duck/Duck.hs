@@ -1,12 +1,13 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 -- | Duck interpreter
 
-module Main where
+module Main (main, run) where
 
 import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Data.Map as Map
 import Data.List
+import Data.Maybe
 import Control.Monad 
 import System.Environment
 import System.FilePath
@@ -35,37 +36,55 @@ import ToHaskell
 
 -- Options
 
-data Flags = Flags
-  { phases :: Set Stage
-  , compileOnly :: Bool
-  , toHaskell :: Bool
-  , path :: [FilePath]
+data Options = Options
+  { optionHelp        :: Maybe [String]
+  , optionDumpStages  :: Set Stage
+  , optionLastStage   :: Stage
+  , optionHaskell     :: Bool
+  , optionIncludes    :: [FilePath]
   }
-type Option = OptDescr (Flags -> IO Flags)
 
-enumOption :: Enum e => [String] -> [Char] -> [String] -> String -> (e -> Flags -> Flags) -> String -> Option
-enumOption choices short long name f help = Option short long (ReqArg process name) help' where
-  help' = help ++ " (one of " ++ intercalate "," choices ++ ")"
-  process p x = case findIndices (isPrefixOf p) choices of
-    [e] -> return $ f (toEnum e) x
-    [] -> die 1 $ "Unknown " ++ name ++ ". Choices are: " ++ intercalate "," choices
-    l -> die 1 $ "Ambiguous " ++ name ++ ". Choices are: " ++ intercalate "," (map (choices !!) l)
+defaultOptions :: Options
+defaultOptions = Options
+  { optionHelp        = Nothing
+  , optionDumpStages  = Set.empty
+  , optionLastStage   = maxBound
+  , optionHaskell     = False
+  , optionIncludes    = [""]
+  }
+
+type Option = OptDescr (Options -> Options)
+
+optionErrors :: Options -> [String]
+optionErrors = fromMaybe [] . optionHelp
+
+optionError :: String -> Options -> Options
+optionError s o = o{ optionHelp = Just $ optionErrors o ++ [s] }
+
+enumOption :: Enum e => [Char] -> [String] -> String -> [String] -> (e -> Options -> Options) -> String -> Option
+enumOption short long name choices f help = Option short long (ReqArg process name) help' where
+  help' = help ++ " (" ++ intercalate "," choices ++ ")"
+  process p = case findIndices (p `isPrefixOf`) choices of
+    [e] -> f (toEnum e)
+    [] -> optionError $ "Unknown " ++ name ++ ". Choices are: " ++ intercalate "," choices
+    l -> optionError $ "Ambiguous " ++ name ++ ". Choices are: " ++ intercalate "," (map (choices !!) l)
 
 options :: [Option]
 options =
-  [ enumOption stageNames ['d'] ["dump"] "PHASE" (\p f -> f { phases = Set.insert p (phases f) }) "dump internal data"
-  , Option ['c'] [] (NoArg $ \f -> return $ f { compileOnly = True }) "compile only, don't evaluate main"
-  , Option [] ["haskell"] (NoArg $ \f -> return $ f { toHaskell = True }) "generate equivalent Haskell code from AST"
-  , Option ['I'] ["include"] (ReqArg (\p f -> return $ f { path = path f ++ [p] }) "DIRECTORY") "add DIRECTORY to module search path"
-  , Option ['h'] ["help"] (NoArg $ \_ -> putStr usage >> exitSuccess) "show this help" ]
-usage = usageInfo "duck [options] [files...]" options
+  [ Option     ['h'] ["help"]    (NoArg $ \o -> o { optionHelp = Just $ optionErrors o }) 
+      "show this help" 
+  , enumOption ['d'] ["dump"]    "PHASE" stageNames (\p o -> o { optionDumpStages = Set.insert p (optionDumpStages o) }) 
+      "dump internal data after PHASE"
+  , Option     ['c'] []          (NoArg $ \o -> o { optionLastStage = pred (optionLastStage o) }) 
+      "compile only, don't evaluate main"
+  , Option     []    ["haskell"] (NoArg $ \o -> o { optionHaskell = True }) 
+      "generate equivalent Haskell code from AST"
+  , Option     ['I'] ["include"] (ReqArg (\p o -> o { optionIncludes = optionIncludes o ++ [p] }) "DIRECTORY") 
+      "add DIRECTORY to module search path"
+  ]
 
-defaults = Flags
-  { phases = Set.empty
-  , compileOnly = False
-  , toHaskell = False
-  , path = [""]
-  }
+usage :: String
+usage = usageInfo "duck [OPTIONS] [FILE]" options
 
 findModule :: [FilePath] -> ModuleName -> MaybeT IO FilePath
 findModule l s = do
@@ -93,35 +112,38 @@ loadModule s l m = do
 
 main = do
   (options, args, errors) <- getOpt Permute options =.< getArgs
-  case errors of
-    [] -> return ()
-    _ -> fputs stderr (concat errors ++ usage) >> exitFailure
-  flags <- foldM (\t s -> s t) defaults options
+  when (not (null errors)) $
+    die 2 $ concat errors ++ usage
+  let opts = foldl' (flip ($)) defaultOptions options
+  case optionHelp opts of
+    Nothing -> nop
+    Just [] -> putStr usage >> exitSuccess
+    Just e -> die 2 $ intercalate "\n" e
 
   f <- case args of
-    [] -> puts "Duck interactive mode" >. ""
+    [] -> putStrLn "Duck interactive mode" >. ""
     [file] -> return file
     _ -> fail "expected zero or one arguments"
 
-  let ifv p = when (Set.member p (phases flags))
-  let phase p pf io = do
-        ifv p $ putStr ("\n-- "++show (pretty p)++" --\n")
-        r <- runStage p io
-        ifv p $ pout $ pf r
-        return r
-      phase' p pf = phase p pf . evaluate
+  let 
+    phase p pf io = if p > optionLastStage opts then return undefined else do
+      let ifv = when (p `Set.member` optionDumpStages opts)
+      ifv $ putStrLn ("\n-- "++pout p++" --")
+      r <- runStage p io
+      ifv $ pout $ pf r
+      return r
+    phase' p pf = phase p pf . evaluate
 
-  (names,ast) <- phase StageParse (concat . snd) (unzip =.< loadModule Set.empty (path flags) f)
-  when (toHaskell flags) $ (pout $ uncurry ToHaskell.prog $ last $ zip names ast :: IO ()) >> exitSuccess
+  ast <- phase StageParse (concatMap snd) $ loadModule Set.empty (optionIncludes opts) f
+  when (optionHaskell opts) $ do
+    putStrLn $ pout $ uncurry ToHaskell.prog $ last ast
+    exitSuccess
 
-  ir <- phase' StageIr concat (snd $ mapAccumL Ir.prog Map.empty ast)
-  lir <- phase' StageLir id (ToLir.progs Base.base (zip names ir))
-  runStage StageLink $ evaluate $ Lir.check lir
-  lir <- phase StageInfer id (runInferProg Infer.prog lir)
-
-  unless (compileOnly flags) $ do
-  _ <- phase StageExec (\v -> (Map.map fst $ Lir.progGlobalTypes lir, v)) (runExec lir Interp.prog)
-  return ()
+  ir <- phase' StageIr (concatMap snd) $ snd $ mapAccumL (uncurry . Ir.prog) Map.empty ast
+  lir <- phase' StageLir id $ ToLir.progs Base.base ir
+  _ <- phase' StageLink (const ()) $ Lir.check lir
+  lir <- phase StageInfer id $ runInferProg Infer.prog lir
+  void $ phase StageExec (\v -> (Map.map fst $ Lir.progGlobalTypes lir, v)) $ runExec lir Interp.prog
 
 -- for ghci use
 run :: String -> IO ()

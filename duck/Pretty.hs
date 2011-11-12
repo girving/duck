@@ -26,7 +26,6 @@ module Pretty
 import Text.PrettyPrint (Doc, empty, isEmpty)
 import qualified Text.PrettyPrint as PP
 import qualified Data.Map as Map
-import Util
 
 type PrecDoc = Int -> Doc
 type Doc' = PrecDoc
@@ -211,7 +210,7 @@ instance PrettyOut ShowS where
   pout = shows . pretty
 
 instance PrettyOut (IO ()) where
-  pout = puts . pout
+  pout = putStr . pout
 
 qout :: (Pretty t, PrettyOut o) => t -> o
 qout = pout . quoted

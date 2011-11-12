@@ -35,6 +35,7 @@ data Stage
   | StageExec
   deriving (Eq, Ord, Enum, Bounded)
 
+-- used for both arguments and printing; should be made more friendly at some point
 stageNames :: [String]
 stageNames =
     ["ast"
@@ -46,19 +47,16 @@ stageNames =
     ]
 
 instance Pretty Stage where
-  pretty = pretty . s where
-    s StageParse = "parse"
-    s StageIr = "code"
-    s StageLir = "lifting"
-    s StageLink = "link"
-    s StageInfer = "type"
-    s StageExec = "runtime"
+  pretty = pretty . (stageNames !!) . fromEnum
 
+-- |To Err is human; to report anatine.
 newtype Msg = Msg Doc
-  deriving (Pretty)
+  deriving (Pretty, Typeable)
 
 instance Show Msg where
   showsPrec p (Msg m) = showsPrec p m
+
+instance Exception Msg
 
 msg :: Pretty s => s -> Msg
 msg = Msg . pretty
@@ -69,27 +67,17 @@ locMsg l = msg . nestedPunct ':' l
 stageMsg :: Pretty s => Stage -> SrcLoc -> s -> Msg
 stageMsg st l m = locMsg l (st <+> "error" <:> m)
 
--- |To Err is human; to report anatine.
-data Err = 
-  Err Msg
-  deriving (Typeable)
-
-instance Show Err where
-  showsPrec p (Err m) = showsPrec p m
-
-instance Exception Err
-
 stageExitval :: Stage -> Int
 stageExitval StageExec = 3
 stageExitval _ = 1
 
-fatal :: Msg -> a
-fatal = throw . Err
+fatal :: Pretty s => s -> a
+fatal = throw . Msg . pretty
 
-fatalIO :: MonadIO m => Msg -> m a
-fatalIO = liftIO . throwIO . Err
+fatalIO :: (MonadIO m, Pretty s) => s -> m a
+fatalIO = liftIO . throwIO . Msg . pretty
 
-dieStageErr :: Stage -> Err -> IO a
+dieStageErr :: Stage -> Msg -> IO a
 dieStageErr s e = die (stageExitval s) $ show e
 
 isUnexpected :: SomeException -> Maybe SomeException
@@ -97,7 +85,7 @@ isUnexpected e | Just _ <- fromException e :: Maybe ExitCode = Nothing
              | otherwise = Just e
 
 dieUnexpected :: Stage -> SomeException -> IO a
-dieUnexpected s e = die 7 $ show (pretty s)++": internal error: "++show e
+dieUnexpected s e = die 7 $ pout s++": internal error: "++show e
 
 runStage :: Stage -> IO a -> IO a
 runStage s = handleJust isUnexpected (dieUnexpected s) . handle (dieStageErr s)

@@ -6,8 +6,6 @@ module Util
   -- * IO
     exit
   , die
-  , fputs
-  , puts
   , debug
   , debugVal
   -- * Data
@@ -54,18 +52,6 @@ import Control.Monad.Error
 import Control.Monad.State
 import Control.Monad.Reader
 import Debug.Trace
-import Foreign.C.String
-
--- |Write a string to a stream all at once.
---
--- The string is written out all at once (as if with fputs in C), so it
--- won't end up interleaved with other strings like 'putStrLn' does.
-fputs :: Handle -> String -> IO ()
-fputs h s = withCStringLen s (uncurry $ hPutBuf h)
-
--- |Write a string to stdout with a trailing newline.
-puts :: String -> IO ()
-puts s = fputs stdout (s++"\n")
 
 debug :: Show a => a -> b -> b
 debug = traceShow
@@ -132,7 +118,7 @@ exit i = exitWith (ExitFailure i)
 -- |Print a string on stderr and exit with the given value
 die :: MonadIO m => Int -> String -> m a
 die i s = liftIO $ do
-  fputs stderr (s++"\n")
+  hPutStrLn stderr s
   exit i
 
 -- |Stacks are lists with an extra bit of information at the bottom
