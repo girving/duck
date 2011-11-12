@@ -15,9 +15,6 @@ module Util
   , spanJust
   , zipCheck
   , zipWithCheck
-  -- ** Maybe
-  , MaybeT(..)
-  , mapMaybeT
   -- ** Map
   , insertList
   -- ** Stack
@@ -167,27 +164,6 @@ nop = return ()
 foldM1 :: Monad m => (a -> a -> m a) -> [a] -> m a
 foldM1 f (h:t) = foldM f h t
 foldM1 _ [] = error "foldM1 applied to an empty list"
-
--- |A monad transformer that adds Maybe failure, similar to MonadError ()
-newtype MaybeT m a = MaybeT { runMaybeT :: m (Maybe a) }
-
-instance Monad m => Monad (MaybeT m) where
-  m >>= f = MaybeT $ runMaybeT m >>= maybe (return Nothing) (runMaybeT . f)
-  return = MaybeT . return . Just
-
-instance MonadTrans MaybeT where
-  lift m = MaybeT (m >.= Just)
-
-instance Monad m => MonadPlus (MaybeT m) where
-  mzero = MaybeT (return Nothing)
-  mplus f g = MaybeT (runMaybeT f >>= maybe (runMaybeT g) (return . Just))
-
-instance MonadError e m => MonadError e (MaybeT m) where
-  throwError = lift . throwError
-  catchError m f = MaybeT $ catchError (runMaybeT m) (runMaybeT . f)
-
-mapMaybeT :: (m (Maybe a) -> n (Maybe b)) -> MaybeT m a -> MaybeT n b
-mapMaybeT f = MaybeT . f . runMaybeT
 
 tryError :: (MonadError e m, Error e) => m a -> m (Either e a)
 tryError f = catchError (Right =.< f) (return . Left)
