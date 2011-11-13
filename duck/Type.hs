@@ -223,8 +223,8 @@ instance Pretty TypePat where
 instance (Pretty t, IsType t) => Pretty (TypeFun t) where
   pretty' (FunClosure f []) = pretty' f
   pretty' (FunClosure f tl) = prettyap f tl
-  pretty' (FunArrow NoTrans s t) = 1 #> s <+> "->" <+> guard 1 t
-  pretty' (FunArrow tr s t) = 1 #> (tr, s) <+> "->" <+> guard 1 t
+  pretty' (FunArrow NoTrans s t) = 1 #> s <+> "->" <+> pguard 1 t
+  pretty' (FunArrow tr s t) = 1 #> (tr, s) <+> "->" <+> pguard 1 t
 
 instance (Pretty t, IsType t) => Pretty [TypeFun t] where
   pretty' [f] = pretty' f

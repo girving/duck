@@ -92,7 +92,7 @@ findModule l s = do
   let ext = ".duck"
       f | takeExtension s == ext = s
         | otherwise = addExtension s (tail ext)
-  msum $ map (MaybeT . (\p -> doesFileExist p >.= \e -> Control.Monad.guard e >. p) . (</> f)) l
+  msum $ map (MaybeT . (\p -> doesFileExist p >.= \e -> guard e >. p) . (</> f)) l
 
 loadModule :: Set ModuleName -> [FilePath] -> ModuleName -> IO [(ModuleName, Ast.Prog)]
 loadModule s l m = do

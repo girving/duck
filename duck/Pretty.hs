@@ -7,7 +7,7 @@
 module Pretty 
   ( Pretty(..)
   , Doc, Doc'
-  , (#>), guard
+  , (#>), pguard
 
   -- * Composition
   , (<>), (<+>), (<&>), (<&+>), ($$), ($+$)
@@ -51,8 +51,8 @@ instance Pretty PrecDoc where
   pretty' p i = p i
 
 
-guard :: Pretty t => Int -> t -> Doc
-guard = flip pretty'
+pguard :: Pretty t => Int -> t -> Doc
+pguard = flip pretty'
 
 prec' :: Pretty t => Int -> t -> PrecDoc
 prec' i x o
@@ -64,7 +64,7 @@ infixr 1 #>
 
 -- |Create a representation of the given value with at least the given precedence, wrapping in parentheses as necessary.
 (#>) :: Pretty t => Int -> t -> PrecDoc
-(#>) i = prec' i . guard (succ i)
+(#>) i = prec' i . pguard (succ i)
 
 
 infixl 6 <>, <+>, <&>, <&+>
@@ -109,27 +109,27 @@ infixl 5 $$
     pb = pretty' b i
 
 hcat :: Pretty t => [t] -> PrecDoc
-hcat l i = PP.hcat $ map (guard i) l
+hcat l i = PP.hcat $ map (pguard i) l
 
 hsep :: Pretty t => [t] -> PrecDoc
-hsep l i = PP.hsep $ map (guard i) l
+hsep l i = PP.hsep $ map (pguard i) l
 
 hcons :: (Pretty a, Pretty t) => a -> [t] -> PrecDoc
-hcons h l i = PP.hsep $ guard i h : map (guard i) l
+hcons h l i = PP.hsep $ pguard i h : map (pguard i) l
 
 prettyap :: (Pretty a, Pretty t) => a -> [t] -> PrecDoc
 prettyap h [] = pretty' h
 prettyap h l = appPrec #> hcons h l
 
 vcat :: Pretty t => [t] -> PrecDoc
-vcat l i = PP.vcat $ map (guard i) l
+vcat l i = PP.vcat $ map (pguard i) l
 
 -- | List version of $+$
 vsep :: Pretty t => [t] -> PrecDoc
 vsep = foldr ($+$) (const empty) . map pretty'
 
 sep :: Pretty t => [t] -> PrecDoc
-sep l i = PP.sep $ map (guard i) l
+sep l i = PP.sep $ map (pguard i) l
 
 punct :: Pretty a => Char -> a -> PrecDoc
 punct c a i

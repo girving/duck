@@ -26,7 +26,7 @@ import Memory
 import Value
 import Prims
 import SrcLoc
-import Pretty hiding (guard)
+import Pretty
 import Lir
 import ExecMonad
 import InferMonad

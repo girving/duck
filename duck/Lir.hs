@@ -30,7 +30,7 @@ module Lir
 
 import Prelude hiding (mapM)
 
-import Control.Monad.State hiding (mapM, guard)
+import Control.Monad.State hiding (mapM)
 import Data.List hiding (union)
 import Data.Map (Map)
 import qualified Data.Map as Map

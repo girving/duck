@@ -16,7 +16,7 @@ import Data.List
 import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Monad.State hiding (mapM, guard)
+import Control.Monad.State hiding (mapM)
 import Data.Traversable (mapM)
 import System.IO.Unsafe
 

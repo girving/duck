@@ -50,7 +50,7 @@ instance Pretty TypePat where
 instance Pretty TypeFun where
   pretty' (FunClosure f []) = pretty' f
   pretty' (FunClosure f tl) = prettyap f tl
-  pretty' (FunArrow s t) = 1 #> s <+> "->" <+> guard 1 t
+  pretty' (FunArrow s t) = 1 #> s <+> "->" <+> pguard 1 t
 
 instance Pretty [TypeFun] where
   pretty' [f] = pretty' f

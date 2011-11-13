@@ -39,7 +39,7 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 
 import Util
-import Pretty hiding (guard)
+import Pretty
 import Var
 import SrcLoc
 import Type

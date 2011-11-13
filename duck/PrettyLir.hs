@@ -49,7 +49,7 @@ instance (IsType t, Pretty t) => Pretty (Overload t) where
     '=' <+> (1 #> hsep (map (<+> "->") v)) <+> e]
 
 instance Pretty Exp where
-  pretty' (ExpSpec e t) = 2 #> guard 2 e <+> "::" <+> t
+  pretty' (ExpSpec e t) = 2 #> pguard 2 e <+> "::" <+> t
   pretty' (ExpLet tr v e body) = 1 #>
     "let" <+> (tr, v) <+> '=' <+> pretty e <+> "in" $$ pretty body
   pretty' (ExpCase st v pl d) = 1 #>

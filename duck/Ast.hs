@@ -154,7 +154,7 @@ instance Pretty Decl where
     nested ("data" <+> prettyap t args <+> "of") $
       vcat $ map (uncurry prettyop) l
   pretty' (Infix pf syms) =
-    pf <+> punctuate ',' (map (guard (-1)) syms)
+    pf <+> punctuate ',' (map (pguard (-1)) syms)
   pretty' (Import v) =
     "import" <+> v
 
@@ -162,7 +162,7 @@ instance Pretty Prog where
   pretty' = vcat
 
 instance Pretty Exp where
-  pretty' (Spec e t) = 2 #> guard 2 e <+> "::" <+> t
+  pretty' (Spec e t) = 2 #> pguard 2 e <+> "::" <+> t
   pretty' (Let p e body) = 1 #>
     "let" <+> p <+> '=' <+> pretty e <+> "in" $$ pretty body
   pretty' (Def f args e body) = 1 #>
@@ -172,7 +172,7 @@ instance Pretty Exp where
   pretty' (If c e1 e2) = 1 #>
     "if" <+> pretty c <+> "then" <+> pretty e1 <+> "else" <+> pretty e2
   pretty' (Lambda pl e) = 1 #>
-    hsep (map (<+> "->") pl) <+> guard 1 e
+    hsep (map (<+> "->") pl) <+> pguard 1 e
   pretty' (Apply e el) = prettyop e el
   pretty' (Var v) = pretty' v
   pretty' (Int i) = pretty' i
@@ -181,7 +181,7 @@ instance Pretty Exp where
   pretty' Any = pretty' '_'
   pretty' (List el) = pretty' $ brackets $ 3 #> punctuate ',' el
   pretty' (Ops o) = pretty' o
-  pretty' (Equals v e) = 0 #> v <+> '=' <+> guard 0 e
+  pretty' (Equals v e) = 0 #> v <+> '=' <+> pguard 0 e
   pretty' (Seq q) = nested "do" (pretty $ vcat q) -- XXX not valid syntax (yet)
   pretty' (ExpLoc _ e) = pretty' e
 

@@ -95,11 +95,11 @@ prettyop f a
   | Just v <- unVar f
   , Just (i,d) <- opPrec v = case (v,a,d) of
       (V "-",[x],_)       -> i #> pf <+> x
-      (_,[x,y],LeftFix)   -> i #> guard i x <+> pf <+> y
+      (_,[x,y],LeftFix)   -> i #> pguard i x <+> pf <+> y
       (_,[x,y],NonFix)    -> i #> x <+> pf <+> y
-      (_,[x,y],RightFix)  -> i #> x <+> pf <+> guard i y
+      (_,[x,y],RightFix)  -> i #> x <+> pf <+> pguard i y
       _ -> prettyap f a
-    where pf = guard (-1) f
+    where pf = pguard (-1) f
 prettyop f a
   | Just v <- unVar f
   , Just n <- tupleLen v

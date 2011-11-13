@@ -400,7 +400,7 @@ instance Pretty Trans where
   pretty' (Just tr) = pretty' tr
 
 instance Pretty Exp where
-  pretty' (Spec e t) = 2 #> guard 2 e <+> "::" <+> t
+  pretty' (Spec e t) = 2 #> pguard 2 e <+> "::" <+> t
   pretty' (Let tr v e body) = 1 #>
     "let" <+> tr <+> v <+> '=' <+> pretty e <+> "in" $$ pretty body
   pretty' (Case tr v pl d) = 1 #>
@@ -413,9 +413,9 @@ instance Pretty Exp where
   pretty' (Char c) = pretty' (show c)
   pretty' (Var v) = pretty' v
   pretty' (Lambda Nothing v e) = 1 #>
-    v <+> "->" <+> guard 1 e
+    v <+> "->" <+> pguard 1 e
   pretty' (Lambda (Just t) v e) = 1 #>
-    prettyop t [v] <+> "->" <+> guard 1 e
+    prettyop t [v] <+> "->" <+> pguard 1 e
   pretty' (Apply (Apply (Var (V ":")) h) t) | Just t' <- extract t =
     pretty' $ brackets $ 3 #> punctuate ',' (h : t') where
     extract (Var (V "[]")) = Just []
