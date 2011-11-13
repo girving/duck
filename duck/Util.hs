@@ -40,11 +40,10 @@ import System.Exit
 import Data.Function
 import Data.List
 import Control.Exception
+import Control.Monad
 import Control.Monad.Error
-import Control.Monad.State
-import Control.Monad.Reader
-import qualified Control.Monad.Trans.Reader as Reader
-import qualified Control.Monad.Trans.State as State
+import Control.Monad.Trans.Reader as Reader
+import Control.Monad.Trans.State as State
 import Debug.Trace
 
 debug :: Show a => a -> b -> b
@@ -165,10 +164,10 @@ handleE = flip catchE
 instance MonadInterrupt IO where 
   catchE = catchE
 
-instance MonadInterrupt m => MonadInterrupt (ReaderT r m) where 
+instance MonadInterrupt m => MonadInterrupt (Reader.ReaderT r m) where 
   catchE = Reader.liftCatch catchE 
 
-instance MonadInterrupt m => MonadInterrupt (StateT s m) where 
+instance MonadInterrupt m => MonadInterrupt (State.StateT s m) where 
   catchE = State.liftCatch catchE
 
 instance (MonadInterrupt m, Error e) => MonadInterrupt (ErrorT e m) where 

@@ -14,7 +14,6 @@ import System.Environment
 import System.FilePath
 import System.Directory
 import System.Console.GetOpt
-import System.IO
 import System.Exit
 import Control.Exception
 
@@ -144,7 +143,8 @@ main = do
   lir <- phase' StageLir id $ ToLir.progs Base.base ir
   _ <- phase' StageLink (const ()) $ Lir.check lir
   lir <- phase StageInfer id $ runInferProg Infer.prog lir
-  void $ phase StageExec (\v -> (Map.map fst $ Lir.progGlobalTypes lir, v)) $ runExec lir Interp.prog
+  _ <- phase StageExec (\v -> (Map.map fst $ Lir.progGlobalTypes lir, v)) $ runExec lir Interp.prog
+  nop
 
 -- for ghci use
 run :: String -> IO ()
