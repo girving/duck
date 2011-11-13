@@ -8,7 +8,6 @@ module Ir
   , Exp(..)
   , TypePat(..), TypeFun(..)
   , prog
-  , dupError
   ) where
 
 import Data.List

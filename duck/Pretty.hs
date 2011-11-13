@@ -12,15 +12,15 @@ module Pretty
   -- * Composition
   , (<>), (<+>), (<&>), (<&+>), ($$), ($+$)
   , hcat, hsep, hcons, vcat, sep, vsep
-  , punct, joinPunct, (<:>)
+  , (<:>)
   , punctuate
   , nested, nestedPunct
-  , parens, brackets, quoted, dquoted
+  , parens, brackets, quoted
   , prettyap
   , sPlural
 
   -- * Extraction and use
-  , pout, qout, poutlist
+  , pout, qout
   ) where
 
 import Text.PrettyPrint (Doc, empty, isEmpty)
@@ -149,13 +149,10 @@ withPunct f c a b i
     pa = pretty' a i
     pb = pretty' b i
 
-joinPunct :: (Pretty a, Pretty b) => Char -> a -> b -> PrecDoc
-joinPunct = withPunct (<+>)
-
 infixl 6 <:>
 
 (<:>) :: (Pretty a, Pretty b) => a -> b -> PrecDoc
-(<:>) = joinPunct ':'
+(<:>) = withPunct (<+>) ':'
 
 nested :: (Pretty a, Pretty b) => a -> b -> PrecDoc
 nested a b i
@@ -179,9 +176,6 @@ grouped f x = f $ pretty x
 
 quoted :: Pretty t => t -> Doc
 quoted = grouped PP.quotes
-
-dquoted :: Pretty t => t -> Doc
-dquoted = grouped PP.doubleQuotes
 
 parens :: Pretty t => t -> Doc
 parens = grouped PP.parens
@@ -214,9 +208,6 @@ instance PrettyOut (IO ()) where
 
 qout :: (Pretty t, PrettyOut o) => t -> o
 qout = pout . quoted
-
-poutlist :: (Pretty t, PrettyOut o) => [t] -> o
-poutlist = pout . hsep
 
 
 instance Pretty () where

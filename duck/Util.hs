@@ -15,14 +15,12 @@ module Util
   , spanJust
   , zipCheck
   , zipWithCheck
-  -- ** Map
-  , insertList
   -- ** Stack
   , Stack(..)
   , (++.)
   , splitStack
   -- * Functionals
-  , (...), uncurry3
+  , (...)
   , first, second
   , left, right
   -- * Monad
@@ -30,7 +28,6 @@ module Util
   , (>.), (>.=), (>=.)
   , (<<), (.<), (=.<), (.=<)
   , foldM1
-  , zipWith3M
   -- ** Error and Exception
   , tryError
   , MonadInterrupt, handleE
@@ -42,8 +39,6 @@ import System.IO
 import System.Exit
 import Data.Function
 import Data.List
-import Data.Map (Map)
-import qualified Data.Map as Map
 import Control.Exception
 import Control.Monad.Error
 import Control.Monad.State
@@ -85,12 +80,6 @@ zipWithCheck f x y = map (uncurry f) =.< zipCheck x y
 (...) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
 (...) f g x y = f (g x y)
 
-uncurry3 :: (a -> b -> c -> d) -> (a,b,c) -> d
-uncurry3 f (a,b,c) = f a b c
-
-zipWith3M :: Monad m => (a -> b -> c -> m d) -> [a] -> [b] -> [c] -> m [d]
-zipWith3M f x y z = mapM (uncurry3 f) (zip3 x y z)
-
 -- more efficient than Arrow instances:
 first :: (a -> c) -> (a,b) -> (c,b)
 first f (a,b) = (f a,b)
@@ -103,12 +92,6 @@ left _ (Right b) = Right b
 right :: (b -> c) -> Either a b -> Either a c
 right _ (Left a) = Left a
 right f (Right b) = Right (f b)
-
--- |Insert a set of unzipped key-value pairs into a Map
-insertList :: Ord k => Map k v -> [k] -> [v] -> Map k v
-insertList !m [] [] = m
-insertList !m (k:ks) (v:vs) = insertList (Map.insert k v m) ks vs
-insertList !_ _ _ = error "different lengths in Util.insertList"
 
 exit :: Int -> IO a
 exit 0 = exitSuccess

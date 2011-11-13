@@ -6,7 +6,6 @@ module SrcLoc
   , rangeLoc
   , startLoc
   , incrLoc
-  , unzipLoc, zipLoc
   , sameLine
   , noLoc
   , hasLoc
@@ -100,14 +99,6 @@ incrLoc (SrcLoc f l _) '\n' = SrcLoc f (l+1) 1
 incrLoc (SrcLoc f l c) '\t' = SrcLoc f l (1 + 8 * div (c+7) 8)
 incrLoc (SrcLoc f l c) _    = SrcLoc f l (c+1)
 incrLoc _ _ = error "incrLoc works only on SrcLoc, not SrcNone or SrcRng"
-
-unzipLoc :: [Loc a] -> ([SrcLoc], [a])
-unzipLoc [] = ([],[])
-unzipLoc (L l a:la) = (l:ls,a:as) where (ls,as) = unzipLoc la
-
-zipLoc :: ([SrcLoc], [a]) -> [Loc a]
-zipLoc (l:ls,a:as) = L l a : zipLoc (ls,as)
-zipLoc _ = []
 
 sameLine :: SrcLoc -> SrcLoc -> Bool
 sameLine s t = srcLine s == srcLine t

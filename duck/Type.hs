@@ -7,7 +7,7 @@ module Type
   , TypeEnv
   , substVoid
   , singleton
-  , unsingleton, unsingleton'
+  , unsingleton
   , freeVars
   , generalType
   , deStatic, unStatic
@@ -171,22 +171,19 @@ instance Singleton a b => Singleton (TypeFun a) (TypeFun b) where
   singleton (FunClosure f tl) = FunClosure f (singleton tl)
  
 -- |Convert a singleton typeset to a type if possible
-unsingleton :: TypePat -> Maybe TypeVal
-unsingleton = unsingleton' Map.empty
+unsingleton :: TypeEnv -> TypePat -> Maybe TypeVal
+unsingleton env (TsVar v) | Just t <- Map.lookup v env = Just t
+unsingleton _ (TsVar _) = Nothing
+unsingleton env (TsCons c tl) = TyCons c =.< mapM (unsingleton env) tl
+unsingleton env (TsFun f) = TyFun =.< mapM (unsingletonFun env) f
+unsingleton _ TsVoid = Just TyVoid
 
-unsingleton' :: TypeEnv -> TypePat -> Maybe TypeVal
-unsingleton' env (TsVar v) | Just t <- Map.lookup v env = Just t
-unsingleton' _ (TsVar _) = Nothing
-unsingleton' env (TsCons c tl) = TyCons c =.< mapM (unsingleton' env) tl
-unsingleton' env (TsFun f) = TyFun =.< mapM (unsingletonFun' env) f
-unsingleton' _ TsVoid = Just TyVoid
-
-unsingletonFun' :: TypeEnv -> TypeFun TypePat -> Maybe (TypeFun TypeVal)
-unsingletonFun' env (FunArrow tr s t) = do
-  s <- unsingleton' env s
-  t <- unsingleton' env t
+unsingletonFun :: TypeEnv -> TypeFun TypePat -> Maybe (TypeFun TypeVal)
+unsingletonFun env (FunArrow tr s t) = do
+  s <- unsingleton env s
+  t <- unsingleton env t
   return (FunArrow tr s t)
-unsingletonFun' env (FunClosure f tl) = FunClosure f =.< mapM (unsingleton' env) tl
+unsingletonFun env (FunClosure f tl) = FunClosure f =.< mapM (unsingleton env) tl
 
 -- |Find the set of free variables in a typeset
 freeVars :: TypePat -> [Var]

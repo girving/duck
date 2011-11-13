@@ -2,23 +2,21 @@
 -- | Duck Type precursors
 
 module PreType
-  ( PreTypePat(..)
-  , PreDatatype(..)
-  , PreDataInfo(..)
-  , freeVars
+  ( module Gen.PreType
+  , freePreVars
   ) where
 
 import Var
-import Type hiding (freeVars)
+import Type
 
 -- Pull in definition of PreTypePat and PreDatatype
 import Gen.PreType
 
 -- |Find the set of free variables in a typeset
-freeVars :: PreTypePat -> [Var]
-freeVars (TpVar v) = [v]
-freeVars (TpCons _ tl) = concatMap freeVars tl
-freeVars (TpFun fl) = concatMap f fl where
-  f (FunArrow _ s t) = freeVars s ++ freeVars t
-  f (FunClosure _ tl) = concatMap freeVars tl
-freeVars TpVoid = []
+freePreVars :: PreTypePat -> [Var]
+freePreVars (TpVar v) = [v]
+freePreVars (TpCons _ tl) = concatMap freePreVars tl
+freePreVars (TpFun fl) = concatMap f fl where
+  f (FunArrow _ s t) = freePreVars s ++ freePreVars t
+  f (FunClosure _ tl) = concatMap freePreVars tl
+freePreVars TpVoid = []

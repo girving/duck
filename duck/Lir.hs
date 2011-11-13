@@ -15,7 +15,7 @@ module Lir
   , Exp(..)
   , Atom(..)
   , Kind(..), Globals
-  , expLocal, expGlobal, expVal
+  , expLocal, expVal
   , free
   , overTypes
   , empty
@@ -113,9 +113,6 @@ type Globals = Map CVar Kind
 
 expLocal :: Var -> Exp
 expLocal = ExpAtom . AtomLocal
-
-expGlobal :: Var -> Exp
-expGlobal = ExpAtom . AtomGlobal
 
 expVal :: TypeVal -> Value -> Exp
 expVal t v = ExpAtom $ AtomVal $ Any t v

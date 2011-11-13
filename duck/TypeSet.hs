@@ -370,7 +370,7 @@ subsetFun' fl fl' = sequenceS (map (fun fl') fl) where
       Nothing -> return [Incomplete fl fl'] -- at least one variable is unbound, so try again later
       Just cl -> do
         let env = Map.fromList (zip vars (map snd cl))
-            Just s'' = unsingleton' env s'
+            Just s'' = unsingleton env s'
         (tr, t) <- typeApply (TyFun [f]) s'' 
         sequenceS
           [ return [Complete env fl fl'] -- if anything in env changes, we'll need to redo this pair

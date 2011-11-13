@@ -7,7 +7,6 @@
 
 module ToLir
   ( progs
-  , prog
   ) where
 
 import Prelude hiding (mapM)
@@ -24,7 +23,7 @@ import Util
 import Var
 import SrcLoc
 import Pretty
-import Type hiding (freeVars)
+import Type
 import PreType
 import Lir
 import qualified Ir
@@ -110,10 +109,10 @@ datatypes baseDenv decls = do
         concat =.< zipWithM f vars tl
         where
         f Covariant = invVars
-        f Invariant = return . freeVars
+        f Invariant = return . freePreVars
       invVars (TpFun fl) = concat =.< mapM fun fl where
-        fun (FunArrow _ s t) = (++) (freeVars s) =.< invVars t
-        fun (FunClosure _ tl) = return $ concatMap freeVars tl
+        fun (FunArrow _ s t) = (++) (freePreVars s) =.< invVars t
+        fun (FunClosure _ tl) = return $ concatMap freePreVars tl
       invVars TpVoid = return []
 
   -- Freeze the mutable PreDatatypes into Datatypes
