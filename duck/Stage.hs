@@ -38,12 +38,12 @@ data Stage
 -- used for both arguments and printing; should be made more friendly at some point
 stageNames :: [String]
 stageNames =
-    ["ast"
-    ,"ir"
-    ,"lir"
+    ["parse"
+    ,"code"
+    ,"lift"
     ,"link"
-    ,"infer"
-    ,"exec"
+    ,"type"
+    ,"runtime"
     ]
 
 instance Pretty Stage where
