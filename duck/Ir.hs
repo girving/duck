@@ -84,35 +84,35 @@ irError l = fatal . locMsg l
 dupError :: Pretty v => v -> SrcLoc -> SrcLoc -> a
 dupError v n o = irError n $ "duplicate definition of" <+> quoted v <> (", previously declared at" <&+> o)
 
-prog_vars :: Ast.Prog -> InScopeSet
-prog_vars = foldl' decl_vars Set.empty . map unLoc
+progVars :: Ast.Prog -> InScopeSet
+progVars = foldl' declVars Set.empty . map unLoc
 
-decl_vars :: InScopeSet -> Ast.Decl -> InScopeSet
-decl_vars s (Ast.SpecD (L _ v) _) = Set.insert v s 
-decl_vars s (Ast.DefD (L _ v) _ _) = Set.insert v s 
-decl_vars s (Ast.LetD p _) = pattern_vars s p
-decl_vars s (Ast.ExpD _) = s
-decl_vars s (Ast.Data _ _ _) = s
-decl_vars s (Ast.Infix _ _) = s
-decl_vars s (Ast.Import _) = s
+declVars :: InScopeSet -> Ast.Decl -> InScopeSet
+declVars s (Ast.SpecD (L _ v) _) = Set.insert v s 
+declVars s (Ast.DefD (L _ v) _ _) = Set.insert v s 
+declVars s (Ast.LetD p _) = patternVars s p
+declVars s (Ast.ExpD _) = s
+declVars s (Ast.Data _ _ _) = s
+declVars s (Ast.Infix _ _) = s
+declVars s (Ast.Import _) = s
 
-pattern_vars :: InScopeSet -> Ast.Pattern -> InScopeSet
-pattern_vars s Ast.PatAny = s
-pattern_vars s (Ast.PatVar v) = Set.insert v s
-pattern_vars s (Ast.PatInt _) = s
-pattern_vars s (Ast.PatChar _) = s
-pattern_vars s (Ast.PatString _) = s
-pattern_vars s (Ast.PatCons _ pl) = foldl' pattern_vars s pl
-pattern_vars s (Ast.PatOps o) = Fold.foldl' pattern_vars s o
-pattern_vars s (Ast.PatList pl) = foldl' pattern_vars s pl
-pattern_vars s (Ast.PatAs v p) = pattern_vars (Set.insert v s) p
-pattern_vars s (Ast.PatSpec p _) = pattern_vars s p
-pattern_vars s (Ast.PatLambda pl p) = foldl' pattern_vars (pattern_vars s p) pl
-pattern_vars s (Ast.PatTrans _ p) = pattern_vars s p
-pattern_vars s (Ast.PatLoc _ p) = pattern_vars s p
+patternVars :: InScopeSet -> Ast.Pattern -> InScopeSet
+patternVars s Ast.PatAny = s
+patternVars s (Ast.PatVar v) = Set.insert v s
+patternVars s (Ast.PatInt _) = s
+patternVars s (Ast.PatChar _) = s
+patternVars s (Ast.PatString _) = s
+patternVars s (Ast.PatCons _ pl) = foldl' patternVars s pl
+patternVars s (Ast.PatOps o) = Fold.foldl' patternVars s o
+patternVars s (Ast.PatList pl) = foldl' patternVars s pl
+patternVars s (Ast.PatAs v p) = patternVars (Set.insert v s) p
+patternVars s (Ast.PatSpec p _) = patternVars s p
+patternVars s (Ast.PatLambda pl p) = foldl' patternVars (patternVars s p) pl
+patternVars s (Ast.PatTrans _ p) = patternVars s p
+patternVars s (Ast.PatLoc _ p) = patternVars s p
 
-prog_precs :: PrecEnv -> Ast.Prog -> PrecEnv
-prog_precs = foldl' set_precs where
+progPrecs :: PrecEnv -> Ast.Prog -> PrecEnv
+progPrecs = foldl' set_precs where
   set_precs s (L l (Ast.Infix p vl)) = foldl' (\s v -> Map.insertWithKey check v p s) s vl where
     check v new old
       | new == old = new
@@ -179,8 +179,8 @@ mapss f = mapAccumL (\s -> first (Set.union s) . f) Set.empty
 
 prog :: PrecEnv -> ModuleName -> Ast.Prog -> (PrecEnv, (ModuleName, [Decl]))
 prog pprec name p = (precs, (name, decls p)) where
-  precs = prog_precs pprec p
-  globals = prog_vars p
+  precs = progPrecs pprec p
+  globals = progVars p
 
   -- Declaration conversion can turn multiple Ast.Decls into a single Ir.Decl, as with
   --   f :: <type>
