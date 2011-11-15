@@ -21,7 +21,7 @@ $(DUCK): $(CONFIG_DONE)
 	$(SETUP) build
 	@echo "make: Leaving directory \`..'"
 
-$(CONFIG_DONE): $(TOPDIR)/duck.cabal
+$(CONFIG_DONE):
 	$(SETUP) configure $(CONFIGFLAGS)
 
 duck: $(DUCK)
