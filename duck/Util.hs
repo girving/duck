@@ -162,7 +162,7 @@ handleE :: (MonadInterrupt m, Exception e) => (e -> m a) -> m a -> m a
 handleE = flip catchE
 
 instance MonadInterrupt IO where 
-  catchE = catchE
+  catchE = Control.Exception.catch
 
 instance MonadInterrupt m => MonadInterrupt (Reader.ReaderT r m) where 
   catchE = Reader.liftCatch catchE 
