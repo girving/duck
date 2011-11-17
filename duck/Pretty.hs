@@ -17,7 +17,7 @@ module Pretty
   , nested, nestedPunct
   , parens, brackets, quoted
   , prettyap
-  , sPlural
+  , sPlural, sStatic
 
   -- * Extraction and use
   , pout, qout
@@ -186,6 +186,10 @@ brackets = grouped PP.brackets
 sPlural :: [a] -> Doc
 sPlural [_] = empty
 sPlural _ = PP.char 's'
+
+sStatic :: Bool -> String -> String
+sStatic False = id
+sStatic True = ('s':)
 
 
 class PrettyOut o where

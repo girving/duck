@@ -31,12 +31,12 @@ data Token
   | TokSemi { tokImplicit :: !(Maybe Token) }
   | TokDColon
   | TokComma
-  | TokLet
+  | TokLet { tokStatic :: !Bool }
   | TokData
   | TokIn
-  | TokCase
+  | TokCase { tokStatic :: !Bool }
   | TokOf
-  | TokIf
+  | TokIf { tokStatic :: !Bool }
   | TokThen
   | TokElse
   | TokAny
@@ -65,12 +65,12 @@ instance Pretty Token where
     TokInt i -> show i
     TokChar c -> show c
     TokString s -> show s
-    TokLet -> "let"
+    TokLet s -> sStatic s "let"
     TokData -> "data"
     TokIn -> "in"
-    TokCase -> "case"
+    TokCase s -> sStatic s "case"
     TokOf -> "of"
-    TokIf -> "if"
+    TokIf s -> sStatic s "if"
     TokThen -> "then"
     TokElse -> "else"
     TokImport -> "import"

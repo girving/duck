@@ -133,10 +133,9 @@ expr static env loc e = checkStatic =<< exp e where
     st <- staticFunction t1
     t2 <- expr (static || st) env loc e2
     snd =.< apply static loc t1 t2
-  exp (ExpLet tr v e body) = do
-    t <- expr (static || Static == tr) env loc e
-    let t' = transType (tr, t)
-    expr static (Map.insert v t' env) loc body
+  exp (ExpLet st v e body) = do
+    t <- expr (static || st) env loc e
+    expr static (Map.insert v t env) loc body
   exp (ExpCase st a pl def) = do
     t <- atom (static || st) env loc a
     conses <- lookupDatatype loc t

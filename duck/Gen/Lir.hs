@@ -17,7 +17,7 @@ import Prims
 data Exp = ExpLoc !SrcLoc !Exp
          | ExpAtom !Atom
          | ExpApply !Exp !Exp
-         | ExpLet !Trans !Var !Exp !Exp
+         | ExpLet !Bool !Var !Exp !Exp
          | ExpCons !Datatype !Int ![Exp]
          | ExpCase !Bool !Atom ![(Var, [Var], Exp)] !(Maybe Exp)
          | ExpPrim !Prim ![Exp]

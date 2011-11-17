@@ -34,7 +34,8 @@ import Value
 -- Lambda lifting: IR to Lifted IR conversion
 
 -- keeps track of local scope and staticness:
-type Locals = Map Var Bool
+type Static = Bool
+type Locals = Map Var Static
 
 progs :: Prog -> [(ModuleName, [Ir.Decl])] -> Prog
 progs = foldl' (\p (name,decls) -> prog p name decls)
@@ -136,15 +137,15 @@ decl :: Ir.Decl -> State (Prog, Globals) ()
 decl (Ir.LetD v e) | (vl@(_:_),e') <- unwrapLambda noLoc e = case v of
   L _ (V "_") -> return ()
   _ -> do
-    e <- expr (argLocals vl) noLocExpr e'
-    function v vl e
+    e <- expr (argLocals [] vl) noLocExpr e'
+    function v (map ((,) NoTrans) vl) e
 decl (Ir.Over v@(L l _) t e) = do
   denv <- get >.= progDatatypes . fst
   let (tl,r,vl,e') = unwrapTypeLambda l t e
       tl' = map (second $ toType l denv) tl
       r' = toType l denv r
-  e <- expr (argLocals vl) noLocExpr e'
-  overload v tl' r' (map snd vl) e
+  e <- expr (argLocals (map ((Static ==) . fst) tl) vl) noLocExpr e'
+  overload v tl' r' vl e
 decl (Ir.LetD v e) = do
   e <- topExpr e
   definition [v] e
@@ -156,8 +157,8 @@ decl (Ir.ExpD e) = do
   definition [] e
 decl (Ir.Data _ _ _) = return () -- Datatypes already processed
 
-argLocals :: [TransType Var] -> Locals
-argLocals = Map.fromList . map (\(t,v) -> (v, t == Static))
+argLocals :: [Static] -> [Var] -> Locals
+argLocals st vl = Map.fromList $ zip vl (st ++ repeat False)
 
 topExpr :: Ir.Exp -> State (Prog, Globals) Exp
 topExpr = expr emptyLocals noLocExpr
@@ -203,8 +204,8 @@ function v tvl e = overload v (zip tr tl) r vl e where
   (tl,r) = generalType vl
 
 -- |Unwrap a lambda as far as we can
-unwrapLambda :: SrcLoc -> Ir.Exp -> ([TransType Var], Ir.Exp)
-unwrapLambda l (Ir.Lambda tr v e) = ((trans' l tr, v):vl, e') where
+unwrapLambda :: SrcLoc -> Ir.Exp -> ([Var], Ir.Exp)
+unwrapLambda l (Ir.Lambda v e) = (v:vl, e') where
   (vl, e') = unwrapLambda l e
 unwrapLambda _ (Ir.ExpLoc l e) = unwrapLambda l e
 unwrapLambda l e
@@ -216,22 +217,15 @@ trans _ (V "delay") = Delay
 trans _ (V "static") = Static
 trans l v = lirError l $ "unknown transform" <+> quoted v <+> "applied"
 
-trans' :: SrcLoc -> Maybe Var -> Trans
-trans' = maybe NoTrans . trans
-
 -- |Extracts the annotation from a possibly annotated argument type.
 typeArg :: SrcLoc -> Ir.TypePat -> TransType Ir.TypePat
 typeArg loc (Ir.TsTrans trv t) = (trans loc trv, t)
 typeArg _ t = (NoTrans, t)
 
 -- |Unwrap a type/lambda combination as far as we can
-unwrapTypeLambda :: SrcLoc -> Ir.TypePat -> Ir.Exp -> ([TransType Ir.TypePat], Ir.TypePat, [TransType Var], Ir.Exp)
-unwrapTypeLambda loc (Ir.TsFun [Ir.FunArrow t tl]) (Ir.Lambda vtr v e) = ((tr,t'):tl', r, (tr,v):vl, e') where
-  (ttr, t') = typeArg loc t
-  -- type transform takes precedence, but definition must match if specified
-  tr = case vtr of
-    Just vtr | trans loc vtr /= ttr -> lirError loc "transform applied in definition does not match type"
-    _ -> ttr
+unwrapTypeLambda :: SrcLoc -> Ir.TypePat -> Ir.Exp -> ([TransType Ir.TypePat], Ir.TypePat, [Var], Ir.Exp)
+unwrapTypeLambda loc (Ir.TsFun [Ir.FunArrow t tl]) (Ir.Lambda v e) = ((tr,t'):tl', r, v:vl, e') where
+  (tr, t') = typeArg loc t
   (tl', r, vl, e') = unwrapTypeLambda loc tl e
 unwrapTypeLambda _ t e = ([], t, [], e)
 
@@ -248,18 +242,13 @@ expr locals l (Ir.Apply e1 e2) = do
   e1 <- expr locals l e1
   e2 <- expr locals l e2
   return $ ExpApply e1 e2
-expr locals l@(loc,_) (Ir.Let trv v e rest) = do
+expr locals l@(loc,_) (Ir.Let st v e rest) = do
   e <- expr locals (loc,Just v) e
-  let tr = trans' loc trv
-  rest <- expr (Map.insert v (tr == Static) locals) l rest
-  return $ ExpLet tr v e rest
-expr locals l e@(Ir.Lambda _ _ _) = lambda locals l e
-expr locals l@(loc,_) (Ir.Case tr v pl def) = do
+  rest <- expr (Map.insert v st locals) l rest
+  return $ ExpLet st v e rest
+expr locals l e@(Ir.Lambda _ _) = lambda locals l e
+expr locals l (Ir.Case st v pl def) = do
   a <- var locals l v
-  let st = case trans' loc tr of
-        NoTrans -> False
-        Static -> True
-        _ -> lirError loc $ "transform" <+> quoted tr <+> "not valid in case"
   pl <- mapM (\ (c,vl,e) -> expr (foldl' (\l v -> Map.insert v st l) locals vl) l e >.= \e -> (c,vl,e)) pl
   def <- mapM (expr locals l) def
   return $ ExpCase st a pl def
@@ -294,11 +283,11 @@ lambda :: Locals -> (SrcLoc,Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp
 lambda locals l@(loc,v) e = do
   f <- freshenM $ fromMaybe (V "f") v -- use the suggested function name
   let (vl,e') = unwrapLambda loc e
-      vls = argLocals $ filter ((V "_" /=) . snd) vl
+      vls = argLocals [] $ filter (V "_" /=) vl
       localsPlus = Map.union locals vls
   e <- expr localsPlus l e'
   let vs = free (Map.keysSet vls) e
-  function (L loc f) (map (\v -> (if Map.findWithDefault False v locals then Static else NoTrans, v)) vs ++ vl) e
+  function (L loc f) (map (\v -> (if Map.findWithDefault False v locals then Static else NoTrans, v)) vs ++ map ((,) NoTrans) vl) e
   return $ foldl ExpApply (ExpAtom $ closure f) (map expLocal vs)
 
 -- |Generate a fresh variable

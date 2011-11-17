@@ -45,11 +45,14 @@ $white+    ;
   infixr  { c (TokInfix RightFix) }
   infix   { c (TokInfix NonFix) }
   data    { c TokData }
-  let     { c TokLet }
+  let     { c (TokLet False) }
+  slet    { c (TokLet True) }
   in      { c TokIn }
-  case    { c TokCase }
+  case    { c (TokCase False) }
+  scase   { c (TokCase True) }
   of      { c TokOf }
-  if      { c TokIf }
+  if      { c (TokIf False) }
+  sif     { c (TokIf True) }
   then    { c TokThen }
   else    { c TokElse }
   \(      { c TokLP }

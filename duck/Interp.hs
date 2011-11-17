@@ -81,11 +81,10 @@ expr static global tenv env loc = exp where
     st <- liftInfer $ Infer.staticFunction t1
     t2 <- inferExpr (static || st) tenv loc e2
     apply static global loc t1 v1 (transExpr static global tenv env loc e2) t2
-  exp (ExpLet tr v e body) = do
-    t <- inferExpr (static || Static == tr) tenv loc e
-    let t' = transType (tr, t)
-    d <- transExpr static global tenv env loc e tr
-    expr static global (Map.insert v t' tenv) (Map.insert v d env) loc body
+  exp (ExpLet st v e body) = do
+    t <- inferExpr (static || st) tenv loc e
+    d <- expr (static || st) global tenv env loc e
+    expr static global (Map.insert v t tenv) (Map.insert v d env) loc body
   exp ce@(ExpCase st a pl def) = do
     ct <- inferExpr static tenv loc ce
     t <- liftInfer $ Infer.atom (static || st) tenv loc a

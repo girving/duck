@@ -43,7 +43,7 @@ data Decl
 -- Patterns and types are also parsed into these before being converted to 'Pattern' or 'TypePat' in "Parse"
 data Exp
   = Def !Var [Pattern] Exp Exp          -- ^ Local function definition with arguments: @let VAR PATs = EXP in EXP@ (equivalent to @DoSeq [StmtDef VAR PATs EXP, EXP]@)
-  | Let !Pattern Exp Exp                -- ^ Local variable definition: @let PAT = EXP in EXP@ (equivalent to @DoSeq [StmtLet PAT EXP, EXP]@)
+  | Let !Bool !Pattern Exp Exp          -- ^ Local variable definition: @let PAT = EXP in EXP@ (equivalent to @DoSeq [StmtLet PAT EXP, EXP]@)
   | Lambda [Pattern] Exp                -- ^ @PAT1 -> PAT2 ... -> EXP@
   | Apply Exp [Exp]                     -- ^ Application: @EXP EXPs@
   | Var !Var
@@ -55,8 +55,8 @@ data Exp
   | Ops !(Ops Exp)
   | Equals !Var Exp                     -- ^ @(VAR = EXP)@, only for PatAs
   | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
-  | Case [Switch]                       -- ^ Case group
-  | If Exp Exp Exp                      -- ^ @if EXP then EXP else EXP@
+  | Case !Bool [Switch]                 -- ^ Case group
+  | If !Bool Exp Exp Exp                -- ^ @if EXP then EXP else EXP@
   | Seq [Loc Stmt]                      -- ^ Expression sequence: @{ STMT ; ... }@
   | ExpLoc SrcLoc !Exp                  -- ^ Meta source location information, inserted at almost every level
   deriving Show
@@ -73,7 +73,7 @@ data Case
 -- |Case action.
 -- What to do if everything so far has suceeded.
 data CaseTail
-  = CaseGroup [Switch]                  -- ^ Check cases sequentially, or fail
+  = CaseGroup !Bool [Switch]            -- ^ Check cases sequentially, or fail
   | CaseBody Exp                        -- ^ Succeed and execute
   deriving Show
 
@@ -163,14 +163,14 @@ instance Pretty Prog where
 
 instance Pretty Exp where
   pretty' (Spec e t) = 2 #> pguard 2 e <+> "::" <+> t
-  pretty' (Let p e body) = 1 #>
-    "let" <+> p <+> '=' <+> pretty e <+> "in" $$ pretty body
+  pretty' (Let s p e body) = 1 #>
+    sStatic s "let" <+> p <+> '=' <+> pretty e <+> "in" $$ pretty body
   pretty' (Def f args e body) = 1 #>
     nestedPunct '=' ("let" <+> prettyop f args)
       (pretty e <+> "in" $$ pretty body)
-  pretty' (Case cases) = 1 #> pretty' cases
-  pretty' (If c e1 e2) = 1 #>
-    "if" <+> pretty c <+> "then" <+> pretty e1 <+> "else" <+> pretty e2
+  pretty' (Case s cases) = 1 #> pretty' (s,cases)
+  pretty' (If s c e1 e2) = 1 #>
+    sStatic s "if" <+> pretty c <+> "then" <+> pretty e1 <+> "else" <+> pretty e2
   pretty' (Lambda pl e) = 1 #>
     hsep (map (<+> "->") pl) <+> pguard 1 e
   pretty' (Apply e el) = prettyop e el
@@ -185,15 +185,15 @@ instance Pretty Exp where
   pretty' (Seq q) = nested "do" (pretty $ vcat q) -- XXX not valid syntax (yet)
   pretty' (ExpLoc _ e) = pretty' e
 
-instance Pretty [Switch] where
-  pretty' ecl = nested "case" (vcat $ map (uncurry (<+>)) ecl)
+instance Pretty (Bool, [Switch]) where
+  pretty' (s,ecl) = nested (sStatic s "case") (vcat $ map (uncurry (<+>)) ecl)
 
 instance Pretty Case where
   pretty' (CaseMatch pcl) = nested "of" (vcat (map (uncurry (<+>)) pcl))
   pretty' (CaseGuard g) = pretty' g
 
 instance Pretty CaseTail where
-  pretty' (CaseGroup s) = pretty' s
+  pretty' (CaseGroup s c) = pretty' (s,c)
   pretty' (CaseBody e) = "->" <+> pretty e
 
 instance Pretty Stmt where

@@ -38,11 +38,11 @@ import Util
   chr  { L _ (TokChar _) }
   str  { L _ (TokString _) }
   data { L _ (TokData) }
-  let  { L _ (TokLet) }
+  let  { L _ (TokLet _) }
   in   { L _ (TokIn) }
-  case { L _ (TokCase) }
+  case { L _ (TokCase _) }
   of   { L _ (TokOf) }
-  if   { L _ (TokIf) }
+  if   { L _ (TokIf _) }
   then { L _ (TokThen) }
   else { L _ (TokElse) }
   '='  { L _ (TokEq) }
@@ -126,9 +126,9 @@ arrows(a) :: { Loc (Stack Exp Exp) }
   | exp2(atom_) '->' arrows(a) { loc $1 $> (expLoc $1 :. unLoc $3) }
 
 notarrow(a) :: { Loc Exp }
-  : let exp '=' exp in exp1(a) {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
-  | case caseblock(a) { loc $1 $> $ Case (unLoc $2) }
-  | if exp then exp else exp1(a) { loc $1 $> $ If (expLoc $2) (expLoc $4) (expLoc $6) }
+  : let exp '=' exp in exp1(a) {% lefthandside $2 >.= \l -> loc $1 $> $ either (\p -> Let (tokStatic (unLoc $1)) p (expLoc $4) (expLoc $6)) (\ (v,pl) -> Def (unLoc v) pl (expLoc $4) (expLoc $6)) l }
+  | case caseblock(a) { loc $1 $> $ Case (tokStatic (unLoc $1)) (unLoc $2) }
+  | if exp then exp else exp1(a) { loc $1 $> $ If (tokStatic (unLoc $1)) (expLoc $2) (expLoc $4) (expLoc $6) }
   | '{' stmts '}' { loc $1 $> $ Seq (reverse $2) }
   | exp2(a) { $1 }
 
@@ -153,7 +153,7 @@ casematch :: { (Pattern,CaseTail) }
 
 casetail(a) :: { Loc CaseTail }
   : '->' exp1(a) { loc $1 $> $ CaseBody (expLoc $2) }
-  | case caseblock(a) { loc $1 $> $ CaseGroup (unLoc $2) }
+  | case caseblock(a) { loc $1 $> $ CaseGroup (tokStatic (unLoc $1)) (unLoc $2) }
 
 exp2(a) :: { Loc Exp }
   : commas(a) { fmap tuple $1 }
@@ -204,7 +204,7 @@ lvar :: { Loc Var }
   : var { locVar $1 }
   | '(' sym ')' { loc $1 $> (var $2) }
   | '(' '-' ')' { loc $1 $> (V "-") }
-  | '(' if ')' { loc $1 $> (V "if") }
+  | '(' if ')' { loc $1 $> (V $ sStatic (tokStatic (unLoc $2)) "if") }
 
 lvars :: { Loc [Var] }
   : {--} { loc0 [] }
@@ -297,7 +297,7 @@ arrows (L l stack) = case splitStack stack of
 patternExp :: SrcLoc -> Exp -> P Pattern
 patternExp l (Apply e el)  | Just (L _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
 patternExp l (Apply f [e]) | Just (L _ t) <- unVar l f = PatTrans t =.< patternExp l e
-patternExp l (Apply e _) = parseError l $ "only constructors and transforms can be applied in patterns, not" <+> quoted e
+patternExp l (Apply e _) = parseError l $ "only constructors and transforms can be applied here, not" <+> quoted e
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
 patternExp l Any = return PatAny
@@ -310,7 +310,7 @@ patternExp l (Equals v e) = patternExp l e >.= PatAs v
 patternExp l (Spec e t) = patternExp l e >.= \p -> PatSpec p t
 patternExp l (Lambda pl e) = PatLambda pl =.< patternExp l e
 patternExp _ (ExpLoc l e) = PatLoc l =.< patternExp l e
-patternExp l e = parseError l $ expTypeDesc e <+> "expression not allowed in pattern"
+patternExp l e = parseError l $ expTypeDesc e <+> "expression not allowed here"
 
 patternOps :: SrcLoc -> Ops Exp -> P (Ops Pattern)
 patternOps l (OpAtom e) = OpAtom =.< patternExp l e
@@ -318,8 +318,8 @@ patternOps l (OpBin v o1 o2) | isCons v = do
   p1 <- patternOps l o1
   p2 <- patternOps l o2
   return $ OpBin v p1 p2
-patternOps l (OpBin v _ _) = parseError l $ "only constructor operators are allowed in patterns, not" <+> quoted v
-patternOps l (OpUn v _) = parseError l $ "unary operator" <+> quoted v <+> "not allowed in pattern"
+patternOps l (OpBin v _ _) = parseError l $ "only constructor operators are allowed here, not" <+> quoted v
+patternOps l (OpUn v _) = parseError l $ "unary operator" <+> quoted v <+> "not allowed here"
 
 ty :: Loc Exp -> P (Loc TypePat)
 ty (L l e) = L l =.< typeExp l e

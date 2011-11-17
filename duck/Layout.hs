@@ -34,7 +34,7 @@ data Leader
 leaderType :: Token -> Maybe Leader
 leaderType TokSOF = Just Block
 leaderType TokOf = Just Mandatory
-leaderType TokCase = Just Optional
+leaderType TokCase{} = Just Optional
 leaderType TokEq = Just Optional
 leaderType TokThen = Just Optional
 leaderType TokElse = Just Optional
