@@ -1,20 +1,18 @@
 {-# LANGUAGE FlexibleInstances #-}
 
-module PrettyLir
- (
- ) where
+module PrettyLir () where
 
 import Data.Map (Map)
 import qualified Data.Map as Map
 
-import Lir
-import ParseOps
-import qualified Ptrie
 import Pretty
-import Prims
-import Type
-import TypedValue
 import Var
+import ParseOps
+import Type
+import Prims
+import TypedValue
+import qualified Ptrie
+import Lir
 
 -- Pretty printing for Lir
 

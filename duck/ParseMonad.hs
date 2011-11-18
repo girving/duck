@@ -20,6 +20,7 @@ module ParseMonad
   ) where
 
 import Prelude hiding (catch)
+
 import Control.Monad.State
 import qualified Data.ByteString.Lazy as BS
 

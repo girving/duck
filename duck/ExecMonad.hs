@@ -19,19 +19,20 @@ module ExecMonad
   ) where
 
 import Prelude hiding (catch)
-import Control.Monad.Reader
+
 import Control.Exception
+import Control.Monad.Reader
 
 import Util
 import Pretty
-import Memory
+import SrcLoc
 import Var
 import Stage
+import Memory
 import Type
-import Value()
-import SrcLoc
-import InferMonad hiding (withFrame)
+import Value ()
 import Lir (Prog, ProgMonad)
+import InferMonad hiding (withFrame)
 
 type ExecStack = CallStack Any
 

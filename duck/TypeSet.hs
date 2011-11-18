@@ -34,21 +34,21 @@ module TypeSet
   , union
   ) where
 
+import Control.Monad.Error.Class
+import Control.Monad.State
 import Data.Functor
-import Data.Maybe
 import qualified Data.List as List
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Monad.State
-import Control.Monad.Error.Class
+import Data.Maybe
 
 import Util
-import SrcLoc
 import Pretty
+import SrcLoc
 import Var
 import Type
-import InferMonad
 import Prims
+import InferMonad
 
 -- |TypeMonad stores type information about programs for use by the various
 -- type manipulation functions.

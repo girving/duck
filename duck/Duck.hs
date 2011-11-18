@@ -3,37 +3,37 @@
 
 module Main (main, run) where
 
-import qualified Data.ByteString.Lazy as BS
-import Data.Functor
-import qualified Data.Set as Set
-import Data.Set (Set)
-import qualified Data.Map as Map
-import Data.List
-import Data.Maybe
+import Control.Exception
 import Control.Monad 
 import Control.Monad.Trans.Maybe
-import System.Environment
-import System.FilePath
-import System.Directory
+import qualified Data.ByteString.Lazy as BS
+import Data.Functor
+import Data.List
+import qualified Data.Map as Map
+import Data.Maybe
+import Data.Set (Set)
+import qualified Data.Set as Set
 import System.Console.GetOpt
+import System.Directory
+import System.Environment
 import System.Exit
-import Control.Exception
+import System.FilePath
 
 import Util
+import Pretty
 import Var
 import Stage
-import Pretty
-import Parse
 import ParseMonad
 import qualified Ast
+import Parse
 import qualified Ir
 import qualified Lir
 import qualified ToLir
-import qualified Interp
+import InferMonad
+import ExecMonad
 import qualified Base
 import qualified Infer
-import ExecMonad
-import InferMonad
+import qualified Interp
 import ToHaskell
 
 -- Options

@@ -22,8 +22,8 @@ import Control.Monad.State
 
 import Util
 import Pretty
-import Token
 import SrcLoc
+import Token
 import ParseMonad
 
 data Leader

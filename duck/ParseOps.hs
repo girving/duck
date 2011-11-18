@@ -15,15 +15,15 @@ module ParseOps
   , prettyop
   ) where
 
-import Data.Maybe
-import qualified Data.Map as Map
 import qualified Data.Foldable as Fold
+import qualified Data.Map as Map
+import Data.Maybe
 
-import Var
 import Pretty
 import SrcLoc
-import ParseMonad
+import Var
 import Token
+import ParseMonad
 
 type Precedence = Int
 type PrecFix = (Precedence, Fixity)

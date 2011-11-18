@@ -9,25 +9,25 @@ module Interp
 
 import Prelude hiding (lookup)
 
-import Data.Functor
 import Control.Monad hiding (guard)
+import Data.Functor
 import Data.List hiding (lookup)
 import qualified Data.Map as Map
 import Data.Maybe
 import qualified Data.Set as Set
 
 import Util
-import Var
-import Type
-import Memory
-import Value
-import SrcLoc
 import Pretty
+import SrcLoc
+import Var
+import Memory
+import Type
+import Prims
+import Value
 import Lir hiding (Globals)
 import ExecMonad
-import qualified Infer
 import qualified Base
-import Prims
+import qualified Infer
 
 import Gen.Interp
 

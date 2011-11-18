@@ -10,25 +10,25 @@ module Ir
   , prog
   ) where
 
-import Data.List
+import qualified Data.Foldable as Fold
 import Data.Function
 import Data.Functor
-import Data.Maybe
-import qualified Data.Set as Set
-import qualified Data.Map as Map
+import Data.List
 import Data.Map (Map)
-import qualified Data.Foldable as Fold
+import qualified Data.Map as Map
+import Data.Maybe
 import Data.Monoid
+import qualified Data.Set as Set
 
 import Util
 import Pretty
 import SrcLoc
-import Stage
 import Var
-import IrType
-import Prims hiding (typeInt, typeChar)
-import qualified Ast
+import Stage
 import ParseOps
+import IrType
+import qualified Ast
+import Prims hiding (typeInt, typeChar)
 
 -- |Top-level declaration
 data Decl

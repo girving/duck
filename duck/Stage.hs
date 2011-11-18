@@ -16,15 +16,15 @@ module Stage
   , StackMsg(..)
   ) where
 
-import Data.Typeable
 import Control.Exception
 import Control.Monad.Trans
+import Data.Typeable
 import System.Exit
 
 import Util
-import Var
 import Pretty
 import SrcLoc
+import Var
 
 data Stage 
   = StageParse

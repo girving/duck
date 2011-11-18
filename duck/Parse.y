@@ -5,21 +5,22 @@
 
 module Parse (lex, parse) where
 
-import Var hiding (unVar)
-import Lex
-import Token
-import Layout
-import Ast
-import IrType
-import Prims hiding (typeArrow)
-import SrcLoc hiding (loc)
-import ParseMonad
-import ParseOps
 import Data.Functor
 import qualified Data.Map as Map
 import Data.Monoid (mappend, mconcat)
-import Pretty
+
 import Util
+import Pretty
+import SrcLoc hiding (loc)
+import Var hiding (unVar)
+import Token
+import ParseMonad
+import ParseOps
+import Lex
+import Layout
+import IrType
+import Ast
+import Prims hiding (typeArrow)
 
 }
 

@@ -12,8 +12,8 @@ module Base
   , Exception
   ) where
 
-import Control.Monad
 import qualified Control.Exception as Exn
+import Control.Monad
 import qualified Data.Char as Char
 import Data.Functor
 import Data.List
@@ -21,16 +21,16 @@ import qualified Data.Map as Map
 import Data.Typeable (Typeable)
 
 import Util
-import Var
-import Type
-import Memory
-import Value
-import Prims
-import SrcLoc
 import Pretty
+import SrcLoc
+import Var
+import Memory
+import Type
+import Prims
+import Value
 import Lir
-import ExecMonad
 import InferMonad
+import ExecMonad
 
 data Exception = Exception deriving (Show, Typeable)
 instance Exn.Exception Exception

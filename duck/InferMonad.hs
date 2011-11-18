@@ -15,21 +15,21 @@ module InferMonad
   , typeMismatch
   ) where
 
-import Data.Functor
-import Data.Map (Map)
+import Control.Exception
 import Control.Monad.Error
 import Control.Monad.Reader
 import Control.Monad.State
-import Control.Exception
+import Data.Functor
+import Data.Map (Map)
 
 import Util
-import Var
 import Pretty
+import SrcLoc
+import Var
 import Stage
 import Type
-import Lir
-import SrcLoc
 import TypedValue ()
+import Lir
 
 type InferStack = CallStack TypeVal
 

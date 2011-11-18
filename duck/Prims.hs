@@ -2,8 +2,7 @@
 -- | Duck primitive operation declarations
 
 module Prims 
-  ( Binop(..)
-  , Prim(..)
+  ( module Gen.Prims
   , binopString
   , primString
   -- * Primitive datatypes
@@ -27,10 +26,10 @@ module Prims
   , transType
   ) where
 
-import Type
-import Var
 import SrcLoc
+import Var
 import Memory
+import Type
 
 -- Pull in definitions of Binop and Prim
 import Gen.Prims

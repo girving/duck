@@ -18,12 +18,12 @@ module Ast
 
 import Data.Maybe
 
-import Var
-import IrType
+import Pretty
 import SrcLoc
+import Var
 import Stage
 import ParseOps
-import Pretty
+import IrType
 
 -- |An entire file is just a list of top-level declarations, where the locations refer to the whole declaration, body and all
 type Prog = [Loc Decl]

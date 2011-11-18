@@ -41,17 +41,17 @@ import qualified Data.Map as Map
 
 import Util
 import Pretty
-import Var
 import SrcLoc
-import Type
-import TypeSet
-import Prims
-import Lir hiding (union)
-import InferMonad
-import qualified Ptrie
-import qualified Base
+import Var
 import Memory
+import Type
+import Prims
+import qualified Ptrie
+import Lir hiding (union)
 import PrettyLir ()
+import InferMonad
+import qualified Base
+import TypeSet
 
 -- Some aliases for documentation purposes
 

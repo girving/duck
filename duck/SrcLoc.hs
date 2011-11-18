@@ -14,8 +14,9 @@ module SrcLoc
   , HasLoc(..)
   ) where
 
-import Data.Monoid
 import Data.Maybe
+import Data.Monoid
+
 import Pretty
 
 -- Pull in definition of SrcLoc

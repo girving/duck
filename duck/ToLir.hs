@@ -9,28 +9,27 @@ module ToLir
   ( progs
   ) where
 
-import Prelude hiding (mapM)
+import Control.Monad.State
 import Data.Functor
-import Data.Maybe
 import Data.List
-import qualified Data.Set as Set
 import Data.Map (Map)
 import qualified Data.Map as Map
-import Control.Monad.State hiding (mapM)
-import Data.Traversable (mapM)
+import Data.Maybe
+import qualified Data.Set as Set
+import qualified Data.Traversable as Traverse (mapM)
 import System.IO.Unsafe
 
 import Util
-import Var
-import SrcLoc
 import Pretty
+import SrcLoc
+import Var
+import Memory
+import Prims
+import qualified Ir
+import Value
 import Type
 import PreType
 import Lir
-import qualified Ir
-import Prims
-import Memory
-import Value
 
 -- Lambda lifting: IR to Lifted IR conversion
 
@@ -70,7 +69,7 @@ datatypes baseDenv decls = do
   -- Generate uninitialized mutable precursor datatypes
   uninitialized = PreData (V "") noLoc [] [] $ PreDataPrim (-1)
   alloc :: IO (Map CVar (Ref PreDatatype))
-  alloc = mapM (const $ newRef uninitialized) info
+  alloc = Traverse.mapM (const $ newRef uninitialized) info
 
   -- Fill in datatype info
   fill :: Map CVar (Ref PreDatatype) -> IO ()
@@ -119,7 +118,7 @@ datatypes baseDenv decls = do
 
   -- Freeze the mutable PreDatatypes into Datatypes
   freeze :: Map CVar (Ref PreDatatype) -> IO (Map CVar Datatype)
-  freeze = mapM (unsafeFreeze <=< unsafeCastRef)
+  freeze = Traverse.mapM (unsafeFreeze <=< unsafeCastRef)
 
 declVars :: Globals -> Ir.Decl -> Globals
 declVars g (Ir.LetD (L _ v) e) | (_:_,_) <- unwrapLambda noLoc e = insertVarWithKey kindConflict v FunctionKind g
@@ -250,8 +249,8 @@ expr locals l@(loc,_) (Ir.Let st v e rest) = do
 expr locals l e@(Ir.Lambda _ _) = lambda locals l e
 expr locals l (Ir.Case st v pl def) = do
   a <- var locals l v
-  pl <- mapM (\ (c,vl,e) -> expr (foldl' (\l v -> Map.insert v st l) locals vl) l e >.= \e -> (c,vl,e)) pl
-  def <- mapM (expr locals l) def
+  pl <- Traverse.mapM (\ (c,vl,e) -> expr (foldl' (\l v -> Map.insert v st l) locals vl) l e >.= \e -> (c,vl,e)) pl
+  def <- Traverse.mapM (expr locals l) def
   return $ ExpCase st a pl def
 expr locals l (Ir.Prim prim el) = do
   el <- mapM (expr locals l) el

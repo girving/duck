@@ -36,16 +36,16 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import qualified Data.Set as Set
 
-import Memory
+import Util
 import Pretty
-import Ptrie (Ptrie)
-import qualified Ptrie as Ptrie
 import SrcLoc
+import Var
 import Stage
+import Memory
 import Type
 import TypedValue ()
-import Util
-import Var
+import Ptrie (Ptrie)
+import qualified Ptrie as Ptrie
 
 -- Pull in definition of Exp and add a Show instance
 import Gen.Lir

@@ -4,18 +4,19 @@ module ToHaskell
   ( prog )
   where
 
-import Data.Maybe 
-import Data.List
 import qualified Data.Char as Char
-import Pretty
-import Stage
-import Var
-import SrcLoc hiding (srcLoc)
-import IrType
-import qualified Ast
+import Data.List
+import Data.Maybe 
 import Language.Haskell.Syntax hiding (SrcLoc, srcLine)
 import qualified Language.Haskell.Syntax as Hs
 import qualified Language.Haskell.Pretty as PHs
+
+import Pretty
+import SrcLoc hiding (srcLoc)
+import Var
+import Stage
+import IrType
+import qualified Ast
 
 prog :: String -> Ast.Prog -> Doc'
 prog name prog = header $+$ PHs.prettyPrintWithMode (PHs.defaultMode { PHs.linePragmas = True }) mod where

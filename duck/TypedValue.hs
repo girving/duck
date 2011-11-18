@@ -9,14 +9,14 @@ import Data.Map (Map)
 import qualified Data.Map as Map
 import Data.Monoid hiding (Any)
 
-import Memory
-import ParseOps
 import Pretty
-import Prims
 import SrcLoc
-import Type
-import Value
 import Var
+import ParseOps
+import Memory
+import Type
+import Prims
+import Value
 
 -- | Pretty printing for values
 

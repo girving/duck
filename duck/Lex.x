@@ -18,9 +18,9 @@ import Data.Word (Word8)
 import Numeric
 
 import Util
+import SrcLoc
 import Var
 import Token
-import SrcLoc
 import ParseMonad
 }
 

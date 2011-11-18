@@ -35,17 +35,16 @@ module Util
   , Sequence, runSequence
   ) where
 
-import System.IO
-import System.Exit
-import Data.Function
-import Data.Functor
-import Data.List
 import Control.Exception
 import Control.Monad
 import Control.Monad.Error
 import Control.Monad.Trans.Reader as Reader
 import Control.Monad.Trans.State as State
+import Data.Function
+import Data.List
 import Debug.Trace
+import System.Exit
+import System.IO
 
 debug :: Show a => a -> b -> b
 debug = traceShow

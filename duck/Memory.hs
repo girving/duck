@@ -19,11 +19,12 @@ module Memory
   , wordSize
   ) where
 
+import Data.Char
 import Data.Functor
 import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe
-import Data.Char
+
 import Util
 
 -- | Opaque type representing any Duck value (either boxed or unboxed)

@@ -23,9 +23,9 @@ module Pretty
   , pout, qout
   ) where
 
+import qualified Data.Map as Map
 import Text.PrettyPrint (Doc, empty, isEmpty)
 import qualified Text.PrettyPrint as PP
-import qualified Data.Map as Map
 
 type PrecDoc = Int -> Doc
 type Doc' = PrecDoc
