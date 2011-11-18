@@ -3,6 +3,7 @@
 
 module Main (main, run) where
 
+import qualified Data.ByteString.Lazy as BS
 import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Data.Map as Map
@@ -96,10 +97,10 @@ findModule l s = do
 loadModule :: Set ModuleName -> [FilePath] -> ModuleName -> IO [(ModuleName, Ast.Prog)]
 loadModule s l m = do
   (f,c) <- case m of
-    "" -> (,) "<stdin>" =.< getContents
+    "" -> (,) "<stdin>" =.< BS.getContents
     m -> runMaybeT (findModule l m) >>= maybe 
       (fatalIO $ msg ("module" <+> quoted m <+> "not found"))
-      (\f -> (,) (dropExtension f) =.< readFile f)
+      (\f -> (,) (dropExtension f) =.< BS.readFile f)
   let (d,f') = splitFileName f
       l' = l `union` [d]
       s' = Set.insert f' s

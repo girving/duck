@@ -9,8 +9,12 @@ module Lex
   ( lexer
   ) where
 
-import qualified Data.Char as Char
 import Control.Monad.State.Class
+import qualified Data.ByteString.Internal as B
+import qualified Data.ByteString.Lazy as BS
+import qualified Data.ByteString.Lazy.Char8 as BSC
+import qualified Data.Char as Char
+import Data.Word (Word8)
 import Numeric
 
 import Util
@@ -96,7 +100,7 @@ readsChar :: ReadS Char
 readsChar ('\\':'0':s) = map (first Char.chr) $ readOct s
 readsChar ('\\':'o':s) = map (first Char.chr) $ readOct s
 readsChar ('\\':'x':s) = map (first Char.chr) $ readHex s
-readsChar ('\\':'^':a:s) = [(Char.chr (Char.ord a - Char.ord '@'),s)]
+readsChar ('\\':'^':a:s) = [(Char.chr (ord a - ord '@'),s)]
 readsChar ('\\':'a':s) = [('\a',s)]
 readsChar ('\\':'b':s) = [('\b',s)]
 readsChar ('\\':'t':s) = [('\t',s)]
@@ -117,21 +121,20 @@ str ~('"':s) = TokString $ rstr s where
   rstr ['"'] = []
   rstr s | ~[(c,s')] <- readsChar s = c : rstr s'
 
--- Each action has type :: String -> Token
-
 type AlexInput = ParseState
 
 alexInputPrevChar :: AlexInput -> Char
 alexInputPrevChar = ps_prev
 
-alexGetChar :: AlexInput -> Maybe (Char,AlexInput)
-alexGetChar s = case ps_rest s of
-  [] -> Nothing
-  c:r -> Just (c, s
-    { ps_loc = incrLoc (ps_loc s) c
-    , ps_rest = r
+alexGetByte :: AlexInput -> Maybe (Word8,AlexInput)
+alexGetByte p = do
+  (b, r) <- BS.uncons (ps_input p)
+  let c = B.w2c b
+  return (b, p
+    { ps_loc = incrLoc (ps_loc p) c
     , ps_prev = c
-    } )
+    , ps_input = r
+    })
 
 lexer :: P (Loc Token)
 lexer = do
@@ -145,6 +148,8 @@ lexer = do
       lexer
     AlexToken s' len action -> do
       put s'
-      return $ L (rangeLoc (ps_loc s) (ps_loc s')) $ action (take len (ps_rest s))
+      return $ L (rangeLoc (ps_loc s) (ps_loc s')) $ action $ 
+        -- XXX: breaks non-latin1 encoding
+        BSC.unpack $ BS.take (fromIntegral len) $ ps_input s
 
 }

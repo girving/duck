@@ -70,7 +70,7 @@ layout lex = do
     inject :: (Maybe Token -> Token) -> Loc Token -> P (Loc Token)
     inject f t = modify (\s -> s
       { ps_loc = ps_loc state0
-      , ps_rest = ps_rest state0
+      , ps_input = ps_input state0
       , ps_prev = ps_prev state0
       , ps_last = tok
       }) >. tok

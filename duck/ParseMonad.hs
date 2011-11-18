@@ -21,6 +21,7 @@ module ParseMonad
 
 import Prelude hiding (catch)
 import Control.Monad.State
+import qualified Data.ByteString.Lazy as BS
 
 import Pretty
 import SrcLoc
@@ -43,8 +44,8 @@ data Context = Context
 
 data ParseState = ParseState 
   { ps_loc    :: !SrcLoc   -- ^ position at current input location
-  , ps_rest   :: String    -- ^ the current input
   , ps_prev   :: !Char     -- ^ the character before the input
+  , ps_input  :: !BS.ByteString -- ^ the current input
   , ps_layout :: [Context] -- ^ stack of layout contexts
   , ps_last   :: Loc Token -- ^ the last token processed by layout (in order to detect new lines)
   }
@@ -57,12 +58,12 @@ parseError l = fatal . stageMsg StageParse l
 psError :: Pretty s => ParseState -> s -> a
 psError s = parseError (ps_loc s)
 
-runP :: P a -> String -> String -> a
+runP :: P a -> String -> BS.ByteString -> a
 runP parse file input = r where
   (r,_) = runState parse ParseState
     { ps_loc = loc
-    , ps_rest = input
     , ps_prev = '\n'
+    , ps_input = input
     , ps_layout = []
     , ps_last = L loc TokSOF
     } where loc = startLoc file
