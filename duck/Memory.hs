@@ -19,11 +19,12 @@ module Memory
   , wordSize
   ) where
 
-import Util
+import Data.Functor
 import Foreign.Ptr
 import Foreign.Storable
 import System.IO.Unsafe
 import Data.Char
+import Util
 
 -- | Opaque type representing any Duck value (either boxed or unboxed)
 type Value = Ptr WordPtr
@@ -177,7 +178,7 @@ newRef v = do
   return $ Ref $ castPtr p
 
 readRef :: Convert t => Ref t -> IO t
-readRef (Ref m) = unsafeUnvalue . castPtr =.< peek (castPtr m)
+readRef (Ref m) = unsafeUnvalue . castPtr <$> peek (castPtr m)
 
 writeRef :: Convert t => Ref t -> t -> IO ()
 writeRef (Ref m) v = poke (castPtr m) (value v)
@@ -207,4 +208,4 @@ instance ToVol Ref where
   toVol (Ref m) = Vol $ castPtr m
 
 readVol :: Convert t => Vol t -> IO t
-readVol (Vol v) = unsafeUnvalue . castPtr =.< peek (castPtr v)
+readVol (Vol v) = unsafeUnvalue . castPtr <$> peek (castPtr v)

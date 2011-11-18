@@ -15,6 +15,7 @@ module InferMonad
   , typeMismatch
   ) where
 
+import Data.Functor
 import Data.Map (Map)
 import Control.Monad.Error
 import Control.Monad.Reader
@@ -42,20 +43,20 @@ instance Error TypeError where
   strMsg = StackMsg [] . msg
 
 newtype Infer a = Infer { unInfer :: ReaderT (Prog, InferStack) (StateT FunctionInfo (ErrorT TypeError IO)) a }
-  deriving (Monad, MonadIO, MonadReader (Prog, InferStack), MonadState FunctionInfo, MonadError TypeError, MonadInterrupt)
+  deriving (Functor, Monad, MonadIO, MonadReader (Prog, InferStack), MonadState FunctionInfo, MonadError TypeError, MonadInterrupt)
 _unused = Infer
 
 -- |Indicate a fatal error in inference (one that cannot be resolved by a different overload path)
 inferError :: Pretty s => SrcLoc -> s -> Infer a
 inferError l m = do
-  s <- snd =.< ask
+  s <- asks snd
   fatalIO $ msg $ StackMsg (reverse s) $ locMsg l m
 
 withFrame :: Var -> [TypeVal] -> SrcLoc -> Infer a -> Infer a
 withFrame f args loc e = do
   let frame = CallFrame f args loc
       r = local $ second (frame :)
-  s <- snd =.< ask
+  s <- asks snd
   when (length s > 32) $ r $ inferError loc "stack overflow"
   handleE (\(e :: AsyncException) -> r $ inferError loc (show e)) $ -- catch real errors
     catchError (r e) $ \e ->
@@ -73,14 +74,14 @@ runInferProg f prog = do
 
 -- |'rerunInfer' discards any extra function info computed during the extra inference.
 rerunInfer :: (Prog, InferStack) -> Infer a -> IO a
-rerunInfer ps f = fst =.< runInfer ps f
+rerunInfer ps f = fst <$> runInfer ps f
 
 instance ProgMonad Infer where
-  getProg = fst =.< ask
+  getProg = asks fst
 
 debugInfer :: Pretty m => m -> Infer ()
 debugInfer m = do
-  s <- snd =.< ask
+  s <- asks snd
   liftIO $ putStrLn $ pout $ punctuate ':' (map callFunction (reverse s)) <:> m
 
 -- |Indicate a potentially recoverable substitution failure/type error that could be caught during overload resolution

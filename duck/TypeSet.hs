@@ -34,6 +34,7 @@ module TypeSet
   , union
   ) where
 
+import Data.Functor
 import Data.Maybe
 import qualified Data.List as List
 import Data.Map (Map)
@@ -191,7 +192,7 @@ reduceFuns (f:fl) = do
 intersect :: TypeMonad m => TypeVal -> TypeVal -> m (Maybe TypeVal)
 intersect (TyCons c tl) (TyCons c' tl') = do
   (c,tl,tl') <- unifyCons c tl c' tl'
-  fmap (TyCons c) =.< sequence =.< zipWithVariances arg c tl tl' where
+  fmap (TyCons c) <$> sequence =.< zipWithVariances arg c tl tl' where
   arg Covariant t t' = intersect t t'
   arg Invariant t t' = equal t t' >. Just t
 intersect (TyFun f) (TyFun f') = return (
@@ -285,7 +286,7 @@ subsetFix prev leftovers = do
   contravariantVars _ = []
 
 constrain :: TypeMonad m => Var -> ConstraintOp -> TypeVal -> Env m
-constrain v op t = success << c op =<< Map.lookup v =.< get where
+constrain v op t = success << c op =<< gets (Map.lookup v) where
   c op Nothing = set op t
   c Superset (Just (Superset,t')) = set Superset =<< lift (union t t')
   c Equal    (Just (Superset,t')) = lift (subset'' t' t) >> set Equal t

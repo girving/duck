@@ -12,6 +12,7 @@ module Ir
 
 import Data.List
 import Data.Function
+import Data.Functor
 import Data.Maybe
 import qualified Data.Set as Set
 import qualified Data.Map as Map
@@ -411,7 +412,7 @@ instance Pretty Exp where
   pretty' (Apply (Apply (Var (V ":")) h) t) | Just t' <- extract t =
     pretty' $ brackets $ 3 #> punctuate ',' (h : t') where
     extract (Var (V "[]")) = Just []
-    extract (Apply (Apply (Var (V ":")) h) t) = (h :) =.< extract t
+    extract (Apply (Apply (Var (V ":")) h) t) = (h :) <$> extract t
     extract _ = Nothing
   pretty' (Apply e1 e2) = uncurry prettyop (apply e1 [e2])
     where apply (Apply e a) al = apply e (a:al) 

@@ -9,6 +9,7 @@ module Interp
 
 import Prelude hiding (lookup)
 
+import Data.Functor
 import Control.Monad hiding (guard)
 import Data.List hiding (lookup)
 import qualified Data.Map as Map
@@ -105,7 +106,7 @@ expr static global tenv env loc = exp where
           cases [] = ", no cases"
           cases pl = ", cases = "++show pl -- TODO: use pretty printing
         Just e' -> cast ct $ expr static global tenv env loc e'
-  exp (ExpCons _ c el) = valCons c =.< mapM exp el
+  exp (ExpCons _ c el) = valCons c <$> mapM exp el
   exp (ExpPrim op el) = Base.prim loc op =<< mapM exp el
   exp se@(ExpSpec e _) = do
     t <- inferExpr static tenv loc se

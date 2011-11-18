@@ -33,6 +33,7 @@ import qualified Control.Monad.Reader as Reader
 import Control.Monad.State
 import Data.Either
 import Data.Function
+import Data.Functor
 import Data.List hiding (lookup, union)
 import qualified Data.List as List
 import Data.Map (Map)
@@ -79,14 +80,14 @@ lookupDatatype loc t = typeError loc ("expected datatype, got" <+> quoted t)
 lookupFunction :: Var -> Infer Overloads
 lookupFunction f =
   maybe (inferError noLoc ("unbound function" <+> quoted f))
-    return . Map.lookup f =<< get 
+    return =<< gets (Map.lookup f)
 
 lookupCons :: [(Loc CVar, [t])] -> CVar -> Maybe [t]
 lookupCons cases c = fmap snd (List.find ((c ==) . unLoc . fst) cases)
 
 withGlobals :: GlobalTypes -> Infer [(Var,GlobalType)] -> Infer GlobalTypes
 withGlobals g f =
-  foldr (uncurry insertVar) g =.< 
+  foldr (uncurry insertVar) g <$> 
     Reader.local (first (\p -> p{ progGlobalTypes = g })) f
 
 -- |Process a list of definitions into the global environment.
@@ -132,7 +133,7 @@ expr static env loc e = checkStatic =<< exp e where
     t1 <- exp e1
     st <- staticFunction t1
     t2 <- expr (static || st) env loc e2
-    snd =.< apply static loc t1 t2
+    snd <$> apply static loc t1 t2
   exp (ExpLet st v e body) = do
     t <- expr (static || st) env loc e
     expr static (Map.insert v t env) loc body
@@ -250,7 +251,7 @@ apply static loc (TyFun fl) t2 = do
   (t:tt, l) <- mapAndUnzipM fun fl
   unless (all (t ==) tt) $
     inferError loc ("conflicting transforms applying" <+> quoted fl <+> "to" <+> quoted t2)
-  (,) t =.< unifyList loc l
+  (,) t <$> unifyList loc l
   where
   fun f@(FunArrow t a r) = do
     typeReError loc ("cannot apply" <+> quoted f <+> "to" <+> quoted t2) $
@@ -278,7 +279,7 @@ apply _ loc t1 t2 = liftM ((,) NoTrans) $
   app t f r = maybe r f =<< t t1
   appty ~(TyCons c tl)
     | length tl < length (dataVariances c) =
-      typeType =.< if c == datatypeType then return t2 else do
+      typeType <$> if c == datatypeType then return t2 else do
         r <- isTypeType t2
         case r of
           Just t -> return $ TyCons c (tl++[t])
@@ -335,7 +336,7 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
       (lookup args' tl . Ptrie.get) . Ptrie.lookup args' =<< lookupFunction f
 
   resolve args tl ol = do
-    let prune o = tryError $ (,) o =.< subsetList args (overTypes o)
+    let prune o = tryError $ (,) o <$> subsetList args (overTypes o)
     pruned <- mapM prune ol
     overs <- case partitionEithers pruned of
       (errs,[]) -> typeError noLoc $
@@ -367,7 +368,7 @@ overload f args = lookup [] args . Ptrie.get =<< lookupFunction f where
 
 -- |Resolve an overloaded application.  If all overloads are still partially applied, the result will have @overBody = Nothing@ and @overRet = typeClosure@.
 resolve :: Var -> [TypeVal] -> Infer (Overload TypeVal)
-resolve f args = either (\ ~(o:_) -> partialOver f (map fst $ overArgs o) args) id =.< 
+resolve f args = either (\ ~(o:_) -> partialOver f (map fst $ overArgs o) args) id <$> 
   overload f args
 
 -- |Type infer a function call and cache the results
@@ -378,7 +379,7 @@ resolve f args = either (\ ~(o:_) -> partialOver f (map fst $ overArgs o) args) 
 -- they can be easily rolled back in SFINAE cases /without/ rolling back complete computations that occurred in the process.
 cache :: Var -> [TypeVal] -> Overload TypePat -> TypeEnv -> Infer (Overload TypeVal)
 cache f al (Over oloc atypes rt vl ~(Just e)) tenv =
-  or =.< fix TyVoid -- recursive function calls are initially assumed to be void
+  or <$> fix TyVoid -- recursive function calls are initially assumed to be void
   where
   tf arg (r, a) = (r, reStatic arg $ substVoid tenv a)
   tl = zipWith tf al atypes
@@ -405,6 +406,6 @@ checkLeftovers loc m = either
 staticFunction :: TypeVal -> Infer Bool
 staticFunction (TyFun fl) = maybe (inferError noLoc "ambiguous staticness") return . unique . concat =<< mapM sf fl where
   sf (FunArrow tr _ _) = return [Static == tr]
-  sf (FunClosure f al) = either (map st) (return . st) =.< overload f al where
+  sf (FunClosure f al) = either (map st) (return . st) <$> overload f al where
     st o = Static == fst (overArgs o !! length al)
 staticFunction _ = return False

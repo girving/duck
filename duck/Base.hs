@@ -15,6 +15,7 @@ module Base
 import Control.Monad
 import qualified Control.Exception as Exn
 import qualified Data.Char as Char
+import Data.Functor
 import Data.List
 import qualified Data.Map as Map
 import Data.Typeable (Typeable)
@@ -67,7 +68,7 @@ primOps = Map.fromList $ map (\o -> (primPrim o, o))
   , PrimOp IntCharChr "chr" [typeInt] typeChar $ \ ~[c] -> return $ value (Char.chr $ unsafeUnvalue c)
   , PrimOp Exit "exit" [typeInt] typeVoid $ \ ~[i] -> liftIO $ exit (unsafeUnvalue i :: Int)
   , PrimOp Throw "throw" [typeUnit] typeVoid $ \ _ -> Exn.throw Exception
-  , PrimOp IOPutChar "put" [typeChar] typeUnit $ \ ~[c] -> valEmpty .< liftIO (putChar (unsafeUnvalue c :: Char))
+  , PrimOp IOPutChar "put" [typeChar] typeUnit $ \ ~[c] -> valEmpty <$ liftIO (putChar (unsafeUnvalue c :: Char))
   ]
 
 invalidPrim :: Show t => Prim -> [t] -> Doc'

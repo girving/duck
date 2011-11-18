@@ -38,6 +38,7 @@ module Util
 import System.IO
 import System.Exit
 import Data.Function
+import Data.Functor
 import Data.List
 import Control.Exception
 import Control.Monad
@@ -137,8 +138,8 @@ infixr 1 <<, .<, =.<, .=<
 (>.) e r = e >> return r
 (.<) r e = e >> return r -- <$
 (<<) r e = e >> r
-(>.=) e r = e >>= return . r
-(=.<) r e = e >>= return . r -- fmap, <$>, liftM
+(>.=) = flip liftM
+(=.<) = liftM -- <$>
 (>=.) e r = e >=> return . r
 (.=<) r e = e >=> return . r
 

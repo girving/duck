@@ -15,6 +15,7 @@ import Prims hiding (typeArrow)
 import SrcLoc hiding (loc)
 import ParseMonad
 import ParseOps
+import Data.Functor
 import qualified Data.Map as Map
 import Data.Monoid (mappend, mconcat)
 import Pretty
@@ -284,10 +285,10 @@ ops (OpAtom e) = e
 ops o = Ops o
 
 pattern :: Loc Exp -> P (Loc Pattern)
-pattern (L l e) = L l =.< patternExp l e
+pattern (L l e) = L l <$> patternExp l e
 
 patterns :: Loc [Exp] -> P (Loc [Pattern])
-patterns (L l el) = L l =.< mapM (patternExp l) el
+patterns (L l el) = L l <$> mapM (patternExp l) el
 
 arrows :: Loc (Stack Exp Exp) -> P (Loc Exp)
 arrows (L l stack) = case splitStack stack of
@@ -295,8 +296,8 @@ arrows (L l stack) = case splitStack stack of
   (el,e) -> patterns (L l el) >.= fmap (\pl -> Lambda pl e)
 
 patternExp :: SrcLoc -> Exp -> P Pattern
-patternExp l (Apply e el)  | Just (L _ c) <- unVar l e, isCons c = PatCons c =.< mapM (patternExp l) el
-patternExp l (Apply f [e]) | Just (L _ t) <- unVar l f = PatTrans t =.< patternExp l e
+patternExp l (Apply e el)  | Just (L _ c) <- unVar l e, isCons c = PatCons c <$> mapM (patternExp l) el
+patternExp l (Apply f [e]) | Just (L _ t) <- unVar l f = PatTrans t <$> patternExp l e
 patternExp l (Apply e _) = parseError l $ "only constructors and transforms can be applied here, not" <+> quoted e
 patternExp l (Var c) | isCons c = return $ PatCons c []
 patternExp l (Var v) = return $ PatVar v
@@ -304,16 +305,16 @@ patternExp l Any = return PatAny
 patternExp l (Int i) = return $ PatInt i
 patternExp l (Char c) = return $ PatChar c
 patternExp l (String s) = return $ PatString s
-patternExp l (List el) = PatList =.< mapM (patternExp l) el
-patternExp l (Ops ops) = PatOps =.< patternOps l ops
+patternExp l (List el) = PatList <$> mapM (patternExp l) el
+patternExp l (Ops ops) = PatOps <$> patternOps l ops
 patternExp l (Equals v e) = patternExp l e >.= PatAs v
 patternExp l (Spec e t) = patternExp l e >.= \p -> PatSpec p t
-patternExp l (Lambda pl e) = PatLambda pl =.< patternExp l e
-patternExp _ (ExpLoc l e) = PatLoc l =.< patternExp l e
+patternExp l (Lambda pl e) = PatLambda pl <$> patternExp l e
+patternExp _ (ExpLoc l e) = PatLoc l <$> patternExp l e
 patternExp l e = parseError l $ expTypeDesc e <+> "expression not allowed here"
 
 patternOps :: SrcLoc -> Ops Exp -> P (Ops Pattern)
-patternOps l (OpAtom e) = OpAtom =.< patternExp l e
+patternOps l (OpAtom e) = OpAtom <$> patternExp l e
 patternOps l (OpBin v o1 o2) | isCons v = do
   p1 <- patternOps l o1
   p2 <- patternOps l o2
@@ -322,14 +323,14 @@ patternOps l (OpBin v _ _) = parseError l $ "only constructor operators are allo
 patternOps l (OpUn v _) = parseError l $ "unary operator" <+> quoted v <+> "not allowed here"
 
 ty :: Loc Exp -> P (Loc TypePat)
-ty (L l e) = L l =.< typeExp l e
+ty (L l e) = L l <$> typeExp l e
 
 tys :: Loc [Exp] -> P (Loc [TypePat])
-tys (L l el) = L l =.< mapM (typeExp l) el
+tys (L l el) = L l <$> mapM (typeExp l) el
 
 typeExp :: SrcLoc -> Exp -> P TypePat
-typeExp l (Apply e el)  | Just (L _ c) <- unVar l e, isCons c = tscons c =.< mapM (typeExp l) el
-typeExp l (Apply f [e]) | Just (L _ t) <- unVar l f = TsTrans t =.< typeExp l e
+typeExp l (Apply e el)  | Just (L _ c) <- unVar l e, isCons c = tscons c <$> mapM (typeExp l) el
+typeExp l (Apply f [e]) | Just (L _ t) <- unVar l f = TsTrans t <$> typeExp l e
 typeExp l (Apply e _) = parseError l ("only constructors and transforms can be applied in types, not" <+> quoted e)
 typeExp l (Var c) | isCons c = return $ tscons c []
 typeExp l (Var v) = return $ TsVar v
@@ -343,13 +344,13 @@ typeExp l Any = parseError l ("'_' isn't implemented for types yet")
 typeExp l e = parseError l $ expTypeDesc e <+> "expression not allowed in type"
 
 typePat :: SrcLoc -> Pattern -> P TypePat
-typePat l (PatCons c pl) = tscons c =.< mapM (typePat l) pl
+typePat l (PatCons c pl) = tscons c <$> mapM (typePat l) pl
 typePat l (PatVar v) = return $ TsVar v
 typePat l (PatLambda pl p) = do
   tl <- mapM (typePat l) pl
   t <- typePat l p 
   return $ foldr typeArrow t tl
-typePat l (PatTrans t p) = TsTrans t =.< typePat l p
+typePat l (PatTrans t p) = TsTrans t <$> typePat l p
 typePat _ (PatLoc l p) = typePat l p
 typePat l PatAny = parseError l ("'_' isn't implemented for types yet")
 typePat l p = parseError l $ patTypeDesc p <+> "expression not allowed in type"
@@ -365,7 +366,7 @@ lefthandside (L l (Ops (OpBin v o1 o2))) | not (isCons v) = do
   p1 <- patternOps l o1
   p2 <- patternOps l o2
   return $ Right (L l v, map PatOps [p1,p2])
-lefthandside (L l p) = Left . patLoc . L l =.< patternExp l p
+lefthandside (L l p) = Left . patLoc . L l <$> patternExp l p
 
 unVar :: SrcLoc -> Exp -> Maybe (Loc Var)
 unVar l (Var v) = Just (L l v)

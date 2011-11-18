@@ -36,26 +36,26 @@ import Lir (Prog, ProgMonad)
 type ExecStack = CallStack Any
 
 newtype Exec a = Exec { unExec :: ReaderT (Prog, ExecStack) IO a }
-  deriving (Monad, MonadIO, MonadReader (Prog, ExecStack), MonadInterrupt)
+  deriving (Functor, Monad, MonadIO, MonadReader (Prog, ExecStack), MonadInterrupt)
 
 -- Most runtime errors should never happen, since they should be caught by type
 -- inference and the like.  Therefore, we use exit status 3 so that they can be
 -- distinguished from the better kinds of errors.
 execError :: Pretty s => SrcLoc -> s -> Exec a
 execError l m = do
-  s <- snd =.< ask
+  s <- asks snd
   fatalIO $ stageMsg StageExec noLoc $ StackMsg (reverse s) $ locMsg l m
 
 withFrame :: Var -> [TypeVal] -> [Value] -> SrcLoc -> Exec a -> Exec a
 withFrame f types args loc e = do
   let r = local $ second (CallFrame f (zipWith Any types args) loc :)
-  s <- snd =.< ask
+  s <- asks snd
   when (length s > 64) $ r $ execError loc "stack overflow"
   handleE (\(e :: AsyncException) -> r $ execError loc (show e)) $
     r e
 
 instance ProgMonad Exec where
-  getProg = fst =.< ask
+  getProg = asks fst
 
 runExec :: Prog -> Exec a -> IO a
 runExec p e = runReaderT (unExec e) (p,[])

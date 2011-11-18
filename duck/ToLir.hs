@@ -10,6 +10,7 @@ module ToLir
   ) where
 
 import Prelude hiding (mapM)
+import Data.Functor
 import Data.Maybe
 import Data.List
 import qualified Data.Set as Set
@@ -89,13 +90,13 @@ datatypes baseDenv decls = do
       changed <- f
       when changed $ fixpoint f
     grow :: IO Bool
-    grow = or =.< mapM growCons (Map.elems datatypes)
+    grow = or <$> mapM growCons (Map.elems datatypes)
     growCons datatype = do
       PreData c l args vars info <- readRef datatype
       case info of
         PreDataPrim _ -> error ("unexpected primitive datatype "++show (quoted c)++" seen in ToLir.variances")
         PreDataAlgebraic conses -> do
-          inv <- Set.fromList . concat =.< mapM invVars (snd =<< conses)
+          inv <- Set.fromList . concat <$> mapM invVars (snd =<< conses)
           let vars' = map (\v -> if Set.member v inv then Invariant else Covariant) args
           if vars /= vars' then do
             writeRef datatype (PreData c l args vars' $ PreDataAlgebraic conses) 
@@ -107,12 +108,12 @@ datatypes baseDenv decls = do
       invVars (TpVar _) = return []
       invVars (TpCons c tl) = do
         PreData _ _ _ vars _ <- readVol c
-        concat =.< zipWithM f vars tl
+        concat <$> zipWithM f vars tl
         where
         f Covariant = invVars
         f Invariant = return . freePreVars
-      invVars (TpFun fl) = concat =.< mapM fun fl where
-        fun (FunArrow _ s t) = (++) (freePreVars s) =.< invVars t
+      invVars (TpFun fl) = concat <$> mapM fun fl where
+        fun (FunArrow _ s t) = (++) (freePreVars s) <$> invVars t
         fun (FunClosure _ tl) = return $ concatMap freePreVars tl
       invVars TpVoid = return []
 
@@ -237,7 +238,7 @@ noLocExpr = (noLoc,Nothing)
 expr :: Locals -> (SrcLoc, Maybe Var) -> Ir.Exp -> State (Prog, Globals) Exp
 expr _ _ (Ir.Int i) = return $ expVal typeInt $ value i
 expr _ _ (Ir.Char c) = return $ expVal typeChar $ value c
-expr locals l (Ir.Var v) = ExpAtom =.< var locals l v
+expr locals l (Ir.Var v) = ExpAtom <$> var locals l v
 expr locals l (Ir.Apply e1 e2) = do
   e1 <- expr locals l e1
   e2 <- expr locals l e2
@@ -259,7 +260,7 @@ expr locals l@(loc,_) (Ir.Spec e t) = do
   e' <- expr locals l e
   denv <- get >.= progDatatypes . fst
   return $ ExpSpec e' (toType loc denv t)
-expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l =.< expr locals (l,v) e
+expr locals (_,v) (Ir.ExpLoc l e) = ExpLoc l <$> expr locals (l,v) e
 
 var :: Locals -> (SrcLoc, Maybe Var) -> Var -> State (Prog, Globals) Atom
 var locals _ v | Map.member v locals = return $ AtomLocal v

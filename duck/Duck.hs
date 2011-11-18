@@ -4,6 +4,7 @@
 module Main (main, run) where
 
 import qualified Data.ByteString.Lazy as BS
+import Data.Functor
 import qualified Data.Set as Set
 import Data.Set (Set)
 import qualified Data.Map as Map
@@ -97,10 +98,10 @@ findModule l s = do
 loadModule :: Set ModuleName -> [FilePath] -> ModuleName -> IO [(ModuleName, Ast.Prog)]
 loadModule s l m = do
   (f,c) <- case m of
-    "" -> (,) "<stdin>" =.< BS.getContents
+    "" -> (,) "<stdin>" <$> BS.getContents
     m -> runMaybeT (findModule l m) >>= maybe 
       (fatalIO $ msg ("module" <+> quoted m <+> "not found"))
-      (\f -> (,) (dropExtension f) =.< BS.readFile f)
+      (\f -> (,) (dropExtension f) <$> BS.readFile f)
   let (d,f') = splitFileName f
       l' = l `union` [d]
       s' = Set.insert f' s
@@ -112,7 +113,7 @@ loadModule s l m = do
   return $ concat asts ++ [(f',ast)]
 
 main = do
-  (options, args, errors) <- getOpt Permute options =.< getArgs
+  (options, args, errors) <- getOpt Permute options <$> getArgs
   when (not (null errors)) $
     die 2 $ concat errors ++ usage
   let opts = foldl' (flip ($)) defaultOptions options
