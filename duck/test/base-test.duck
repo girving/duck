@@ -3,8 +3,8 @@ import base
 assert $ 1 == (id . flip const []) 1
 
 assert \ True > False || not False
-assert \ and [1,2,3]
-assert \ or [[],[()]]
+assert \ and [1,2,3] == 3
+assert \ or [[],[()]] == [()]
 
 assert \ not $ maybe True bool $ map tail $ Just [()]
 assert \ not $ bool $ join (Just Nothing)
@@ -15,7 +15,7 @@ assert \ Just (Just False) > Just Nothing
 assert \ either not id (Left False)
 assert \ Left (Right 2) > Left (Left 3)
 
-assert \ tail $ head [[1,2]]
+assert \ (tail $ head [[1,2]]) == [2]
 assert \ [[]] == join [[],[[]]]
 assert \ [3,1] < map succ [2,1]
 assert \ [1,2,3] == fold (++) [1] [[2],[],[3]]

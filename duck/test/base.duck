@@ -70,6 +70,11 @@ bool x = x
   True -> x
   False -> y
 
+(sif) :: static a -> delay b -> delay c -> d
+(sif) c x y = force \ scase bool c of
+  True -> x
+  False -> y
+
 not :: a -> Bool
 not x = if x then False else True
 
@@ -229,6 +234,12 @@ fst (a,b) = a
 snd :: a,b -> b
 snd (a,b) = b
 
+fst' :: (a -> a') -> a,b -> a',b
+fst' f (a,b) = (f a,b)
+
+snd' :: (b -> b') -> a,b -> a,b'
+snd' f (a,b) = (a,f b)
+
 (==) :: a,b -> a',b' -> Bool
 (a,b) == (a',b') = a == a' && b == b'
 
@@ -353,6 +364,5 @@ exit :: Int -> IO Void
 put
 -}
 
-assert x = case bool x of
-  True -> ()
-  False -> throw ()
+assert True = ()
+assert False = throw ()
