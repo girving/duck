@@ -1,0 +1,10 @@
+import base
+
+msg = "ab%c\n"
+
+fmt :: static (List Char) -> (List Char -> a) -> b
+fmt [] d1 = d1 []
+fmt ('%':s1) d2 = c1 -> fmt s1 (ds2 -> d2 (c1 : ds2))
+fmt (c2:s2) d3 = fmt s2 (ds3 -> d3 (c2 : ds3))
+
+main = fmt msg (iter put) 'x'

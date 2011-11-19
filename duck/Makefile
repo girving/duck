@@ -4,7 +4,7 @@ CONFIG_DONE=$(TOPDIR)/dist/setup-config
 CONFIGFLAGS=-O --enable-executable-profiling --enable-executable-dynamic --ghc-options=-Werror
 DUCK=$(TOPDIR)/dist/build/duck/duck
 
-TESTS = basic layout curry delay match io tyfun success types base-test expseq fac
+TESTS = basic layout curry delay match io tyfun success types base-test expseq fac static
 TESTS_C = apply base ops null
 TESTS_FAIL := $(patsubst test/fail/%.duck, fail/%, $(wildcard test/fail/*.duck))
 TESTS_FAIL_R := $(patsubst test/fail-r/%.duck, fail-r/%, $(wildcard test/fail-r/*.duck))
