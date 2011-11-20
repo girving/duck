@@ -10,6 +10,7 @@ module Ir
   , prog
   ) where
 
+import Control.Monad
 import qualified Data.Foldable as Fold
 import Data.Function
 import Data.Functor
@@ -28,7 +29,7 @@ import Stage
 import ParseOps
 import IrType
 import qualified Ast
-import Prims hiding (typeInt, typeChar)
+import Prims hiding (typeInt, typeChar, typeArrow)
 
 -- |Top-level declaration
 data Decl
@@ -212,9 +213,27 @@ prog pprec name p = (precs, (name, decls [] p)) where
     ap' = destaticPattern ap
     (p,vm) = pattern' Map.empty l (fromMaybe ap ap')
   decls _ (L l (Ast.ExpD e) : rest) = ExpD (expr globals l e) : decls [] rest
-  decls _ (L _ (Ast.Data t args cons) : rest) = Data t args cons : decls [] rest
+  decls _ (L _ (Ast.Data t args cons) : rest) = dd : fd ++ decls [] rest where
+    dd = Data t args $ map (second $ map Ast.fieldType) cons
+    fd = fields t args cons
   decls _ (L _ (Ast.Infix _ _) : rest) = decls [] rest
   decls _ (L _ (Ast.Import _) : rest) = decls [] rest
+
+  fields :: Loc CVar -> [Var] -> [Ast.DataCon] -> [Decl]
+  fields (L l t) ta = ff <=< groupPairs . fm where
+    tt = TsCons t $ map TsVar ta
+    rt = TsVar $ snd $ fresh $ Set.fromList ta
+    cv:fv:_ = standardVars
+    ff (f,cc) = 
+      [ Over (L l f) (typeArrow tt rt) $ Lambda cv $ Case False cv cc Nothing -- TODO: error message
+      -- TODO: mutator overload
+      ]
+    fm cl = do
+      (L _ c,fl) <- cl
+      Ast.DataField{ Ast.fieldName = Just (L fnl fn) } <- fl
+      let v Ast.DataField{ Ast.fieldName = Just (L _ fn') } | fn == fn' = fv
+          v _ = ignored
+      return (fn, (c, map v fl, ExpLoc fnl (Var fv)))
 
   pattern' :: Map Var SrcLoc -> SrcLoc -> Ast.Pattern -> (Pattern, Map Var SrcLoc)
   pattern' s _ Ast.PatAny = (anyPat, s)
@@ -365,7 +384,7 @@ prog pprec name p = (precs, (name, decls [] p)) where
       where
         alts = map (\(CaseMatch ~(p@(Pat{ patCons = c }):pl) f e) -> (c,CaseMatch pl (patLets st var p . f) (checknext p e))) group
         -- sort alternatives by toplevel tag (along with arity)
-        alts' = groupPairs $ sortBy (on compare fst) $
+        alts' = groupPairs $
               map (\ ~(Just (c,cp), CaseMatch p pf pe) -> ((c,length cp), CaseMatch (cp++p) pf pe)) alts
         checknext (Pat{ patCheck = Just c }) e = CaseGroup st [Switch [c var] [CaseMatch [consPat (V "True") []] id e]]
         checknext _ e = e
@@ -389,7 +408,7 @@ instance Pretty Decl where
     v <+> "::" <+> t $$
     nestedPunct '=' v e
   pretty' (Data t args cons) =
-    pretty' (Ast.Data t args cons)
+    pretty' $ Ast.Data t args $ map (second $ map $ Ast.DataField Nothing) cons
 
 instance Pretty [Decl] where
   pretty' = vcat

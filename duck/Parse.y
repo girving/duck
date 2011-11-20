@@ -85,15 +85,15 @@ decl :: { [Loc Decl] }
   | infix int asyms { [loc $1 $> $ Infix (int $2,ifix $1) (reverse (unLoc $3))] }
   | data dvar lvars maybeConstructors { [loc $1 $> $ Data $2 (reverse (unLoc $3)) (reverse (unLoc $4))] }
 
-maybeConstructors :: { Loc [(Loc CVar,[TypePat])] }
+maybeConstructors :: { Loc [DataCon] }
   : {--} { loc0 [] }
   | of '{' constructors '}' { loc $1 $> $ $3 }
 
-constructors :: { [(Loc CVar,[TypePat])] }
+constructors :: { [DataCon] }
   : constructor { [$1] }
   | constructors ';'  constructor { $3 : $1 }
 
-constructor :: { (Loc CVar,[TypePat]) }
+constructor :: { DataCon }
   : exp3(atom) {% constructor $1 }
 
 --- Expressions ---
@@ -379,16 +379,21 @@ spec :: Loc Exp -> P (Loc Var)
 spec (L l e) | Just v <- unVar l e = return v
 spec (L l e) = parseError l ("only variables are allowed in top level type specifications, not" <+> quoted e)
 
+fieldExp :: SrcLoc -> Exp -> P DataField
+fieldExp _ (ExpLoc l e) = fieldExp l e
+fieldExp l (Spec e t) | Just f <- unVar l e, not (isCons (unLoc f)) = return $ DataField (Just f) t
+fieldExp l t = DataField Nothing <$> typeExp l t
+
 -- Reparse an expression into a constructor
-constructor :: Loc Exp -> P (Loc CVar,[TypePat])
+constructor :: Loc Exp -> P DataCon
 constructor (L _ (ExpLoc l e)) = constructor (L l e)
 constructor (L l e) | Just v <- unVar l e, isCons (unLoc v) = return (v,[])
 constructor (L l (Apply e el)) | Just v <- unVar l e, isCons (unLoc v) = do
-  tl <- mapM (typeExp l) el
+  tl <- mapM (fieldExp l) el
   return (v,tl)
 constructor (L l (Ops (OpBin v (OpAtom e1) (OpAtom e2)))) | isCons v = do
-  t1 <- typeExp l e1
-  t2 <- typeExp l e2
+  t1 <- fieldExp l e1
+  t2 <- fieldExp l e2
   return (L l v,[t1,t2])
 constructor (L l e) = parseError l ("invalid constructor expression" <+> quoted e <+> "(must be <constructor> <args>... or equivalent)")
 

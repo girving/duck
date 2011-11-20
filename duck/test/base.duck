@@ -234,11 +234,11 @@ fst (a,b) = a
 snd :: a,b -> b
 snd (a,b) = b
 
-fst' :: (a -> a') -> a,b -> a',b
-fst' f (a,b) = (f a,b)
+fst :: (a -> a') -> a,b -> a',b
+fst f (a,b) = (f a,b)
 
-snd' :: (b -> b') -> a,b -> a,b'
-snd' f (a,b) = (a,f b)
+snd :: (b -> b') -> a,b -> a,b'
+snd f (a,b) = (a,f b)
 
 (==) :: a,b -> a',b' -> Bool
 (a,b) == (a',b') = a == a' && b == b'

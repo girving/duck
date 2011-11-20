@@ -6,6 +6,7 @@
 module Ast
   ( Prog
   , Decl(..)
+  , DataCon, DataField(..)
   , Exp(..)
   , Stmt(..)
   , Pattern(..)
@@ -34,10 +35,18 @@ data Decl
   | DefD !(Loc Var) [Pattern] Exp       -- ^ Function definition with arguments: @VAR PATs = EXP@
   | ExpD Exp                            -- ^ Top level expression: @EXP@
   | LetD !Pattern Exp                   -- ^ Global definition without arguments: @PAT = EXP@
-  | Data !(Loc CVar) [Var] [(Loc CVar,[TypePat])] -- ^ Datatype declaration: @data CVAR VARs = { CVAR TYPEs ; ... }@
+  | Data !(Loc CVar) [Var] [DataCon]    -- ^ Datatype declaration: @data CVAR VARs = { CVAR TYPEs ; ... }@
   | Infix !PrecFix [Var]                -- ^ Fixity declaration: @infix[lr] PREC VARs@
   | Import !Var                         -- ^ Import directive: @import VAR@
   deriving Show
+
+-- |One constructor in a data definition
+type DataCon = (Loc CVar, [DataField])
+-- |One field in a data constructor
+data DataField = DataField 
+  { fieldName :: Maybe (Loc Var)
+  , fieldType :: TypePat
+  } deriving Show
 
 -- |Expression.
 -- Patterns and types are also parsed into these before being converted to 'Pattern' or 'TypePat' in "Parse"
@@ -161,6 +170,10 @@ instance Pretty Decl where
 instance Pretty Prog where
   pretty' = vcat
 
+instance Pretty DataField where
+  pretty' (DataField Nothing t) = pretty' t
+  pretty' (DataField (Just n) t) = 2 #> n <+> "::" <+> t
+
 instance Pretty Exp where
   pretty' (Spec e t) = 2 #> pguard 2 e <+> "::" <+> t
   pretty' (Let s p e body) = 1 #>
@@ -168,7 +181,7 @@ instance Pretty Exp where
   pretty' (Def f args e body) = 1 #>
     nestedPunct '=' ("let" <+> prettyop f args)
       (pretty e <+> "in" $$ pretty body)
-  pretty' (Case s cases) = 1 #> pretty' (s,cases)
+  pretty' (Case s cases) = 1 #> pretty' (CaseGroup s cases)
   pretty' (If s c e1 e2) = 1 #>
     sStatic s "if" <+> pretty c <+> "then" <+> pretty e1 <+> "else" <+> pretty e2
   pretty' (Lambda pl e) = 1 #>
@@ -185,15 +198,12 @@ instance Pretty Exp where
   pretty' (Seq q) = nested "do" (pretty $ vcat q) -- XXX not valid syntax (yet)
   pretty' (ExpLoc _ e) = pretty' e
 
-instance Pretty (Bool, [Switch]) where
-  pretty' (s,ecl) = nested (sStatic s "case") (vcat $ map (uncurry (<+>)) ecl)
-
 instance Pretty Case where
   pretty' (CaseMatch pcl) = nested "of" (vcat (map (uncurry (<+>)) pcl))
   pretty' (CaseGuard g) = pretty' g
 
 instance Pretty CaseTail where
-  pretty' (CaseGroup s c) = pretty' (s,c)
+  pretty' (CaseGroup s c) = nested (sStatic s "case") (vcat $ map (uncurry (<+>)) c)
   pretty' (CaseBody e) = "->" <+> pretty e
 
 instance Pretty Stmt where

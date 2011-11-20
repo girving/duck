@@ -35,6 +35,7 @@ module Util
   , Sequence, runSequence
   ) where
 
+import Control.Arrow
 import Control.Exception
 import Control.Monad
 import Control.Monad.Error
@@ -57,10 +58,8 @@ unique (x:l) | all (x ==) l = Just x
 unique _ = Nothing
 
 -- |'group' on keyed pairs.
-groupPairs :: Eq a => [(a,b)] -> [(a,[b])]
-groupPairs pairs = map squash groups where
-  squash l = (fst (head l), map snd l)
-  groups = groupBy ((==) `on` fst) pairs
+groupPairs :: (Ord a, Eq a) => [(a,b)] -> [(a,[b])]
+groupPairs = map ((head *** id) . unzip) . groupBy ((==) `on` fst) . sortBy (compare `on` fst)
 
 -- |Return the longest prefix that is Just, and the rest.
 spanJust :: (a -> Maybe b) -> [a] -> ([b],[a])
@@ -78,19 +77,6 @@ zipWithCheck f x y = map (uncurry f) =.< zipCheck x y
 
 (...) :: (c -> d) -> (a -> b -> c) -> a -> b -> d
 (...) f g x y = f (g x y)
-
--- more efficient than Arrow instances:
-first :: (a -> c) -> (a,b) -> (c,b)
-first f (a,b) = (f a,b)
-second :: (b -> c) -> (a,b) -> (a,c)
-second f (a,b) = (a,f b)
-
-left :: (a -> c) -> Either a b -> Either c b
-left f (Left a) = Left (f a)
-left _ (Right b) = Right b
-right :: (b -> c) -> Either a b -> Either a c
-right _ (Left a) = Left a
-right f (Right b) = Right (f b)
 
 exit :: Int -> IO a
 exit 0 = exitSuccess

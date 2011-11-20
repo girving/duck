@@ -37,12 +37,13 @@ decl doConvert (L l (Ast.Data (L _ c) vl conses)) = datatype l' c' vl' conses : 
   vl' = map name vl
 decl _ _ = []
 
-datatype :: Hs.SrcLoc -> Hs.HsName -> [Hs.HsName] -> [(Loc CVar, [TypePat])] -> HsDecl
+datatype :: Hs.SrcLoc -> Hs.HsName -> [Hs.HsName] -> [Ast.DataCon] -> HsDecl
 datatype l c vl [cons@(_,[_])] = HsNewTypeDecl l [] c vl (constructor HsUnBangedTy cons) []
 datatype l c vl conses = HsDataDecl l [] c vl (map (constructor HsBangedTy) conses) [] where
 
-constructor :: (HsType -> HsBangType) -> (Loc CVar, [TypePat]) -> HsConDecl
-constructor f (L l c,tl) = HsConDecl (srcLoc l) (name c) (map (f . typep) tl)
+-- TODO: fieldName into records
+constructor :: (HsType -> HsBangType) -> Ast.DataCon -> HsConDecl
+constructor f (L l c,tl) = HsConDecl (srcLoc l) (name c) (map (f . typep . Ast.fieldType) tl)
 
 typep :: TypePat -> HsType
 typep (TsVar v) = HsTyVar (name v)
@@ -53,7 +54,7 @@ typep (TsCons c tl) = foldl HsTyApp (HsTyCon (UnQual (name c))) (map typep tl)
 typep (TsFun [FunArrow s t]) = HsTyFun (typep s) (typep t)
 typep t = fatal $ msg $ "Can't convert type" <+> quoted t <+> "to Haskell"
 
-convert :: Bool -> Hs.SrcLoc -> HsName -> [HsName] -> [(Loc CVar, [TypePat])] -> [HsDecl]
+convert :: Bool -> Hs.SrcLoc -> HsName -> [HsName] -> [Ast.DataCon] -> [HsDecl]
 convert True l tc vl conses = [HsInstDecl l context convert' [ty] [value,unsafeUnvalue]] where
   convert' = UnQual (HsIdent "Convert")
   valcons = UnQual (HsIdent "valCons")
@@ -71,7 +72,7 @@ convert True l tc vl conses = [HsInstDecl l context convert' [ty] [value,unsafeU
     e = case conses of
       [c] -> extract c
       _ -> HsCase (HsApp unsafeTag (HsVar (UnQual val))) (map cons (zip [0..] conses) ++ [fail])
-    cons :: (Integer,(Loc CVar,[TypePat])) -> HsAlt
+    cons :: (Integer,Ast.DataCon) -> HsAlt
     cons (i,c@(L l _,_)) = HsAlt (srcLoc l) (HsPLit (HsInt i)) (HsUnGuardedAlt (extract c)) [] where
     extract (L l c,tl) = case vl of
       [] -> cons []
