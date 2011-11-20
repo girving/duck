@@ -18,11 +18,11 @@ data PreTypePat of
   TpVoid
 
 data PreDatatype of PreData
-  CVar -- ^ Name
-  SrcLoc -- ^ Location
-  (List Var) -- ^ Type variable arguments
-  (List Variance) -- ^ Variances of 'dataTyVars'
-  PreDataInfo -- ^ Actual definition
+  (preDataName :: CVar) -- ^ Name
+  (preDataLoc :: SrcLoc) -- ^ Location
+  (preDataTyVars :: List Var) -- ^ Type variable arguments
+  (preDataVariances :: List Variance) -- ^ Variances of 'dataTyVars'
+  (preDataInfo :: PreDataInfo) -- ^ Actual definition
 
 data PreDataInfo of
   PreDataAlgebraic (List (Loc CVar, List PreTypePat)) -- ^ Algebraic datatype with constructors

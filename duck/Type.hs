@@ -93,15 +93,15 @@ makeDatatype :: CVar -> SrcLoc -> [Var] -> [Variance] -> DataInfo -> Datatype
 makeDatatype n l args vl info = box $ Data n l args vl info
 
 dataName :: Datatype -> CVar
-dataName d | Data v _ _ _ _ <- unbox d = v
+dataName = dataTypeName . unbox
 dataLoc :: Datatype -> SrcLoc
-dataLoc d | Data _ l _ _ _ <- unbox d = l
+dataLoc = dataTypeLoc . unbox
 dataTyVars :: Datatype -> [Var]
-dataTyVars d | Data _ _ vl _ _ <- unbox d = vl
+dataTyVars = dataTypeVars . unbox
 dataInfo :: Datatype -> DataInfo
-dataInfo d | Data _ _ _ _ info <- unbox d = info
+dataInfo = dataTypeInfo . unbox
 dataVariances :: Datatype -> [Variance]
-dataVariances d | Data _ _ _ vl _ <- unbox d = vl
+dataVariances = dataTypeVariances . unbox
 
 instance HasLoc Datatype where loc = dataLoc
 

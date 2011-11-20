@@ -22,22 +22,6 @@ import Pretty
 -- Pull in definition of SrcLoc
 import Gen.SrcLoc
 
--- Add missing record names (TODO: declare these in srcLoc.duck)
-srcFile :: SrcLoc -> String
-srcFile (SrcNone f) = f
-srcFile (SrcLoc f _ _) = f
-srcFile (SrcRng f _ _ _ _) = f
-
-srcLine :: SrcLoc -> Int
-srcLine (SrcNone _) = error "SrcNone has no line number"
-srcLine (SrcLoc _ i _) = i
-srcLine (SrcRng _ i _ _ _) = i
-
-srcCol :: SrcLoc -> Int
-srcCol (SrcNone _) = error "SrcNone has no column number"
-srcCol (SrcLoc _ _ i) = i
-srcCol (SrcRng _ _ i _ _) = i
-
 -- !See definition of Loc in srcLoc.duck
 srcLoc :: Loc a -> SrcLoc
 srcLoc (L l _) = l

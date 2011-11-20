@@ -43,7 +43,10 @@ datatype l c vl conses = HsDataDecl l [] c vl (map (constructor HsBangedTy) cons
 
 -- TODO: fieldName into records
 constructor :: (HsType -> HsBangType) -> Ast.DataCon -> HsConDecl
-constructor f (L l c,tl) = HsConDecl (srcLoc l) (name c) (map (f . typep . Ast.fieldType) tl)
+constructor f (L l c,tl) 
+  | all (isNothing . Ast.fieldName) tl = HsConDecl (srcLoc l) (name c) $ map (f . typep . Ast.fieldType) tl
+  | otherwise = HsRecDecl (srcLoc l) (name c) $ map (\df -> ([name $ unLoc $ fromMaybe err $ Ast.fieldName df], f (typep (Ast.fieldType df)))) tl
+  where err = fatal $ msg $ "Partially-named constructor" <+> quoted c <+> "cannot be converted to Haskell"
 
 typep :: TypePat -> HsType
 typep (TsVar v) = HsTyVar (name v)

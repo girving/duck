@@ -40,8 +40,9 @@ instance Convert PreTypePat where
                 _ -> error "bad tag in unsafeUnvalue PreTypePat"
  
 {-# LINE 20 "preType.duck" #-}
-data PreDatatype = PreData !CVar !SrcLoc ![Var] ![Variance]
-                           !PreDataInfo
+data PreDatatype = PreData{preDataName :: !CVar,
+                           preDataLoc :: !SrcLoc, preDataTyVars :: ![Var],
+                           preDataVariances :: ![Variance], preDataInfo :: !PreDataInfo}
  
 {-# LINE 20 "preType.duck" #-}
 instance Convert PreDatatype where

@@ -71,11 +71,11 @@ data Trans of
 -- |DataType definition: @data TYPE VARs = { CVAR TYPEs ; ... }@
 -- IMPORTANT: If you change this, PreDatatype in preType.duck must be changed as well.
 data DataType of Data
-  CVar -- ^ Name
-  SrcLoc -- ^ Location
-  (List Var) -- ^ Type variable arguments
-  (List Variance) -- ^ Variances of 'dataTyVars'
-  DataInfo -- ^ Actual definition
+  (dataTypeName :: CVar) -- ^ Name
+  (dataTypeLoc :: SrcLoc) -- ^ Location
+  (dataTypeVars :: List Var) -- ^ Type variable arguments
+  (dataTypeVariances :: List Variance) -- ^ Variances of 'dataTyVars'
+  (dataTypeInfo :: DataInfo) -- ^ Actual definition
 
 -- |Internal information about a datatype
 -- IMPORTANT: If you change this, PreDataInfo in preType.duck must be changed as well.

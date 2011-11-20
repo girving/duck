@@ -140,7 +140,9 @@ instance Convert Trans where
                 _ -> error "bad tag in unsafeUnvalue Trans"
  
 {-# LINE 73 "type.duck" #-}
-data DataType = Data !CVar !SrcLoc ![Var] ![Variance] !DataInfo
+data DataType = Data{dataTypeName :: !CVar, dataTypeLoc :: !SrcLoc,
+                     dataTypeVars :: ![Var], dataTypeVariances :: ![Variance],
+                     dataTypeInfo :: !DataInfo}
  
 {-# LINE 73 "type.duck" #-}
 instance Convert DataType where

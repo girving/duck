@@ -1,9 +1,9 @@
 -- | Source file location annotations for reporting
 
 data SrcLoc of
-  SrcNone (List Char) 
-  SrcLoc (List Char) Int Int
-  SrcRng (List Char) Int Int Int Int
+  SrcNone (srcFile :: List Char) 
+  SrcLoc (srcFile :: List Char) (srcLine :: Int) (srcCol :: Int)
+  SrcRng (srcFile :: List Char) (srcLine :: Int) (srcCol :: Int) (srcEndLine :: Int) (srcEndCol :: Int)
 
 data Loc a of
   L SrcLoc a
