@@ -6,3 +6,5 @@ data D a of
 
 assert \ x (A 4 2) == 2
 assert \ x (B 5) == 5
+assert \ x (x succ (B 5)) == 6
+assert \ x (y pred (A 3 1)) == 1

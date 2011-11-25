@@ -56,6 +56,8 @@ data Exp
   | Spec Exp !TypePat                   -- ^ Type specification: @EXP :: TYPE@
   deriving Show
 
+infixr 1 `Lambda`
+
 -- Ast to IR conversion
 
 data Pattern = Pat 
@@ -154,7 +156,7 @@ patLets tr var (Pat vl tl _ _) e = case (vl', tl) of
   ([],_) -> Let tr ignored spec e
   (v:vl,_) -> letVarIf tr v spec $ foldr (\v -> Let tr v $ Var var) e vl
   where 
-    spec = foldl Spec (Var var) tl
+    spec = foldl' Spec (Var var) tl
     (_:vl') = nub (var:vl)
 
 patName :: InScopeSet -> Pattern -> (InScopeSet, Var)
@@ -221,19 +223,36 @@ prog pprec name p = (precs, (name, decls [] p)) where
 
   fields :: Loc CVar -> [Var] -> [Ast.DataCon] -> [Decl]
   fields (L l t) ta = ff <=< groupPairs . fm where
-    tt = TsCons t $ map TsVar ta
-    rt = TsVar $ snd $ fresh $ Set.fromList ta
-    cv:fv:_ = standardVars
-    ff (f,cc) = 
-      [ Over (L l f) (typeArrow tt rt) $ Lambda cv $ Case False cv cc Nothing -- TODO: error message
-      -- TODO: mutator overload
-      ]
+    (tas, fieldty) = fresh $ Set.fromList ta
+    taa = ap (second . (. TsVar) . (,)) . freshen
+    tam = Map.fromAscList $ snd $ ap (mapAccumL taa) Set.toAscList tas
+    dataty  = TsCons t $ map TsVar ta
+    dataty' = TsCons t $ map (tam Map.!) ta -- typeSubst tam dataty
+    datavar:mutvar:argvars = standardVars
+    ff (fn, tcc) =
+      -- TODO: proper semantics/errors for field not found (fall cases)
+      [ Over (L l fn) aty $ datavar `Lambda` casef fst Nothing
+      , Over (L l fn) mty $ mutvar `Lambda` datavar `Lambda` casef snd Nothing
+      ] where
+      casef f = Case False datavar (map (third f) cc)
+      (tys, cc) = unzip tcc -- TODO: nub tys?
+      aty = dataty `typeArrow` TsVar fieldty
+      mty = TsFun (map (ap FunArrow (typeSubst tam)) tys) `typeArrow` typeArrow dataty dataty'
+    fm :: [Ast.DataCon] -> [(Var, (TypePat, (CVar, [Var], (Exp, Exp))))] 
+    --                    (field, (type, cases@(c, v, (access, mutate))))
     fm cl = do
-      (L _ c,fl) <- cl
-      Ast.DataField{ Ast.fieldName = Just (L fnl fn) } <- fl
-      let v Ast.DataField{ Ast.fieldName = Just (L _ fn') } | fn == fn' = fv
-          v _ = ignored
-      return (fn, (c, map v fl, ExpLoc fnl (Var fv)))
+      (L _ c, fl) <- cl
+      -- FIXME: check for duplicate names in fl
+      let vfl = zip argvars fl
+          vl = map fst vfl
+          mf fv v 
+            | v == fv = Apply (Var mutvar) (Var v)
+            | otherwise = Var v
+      (fv, Ast.DataField (Just (L fnl fn)) ft) <- vfl
+      return (fn, (ft, (c, vl, 
+        ( ExpLoc fnl (Var fv)
+        , ExpLoc fnl $ foldl' Apply (Var c) $ map (mf fv) vl))))
+    third f (a,b,c) = (a,b,f c)
 
   pattern' :: Map Var SrcLoc -> SrcLoc -> Ast.Pattern -> (Pattern, Map Var SrcLoc)
   pattern' s _ Ast.PatAny = (anyPat, s)

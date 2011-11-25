@@ -9,7 +9,10 @@ module IrType
   ( TypePat(..)
   , TypeFun(..)
   , typeInt, typeChar, typeArrow
+  , typeSubst
   ) where
+
+import qualified Data.Map as Map
 
 import Pretty
 import Var
@@ -35,6 +38,16 @@ typeChar = TsCons (V "Char") []
 
 typeArrow :: TypePat -> TypePat -> TypePat
 typeArrow s t = TsFun [FunArrow s t]
+
+typeSubst :: Map.Map Var TypePat -> TypePat -> TypePat
+typeSubst m = ts where
+  ts t@(TsVar v) = Map.findWithDefault t v m
+  ts (TsCons c t) = TsCons c (map ts t)
+  ts (TsFun f) = TsFun (map tf f)
+  ts (TsTrans v t) = TsTrans v (ts t)
+  ts TsVoid = TsVoid
+  tf (FunArrow t1 t2) = FunArrow (ts t1) (ts t2)
+  tf (FunClosure v t) = FunClosure v (map ts t)
 
 -- Pretty printing
 
